@@ -35,7 +35,8 @@
         "content/platform-parsers/gemini.js",
         "content/platform-parsers/claude.js",
         "content/conversation-detector.js",
-        "content/context-injector.js"
+        "content/context-injector.js",
+        "content/folder-selector.js"
       ],
       "run_at": "document_idle"
     }
@@ -54,7 +55,11 @@
 
   "web_accessible_resources": [
     {
-      "resources": ["content/*"],
+      "resources": [
+        "content/*",
+        "popup/folderManager.js",
+        "popup/dataViewer.js"
+      ],
       "matches": ["<all_urls>"]
     }
   ]

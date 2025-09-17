@@ -254,6 +254,34 @@
       color: #666;
       font-size: 13px;
     }
+
+    .folder-selector {
+      position: relative;
+    }
+
+    .folder-dropdown {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      background: white;
+      font-size: 14px;
+      color: #333;
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+
+    .folder-dropdown:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
+    }
+
+    .folder-dropdown option {
+      padding: 8px;
+      display: flex;
+      align-items: center;
+    }
   </style>
 </head>
 <body>
@@ -266,6 +294,15 @@
     <div id="status" class="status inactive">
       <div class="status-dot"></div>
       <span>Initializing...</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Save Conversations To</div>
+    <div class="folder-selector">
+      <select id="folderSelector" class="folder-dropdown">
+        <option value="">Loading folders...</option>
+      </select>
     </div>
   </div>
 
@@ -304,14 +341,15 @@
         <div class="stat-label">Conversations</div>
       </div>
       <div class="stat-card">
-        <div class="stat-number" id="summaryCount">0</div>
-        <div class="stat-label">Summaries</div>
+        <div class="stat-number" id="folderCount">0</div>
+        <div class="stat-label">Folders</div>
       </div>
     </div>
   </div>
 
   <div class="section">
     <button class="button" id="viewDataBtn" style="margin-bottom: 8px;">View Stored Data</button>
+    <button class="button" id="manageFoldersBtn" style="margin-bottom: 8px; background: #28a745;">Manage Folders</button>
     <button class="button" id="clearDataBtn">Clear All Data</button>
   </div>
 

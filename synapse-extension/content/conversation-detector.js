@@ -7,8 +7,86 @@ class ConversationDetector {
     this.domain = window.location.hostname;
     this.lastMessageCount = 0;
     this.observer = null;
+    this.contextInvalidated = false;
 
     this.init();
+  }
+
+  // Utility method for safe Chrome messaging
+  sendChromeMessage(message, callback = null) {
+    try {
+      // Check if extension context is valid
+      if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.sendMessage) {
+        console.warn('🔴 Synapse: Chrome runtime not available');
+        this.handleContextInvalidation();
+        return false;
+      }
+
+      // Multiple checks for extension context invalidation
+      if (chrome.runtime.id === undefined || chrome.runtime.id === null) {
+        console.warn('🔴 Synapse: Extension context invalidated (runtime.id check)');
+        this.handleContextInvalidation();
+        return false;
+      }
+
+      // Try to access runtime.id to trigger error if context is invalid
+      try {
+        const testId = chrome.runtime.id;
+        if (!testId) {
+          console.warn('🔴 Synapse: Extension context invalidated (empty runtime.id)');
+          this.handleContextInvalidation();
+          return false;
+        }
+      } catch (contextError) {
+        console.warn('🔴 Synapse: Extension context invalidated (runtime.id access failed)');
+        this.handleContextInvalidation();
+        return false;
+      }
+
+      chrome.runtime.sendMessage(message, (response) => {
+        if (chrome.runtime.lastError) {
+          if (chrome.runtime.lastError.message.includes('Extension context invalidated')) {
+            console.warn('🔴 Synapse: Extension context invalidated during message send');
+            this.handleContextInvalidation();
+          } else {
+            console.warn('🔴 Synapse: Chrome message failed:', chrome.runtime.lastError.message);
+          }
+        } else if (callback) {
+          callback(response);
+        }
+      });
+      return true;
+    } catch (error) {
+      if (error.message.includes('Extension context invalidated')) {
+        console.warn('🔴 Synapse: Extension context invalidated (caught in try/catch)');
+        this.handleContextInvalidation();
+      } else {
+        console.error('🔴 Synapse: Error sending Chrome message:', error);
+      }
+      return false;
+    }
+  }
+
+  handleContextInvalidation() {
+    if (!this.contextInvalidated) {
+      this.contextInvalidated = true;
+      console.log('🔴 Synapse: Extension context invalidated - stopping all operations');
+      
+      // Stop the mutation observer
+      if (this.observer) {
+        this.observer.disconnect();
+        this.observer = null;
+      }
+      
+      // Clear any timers
+      if (this.debounceTimer) {
+        clearTimeout(this.debounceTimer);
+        this.debounceTimer = null;
+      }
+      
+      // Mark as inactive
+      this.isActive = false;
+    }
   }
 
   async init() {
@@ -192,6 +270,10 @@ class ConversationDetector {
   }
 
   detectMessages() {
+    if (this.contextInvalidated) {
+      return;
+    }
+    
     const parser = this.getPlatformParser();
     if (!parser) {
       console.warn('Synapse: No parser available for', this.platform);
@@ -245,6 +327,11 @@ class ConversationDetector {
   }
 
   getNewMessages(currentMessages) {
+    // Validate input
+    if (!currentMessages || !Array.isArray(currentMessages)) {
+      return [];
+    }
+
     // If no existing messages, all are new
     if (this.messages.length === 0) {
       return currentMessages;
@@ -271,26 +358,37 @@ class ConversationDetector {
     this.currentConversationId = this.generateConversationId();
     this.isActive = true;
 
-    chrome.runtime.sendMessage({
+    this.sendChromeMessage({
       type: 'CONVERSATION_STARTED',
       conversationId: this.currentConversationId,
       platform: this.platform,
       domain: this.domain
+    }, () => {
+      console.log('🔵 Synapse: Conversation started message sent successfully');
     });
 
-    console.log('Synapse: Conversation started', this.currentConversationId);
+    console.log('🔵 Synapse: Conversation started', this.currentConversationId);
 
     this.setupPageUnloadHandler();
   }
 
   updateConversation(messages) {
+    if (this.contextInvalidated) {
+      return;
+    }
+    
+    if (!messages || !Array.isArray(messages)) {
+      console.warn('🔴 Synapse: Invalid messages array passed to updateConversation');
+      return;
+    }
+
     const newMessages = this.getNewMessages(messages);
     const hasContentUpdates = this.hasContentUpdates(messages);
-    const isIncremental = newMessages.length < messages.length && !hasContentUpdates;
+    const isIncremental = newMessages && newMessages.length < messages.length && !hasContentUpdates;
 
     this.messages = messages;
 
-    chrome.runtime.sendMessage({
+    this.sendChromeMessage({
       type: 'CONVERSATION_UPDATED',
       conversationId: this.currentConversationId,
       platform: this.platform,
@@ -301,7 +399,7 @@ class ConversationDetector {
       contentUpdate: hasContentUpdates
     });
 
-    if (isIncremental && newMessages.length > 0) {
+    if (isIncremental && newMessages && newMessages.length > 0) {
       console.log('📝 Synapse: Added', newMessages.length, 'new messages to conversation');
     } else if (hasContentUpdates) {
       console.log('🔄 Synapse: Updated message content');
@@ -309,7 +407,7 @@ class ConversationDetector {
   }
 
   hasContentUpdates(newMessages) {
-    if (this.messages.length === 0 || newMessages.length === 0) {
+    if (!newMessages || !Array.isArray(newMessages) || this.messages.length === 0 || newMessages.length === 0) {
       return false;
     }
 
@@ -327,13 +425,15 @@ class ConversationDetector {
 
     this.isActive = false;
 
-    chrome.runtime.sendMessage({
+    this.sendChromeMessage({
       type: 'CONVERSATION_ENDED',
       conversationId: this.currentConversationId,
       messages: this.messages
+    }, () => {
+      console.log('🔵 Synapse: Conversation ended message sent successfully');
     });
 
-    console.log('Synapse: Conversation ended', this.currentConversationId);
+    console.log('🔵 Synapse: Conversation ended', this.currentConversationId);
 
     this.currentConversationId = null;
     this.messages = [];

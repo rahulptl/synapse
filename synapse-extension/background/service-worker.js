@@ -19,7 +19,7 @@ class SynapseBackground {
 
   async setupStorageDefaults() {
     try {
-      const existing = await chrome.storage.local.get(['enabledDomains', 'conversations', 'summaries']);
+      const existing = await chrome.storage.local.get(['enabledDomains', 'conversations', 'summaries', 'folders']);
 
       if (!existing.enabledDomains) {
         await chrome.storage.local.set({
@@ -37,6 +37,33 @@ class SynapseBackground {
 
       if (!existing.summaries) {
         await chrome.storage.local.set({ summaries: {} });
+      }
+
+      // Create default folders if they don't exist
+      if (!existing.folders) {
+        const defaultFolders = {
+          'personal': { 
+            name: 'Personal', 
+            color: '#667eea', 
+            icon: '👤',
+            createdAt: Date.now() 
+          },
+          'work': { 
+            name: 'Work', 
+            color: '#28a745', 
+            icon: '💼',
+            createdAt: Date.now() 
+          },
+          'random': { 
+            name: 'Random', 
+            color: '#ffc107', 
+            icon: '🎲',
+            createdAt: Date.now() 
+          }
+        };
+
+        await chrome.storage.local.set({ folders: defaultFolders });
+        console.log('🟢 Synapse: Default folders created:', Object.keys(defaultFolders));
       }
     } catch (error) {
       console.error('Failed to setup storage defaults:', error);
@@ -67,6 +94,10 @@ class SynapseBackground {
           console.log(`Domain ${message.domain} ${message.enabled ? 'enabled' : 'disabled'}`);
           break;
 
+        case 'FOLDER_SELECTION_CHANGED':
+          console.log(`Folder selection changed to: ${message.folderId || 'none'}`);
+          break;
+
         case 'DATA_CLEARED':
           console.log('All data cleared');
           break;
@@ -90,6 +121,10 @@ class SynapseBackground {
       return; // Don't create a new one, just resume
     }
 
+    // Get the selected folder ID from storage
+    const selectedFolderData = await chrome.storage.local.get(['selectedFolderId']);
+    const selectedFolderId = selectedFolderData.selectedFolderId;
+
     const conversation = {
       id: conversationId,
       platform: message.platform,
@@ -98,6 +133,12 @@ class SynapseBackground {
       messages: [],
       status: 'active'
     };
+
+    // Assign to selected folder if one is chosen
+    if (selectedFolderId) {
+      conversation.folderId = selectedFolderId;
+      console.log('🟢 Background: Assigning conversation to folder:', selectedFolderId);
+    }
 
     conversations[conversationId] = conversation;
     await chrome.storage.local.set({ conversations });
@@ -114,6 +155,10 @@ class SynapseBackground {
     if (!conversation) {
       console.log('🟢 Background: Creating conversation from update');
 
+      // Get the selected folder ID from storage
+      const selectedFolderData = await chrome.storage.local.get(['selectedFolderId']);
+      const selectedFolderId = selectedFolderData.selectedFolderId;
+
       // Create conversation if it doesn't exist
       conversation = {
         id: message.conversationId,
@@ -123,6 +168,13 @@ class SynapseBackground {
         messages: [],
         status: 'active'
       };
+
+      // Assign to selected folder if one is chosen
+      if (selectedFolderId) {
+        conversation.folderId = selectedFolderId;
+        console.log('🟢 Background: Assigning conversation to folder:', selectedFolderId);
+      }
+
       conversations[message.conversationId] = conversation;
     }
 

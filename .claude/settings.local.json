@@ -10,7 +10,9 @@
       "Bash(tree:*)",
       "Bash(pip3 install:*)",
       "Bash(git config:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(grep:*)",
+      "Bash(sed:*)"
     ],
     "deny": [],
     "ask": []

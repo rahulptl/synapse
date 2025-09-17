@@ -7,7 +7,6 @@ class SynapsePopup {
     await this.ensureDefaultFolders();
     await this.loadSettings();
     await this.loadStats();
-    await this.loadFolderSelector();
     this.setupEventListeners();
     this.updateStatus();
   }
@@ -101,40 +100,6 @@ class SynapsePopup {
     }
   }
 
-  async loadFolderSelector() {
-    try {
-      const data = await chrome.storage.local.get(['folders', 'selectedFolderId']);
-      const folders = data.folders || {};
-      const selectedFolderId = data.selectedFolderId;
-
-      const selector = document.getElementById('folderSelector');
-      if (!selector) return;
-
-      selector.innerHTML = '';
-
-      const defaultOption = document.createElement('option');
-      defaultOption.value = '';
-      defaultOption.textContent = 'Select a folder...';
-      selector.appendChild(defaultOption);
-
-      Object.entries(folders)
-        .sort(([,a], [,b]) => a.name.localeCompare(b.name))
-        .forEach(([folderId, folder]) => {
-          const option = document.createElement('option');
-          option.value = folderId;
-          option.textContent = `${folder.icon || '📁'} ${folder.name}`;
-          if (folderId === selectedFolderId) {
-            option.selected = true;
-          }
-          selector.appendChild(option);
-        });
-
-      console.log('📁 Synapse Popup: Folder selector loaded with', Object.keys(folders).length, 'folders');
-    } catch (error) {
-      console.error('Failed to load folder selector:', error);
-    }
-  }
-
   setupEventListeners() {
     const toggles = ['chatgpt-toggle', 'gemini-toggle', 'claude-toggle'];
     const domains = ['chatgpt.com', 'gemini.google.com', 'claude.ai'];
@@ -143,10 +108,6 @@ class SynapsePopup {
       document.getElementById(toggleId).addEventListener('change', async (e) => {
         await this.updateDomainSetting(domains[index], e.target.checked);
       });
-    });
-
-    document.getElementById('folderSelector').addEventListener('change', async (e) => {
-      await this.updateSelectedFolder(e.target.value);
     });
 
     document.getElementById('clearDataBtn').addEventListener('click', () => {
@@ -160,31 +121,6 @@ class SynapsePopup {
     document.getElementById('manageFoldersBtn').addEventListener('click', () => {
       this.manageFolders();
     });
-  }
-
-  async updateSelectedFolder(folderId) {
-    try {
-      await chrome.storage.local.set({ selectedFolderId: folderId });
-
-      chrome.runtime.sendMessage({
-        type: 'FOLDER_SELECTION_CHANGED',
-        folderId
-      });
-
-      console.log('📁 Synapse Popup: Selected folder updated to:', folderId || 'none');
-      
-      if (folderId) {
-        const data = await chrome.storage.local.get(['folders']);
-        const folder = data.folders[folderId];
-        if (folder) {
-          this.showNotification(`Now saving conversations to ${folder.name}`);
-        }
-      } else {
-        this.showNotification('Folder selection cleared');
-      }
-    } catch (error) {
-      console.error('Failed to update selected folder:', error);
-    }
   }
 
   async updateDomainSetting(domain, enabled) {
@@ -297,7 +233,7 @@ class SynapsePopup {
               '<div class="empty-state">No conversations recorded yet.</div>' :
               this.generateFolderView(conversations, folders)
             }
-            <script src="popup/dataViewer.js"></script>
+            <script src="dataViewer.js"></script>
           </body>
         </html>
       `);
@@ -541,7 +477,7 @@ class SynapsePopup {
             <div class="add-folder">
               <button class="btn btn-primary" id="add-folder-btn">Add New Folder</button>
             </div>
-            <script src="popup/folderManager.js"></script>
+            <script src="folderManager.js"></script>
           </body>
         </html>
       `);
@@ -556,12 +492,10 @@ class SynapsePopup {
             await chrome.storage.local.set({ folders });
           });
           this.loadStats();
-          this.loadFolderSelector();
         } else if (event.data.type === 'DELETE_FOLDER') {
-          await chrome.storage.local.get(['folders', 'conversations', 'selectedFolderId']).then(async (data) => {
+          await chrome.storage.local.get(['folders', 'conversations']).then(async (data) => {
             const folders = data.folders || {};
             const conversations = data.conversations || {};
-            const selectedFolderId = data.selectedFolderId;
             
             delete folders[event.data.folderId];
             
@@ -571,15 +505,9 @@ class SynapsePopup {
               }
             });
             
-            const updateData = { folders, conversations };
-            if (selectedFolderId === event.data.folderId) {
-              updateData.selectedFolderId = '';
-            }
-            
-            await chrome.storage.local.set(updateData);
+            await chrome.storage.local.set({ folders, conversations });
           });
           this.loadStats();
-          this.loadFolderSelector();
         }
       });
 
