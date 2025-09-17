@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Synapse Test",
+  "version": "0.1.0",
+  "description": "Minimal test version",
+
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+
+  "host_permissions": [
+    "https://chatgpt.com/*"
+  ],
+
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*"
+      ],
+      "js": ["test-content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

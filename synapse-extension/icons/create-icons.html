@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Generate Synapse Icons</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        canvas { border: 1px solid #ccc; margin: 10px; }
+        .icon-set { margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <h1>Synapse Extension Icons</h1>
+    <div class="icon-set">
+        <h2>16x16</h2>
+        <canvas id="icon16" width="16" height="16"></canvas>
+        <a id="download16" href="#" download="icon16.png">Download 16x16</a>
+    </div>
+    <div class="icon-set">
+        <h2>48x48</h2>
+        <canvas id="icon48" width="48" height="48"></canvas>
+        <a id="download48" href="#" download="icon48.png">Download 48x48</a>
+    </div>
+    <div class="icon-set">
+        <h2>128x128</h2>
+        <canvas id="icon128" width="128" height="128"></canvas>
+        <a id="download128" href="#" download="icon128.png">Download 128x128</a>
+    </div>
+
+    <script>
+        function createIcon(size) {
+            const canvas = document.getElementById(`icon${size}`);
+            const ctx = canvas.getContext('2d');
+
+            // Clear canvas
+            ctx.clearRect(0, 0, size, size);
+
+            // Create gradient background
+            const gradient = ctx.createLinearGradient(0, 0, size, size);
+            gradient.addColorStop(0, '#667eea');
+            gradient.addColorStop(1, '#764ba2');
+
+            // Draw rounded rectangle background
+            const radius = size * 0.15;
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.roundRect(0, 0, size, size, radius);
+            ctx.fill();
+
+            // Draw synapse symbol (connected nodes)
+            ctx.strokeStyle = 'white';
+            ctx.fillStyle = 'white';
+            ctx.lineWidth = size * 0.05;
+            ctx.lineCap = 'round';
+
+            const centerX = size / 2;
+            const centerY = size / 2;
+            const nodeRadius = size * 0.06;
+            const connectionLength = size * 0.25;
+
+            // Draw connections
+            ctx.beginPath();
+            // Top-left to center
+            ctx.moveTo(centerX - connectionLength, centerY - connectionLength);
+            ctx.lineTo(centerX, centerY);
+            // Center to bottom-right
+            ctx.moveTo(centerX, centerY);
+            ctx.lineTo(centerX + connectionLength, centerY + connectionLength);
+            // Top-right to center
+            ctx.moveTo(centerX + connectionLength, centerY - connectionLength);
+            ctx.lineTo(centerX, centerY);
+            ctx.stroke();
+
+            // Draw nodes
+            // Center node
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, nodeRadius, 0, 2 * Math.PI);
+            ctx.fill();
+
+            // Top-left node
+            ctx.beginPath();
+            ctx.arc(centerX - connectionLength, centerY - connectionLength, nodeRadius * 0.8, 0, 2 * Math.PI);
+            ctx.fill();
+
+            // Top-right node
+            ctx.beginPath();
+            ctx.arc(centerX + connectionLength, centerY - connectionLength, nodeRadius * 0.8, 0, 2 * Math.PI);
+            ctx.fill();
+
+            // Bottom-right node
+            ctx.beginPath();
+            ctx.arc(centerX + connectionLength, centerY + connectionLength, nodeRadius * 0.8, 0, 2 * Math.PI);
+            ctx.fill();
+
+            // Setup download link
+            canvas.toBlob(function(blob) {
+                const url = URL.createObjectURL(blob);
+                document.getElementById(`download${size}`).href = url;
+            });
+        }
+
+        // Create all icons
+        createIcon(16);
+        createIcon(48);
+        createIcon(128);
+    </script>
+</body>
+</html>

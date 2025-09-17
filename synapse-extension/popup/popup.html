@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body {
+      width: 350px;
+      min-height: 400px;
+      margin: 0;
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #e0e0e0;
+    }
+
+    .logo {
+      width: 24px;
+      height: 24px;
+      background: linear-gradient(45deg, #667eea, #764ba2);
+      border-radius: 6px;
+      margin-right: 8px;
+      position: relative;
+      transition: all 0.3s ease;
+    }
+
+    .logo.recording {
+      animation: pulse 2s infinite;
+      box-shadow: 0 0 10px rgba(102, 126, 234, 0.6);
+    }
+
+    .logo.recording::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 8px;
+      height: 8px;
+      background: #fff;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      animation: blink 1s infinite;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.1); }
+      100% { transform: scale(1); }
+    }
+
+    @keyframes blink {
+      0%, 50% { opacity: 1; }
+      51%, 100% { opacity: 0.3; }
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+      color: #1a1a1a;
+    }
+
+    .section {
+      margin-bottom: 20px;
+    }
+
+    .section-title {
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: #333;
+    }
+
+    .status {
+      display: flex;
+      align-items: center;
+      padding: 8px 12px;
+      border-radius: 6px;
+      margin-bottom: 12px;
+      font-size: 13px;
+    }
+
+    .status.active {
+      background: linear-gradient(135deg, #f0f9f0, #e8f5e8);
+      color: #1e7e34;
+      border: 1px solid #c3e6cb;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .status.active::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+      animation: shimmer 3s infinite;
+    }
+
+    @keyframes shimmer {
+      0% { left: -100%; }
+      100% { left: 100%; }
+    }
+
+    .status.inactive {
+      background: #fff3cd;
+      color: #856404;
+      border: 1px solid #ffeaa7;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 8px;
+    }
+
+    .status.active .status-dot {
+      background: #28a745;
+    }
+
+    .status.inactive .status-dot {
+      background: #ffc107;
+    }
+
+    .domain-list {
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      max-height: 120px;
+      overflow-y: auto;
+    }
+
+    .domain-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 12px;
+      border-bottom: 1px solid #f0f0f0;
+    }
+
+    .domain-item:last-child {
+      border-bottom: none;
+    }
+
+    .domain-name {
+      font-family: monospace;
+      font-size: 12px;
+      color: #555;
+    }
+
+    .toggle {
+      position: relative;
+      width: 32px;
+      height: 18px;
+    }
+
+    .toggle input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #ccc;
+      transition: .4s;
+      border-radius: 18px;
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 14px;
+      width: 14px;
+      left: 2px;
+      bottom: 2px;
+      background-color: white;
+      transition: .4s;
+      border-radius: 50%;
+    }
+
+    input:checked + .slider {
+      background-color: #667eea;
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(14px);
+    }
+
+    .button {
+      width: 100%;
+      padding: 10px;
+      border: none;
+      border-radius: 6px;
+      background: #667eea;
+      color: white;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .button:hover {
+      background: #5a6fd8;
+    }
+
+    .button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .stat-card {
+      text-align: center;
+      padding: 12px;
+      background: #f8f9fa;
+      border-radius: 6px;
+    }
+
+    .stat-number {
+      font-size: 20px;
+      font-weight: 600;
+      color: #667eea;
+    }
+
+    .stat-label {
+      font-size: 12px;
+      color: #666;
+      margin-top: 4px;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 20px;
+      color: #666;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo"></div>
+    <h1>Synapse</h1>
+  </div>
+
+  <div class="section">
+    <div id="status" class="status inactive">
+      <div class="status-dot"></div>
+      <span>Initializing...</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Monitored Platforms</div>
+    <div class="domain-list" id="domainList">
+      <div class="domain-item">
+        <span class="domain-name">chatgpt.com</span>
+        <label class="toggle">
+          <input type="checkbox" id="chatgpt-toggle" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="domain-item">
+        <span class="domain-name">gemini.google.com</span>
+        <label class="toggle">
+          <input type="checkbox" id="gemini-toggle" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="domain-item">
+        <span class="domain-name">claude.ai</span>
+        <label class="toggle">
+          <input type="checkbox" id="claude-toggle" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Statistics</div>
+    <div class="stats">
+      <div class="stat-card">
+        <div class="stat-number" id="conversationCount">0</div>
+        <div class="stat-label">Conversations</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number" id="summaryCount">0</div>
+        <div class="stat-label">Summaries</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <button class="button" id="viewDataBtn" style="margin-bottom: 8px;">View Stored Data</button>
+    <button class="button" id="clearDataBtn">Clear All Data</button>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
