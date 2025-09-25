@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zyph Folder Manager</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <div class="popup-container">
+        <div class="header">
+            <h1>
+                <svg class="logo-icon" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M10 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2h-8l-2-2z"/>
+                </svg>
+                Zyph Folders
+            </h1>
+        </div>
+        
+        <div class="content">
+            <div class="folder-stats">
+                <div class="stat">
+                    <span class="stat-number" id="folder-count">0</span>
+                    <span class="stat-label">Folders</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-number" id="nested-count">0</span>
+                    <span class="stat-label">Nested</span>
+                </div>
+            </div>
+            
+            <div class="quick-actions">
+                <button id="open-sidepanel" class="action-btn primary">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/>
+                    </svg>
+                    Open Side Panel
+                </button>
+                
+                <button id="quick-create" class="action-btn secondary">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 11h-4v4h-2v-4H7v-2h4V7h2v4h4v2z"/>
+                    </svg>
+                    Quick Create
+                </button>
+            </div>
+            
+            <div class="recent-folders" id="recent-folders">
+                <h3>Recent Folders</h3>
+                <div class="folder-list" id="folder-list">
+                    <!-- Recent folders will be populated here -->
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="popup.js"></script>
+</body>
+</html>

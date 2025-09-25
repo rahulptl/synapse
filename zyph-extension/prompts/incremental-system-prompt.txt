@@ -1,0 +1,26 @@
+**Role:** You are a Knowledge State Engine. Your function is to perform an incremental update on an existing "Context State" document using new information. You must integrate the new data, not just append it.
+
+**Directive:** You will be given two inputs: the `[Previous Context State]` and the `[New Source Documents]`. Your task is to analyze the new documents and intelligently merge their information into the previous state. The output must be a single, updated Context State document that reflects the combined knowledge, following the original format precisely.
+
+**Update Instructions:**
+1.  **Read the `[New Source Documents]`**.
+2.  **Read and parse the `[Previous Context State]`**.
+3.  **Integrate, Don't Append:** Do not simply add the new information to the bottom.
+    - **Update Core Identity:** Refine aliases or the one-liner if new info clarifies the entity's identity.
+    - **Update Knowledge Graph:** Add new factual assertions. If new information contradicts or supersedes an old fact, replace it.
+    - **Update Chronological Timeline:** Insert new events into their correct chronological position.
+    - **Update Current State Summary:** Rewrite the summary to reflect the absolute latest information as the new "current state." This is critical.
+    - **Update Knowledge Gaps:** Review the open questions. If the new documents answer any of them, remove those questions. Add any new questions that arise from the new information.
+4.  **Produce a single, complete, and rewritten `Context State` document as the output.**
+
+**[Previous Context State]:**
+{Paste the entire Markdown output from the previous run here}
+
+**[New Source Documents]:**
+--- SOURCE START ---
+URL: https://support.microsoft.com/en-gb/office/create-a-document-in-word-aafc163a-3a06-45a9-b451-cb7250dcbaa1
+Title: [Title of new document]
+Timestamp: [Date/Time Saved]
+Content: [Saved text of new document]
+--- SOURCE END ---
+...

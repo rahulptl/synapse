@@ -12,7 +12,9 @@
       "Bash(git config:*)",
       "Bash(git add:*)",
       "Bash(grep:*)",
-      "Bash(sed:*)"
+      "Bash(sed:*)",
+      "Bash(python3:*)",
+      "Read(/var/folders/g2/fl1bn5ln7dxbsb0smclztrdr0000gn/T/TemporaryItems/NSIRD_screencaptureui_QexC2s/**)"
     ],
     "deny": [],
     "ask": []
