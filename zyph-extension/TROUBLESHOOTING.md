@@ -36,8 +36,8 @@ Open DevTools Console and look for:
 #### 6. **Check Extension Storage**
 In the console, run:
 ```javascript
-chrome.storage.local.get(['zyphFolders', 'zyphContent'], (result) => {
-    console.log('Folders:', result.zyphFolders);
+chrome.storage.local.get(['zyphRemoteFolders', 'zyphContent'], (result) => {
+    console.log('Remote folders:', result.zyphRemoteFolders?.folders);
     console.log('Content:', result.zyphContent);
 });
 ```
@@ -92,6 +92,35 @@ Could not send context menu update message
 4. **Right-click** → "Save to Zyph" → Your folder
 5. **Check the side panel** - content should appear
 6. **Look at console** for success/error messages
+
+## Issue: Zyph.com Sync Stuck on "Syncing…"
+
+1. **Verify your API key**
+   - Open settings and press *Validate Connection*
+   - If validation fails, the status message will include the error from Zyph.com
+
+2. **Check the remote queue**
+   - In DevTools console, run:
+     ```javascript
+     chrome.storage.local.get('zyphRemoteSyncQueue', data => console.log(data.zyphRemoteSyncQueue));
+     ```
+   - Each task includes `attempts`, `lastError`, and `nextAttemptAt` timestamps
+
+3. **Look for background errors**
+   - `[ContentSaver] Zyph remote query failed` messages indicate API issues
+   - `[ContentSaver] Remote payload could not be built` usually means the item had no textual content
+
+4. **Common resolutions**
+   - Revalidate the API key if the error code is `NO_AUTH`
+   - Ensure the local folder is still linked to an existing Zyph.com folder
+   - Leave Chrome open for a few minutes so the retry backoff alarm can fire
+
+5. **Force a retry**
+   - After fixing the underlying issue, open DevTools and run:
+     ```javascript
+     chrome.runtime.sendMessage({ action: 'processRemoteQueue' });
+     ```
+   - The queue will process immediately instead of waiting for the scheduled alarm
 
 ### If Still Not Working:
 

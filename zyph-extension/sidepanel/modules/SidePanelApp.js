@@ -19,6 +19,9 @@ window.Zyph.SidePanelApp = class SidePanelApp {
             this.contextGenerator = new window.Zyph.ContextGenerator(this.folderManager, this.promptManager);
             this.uiManager = new window.Zyph.UIManager(this.folderManager, this.contextGenerator);
 
+            // Make UIManager available globally for loading states
+            window.Zyph.UIManager = this.uiManager;
+
             // Load initial data
             await this.loadInitialData();
 
@@ -40,7 +43,7 @@ window.Zyph.SidePanelApp = class SidePanelApp {
         try {
             // Load folders and render initial UI
             await this.uiManager.renderFolders();
-            
+
             // Validate prompt system
             const promptValidation = await this.promptManager.validatePrompt();
             if (!promptValidation.isValid) {
@@ -57,7 +60,7 @@ window.Zyph.SidePanelApp = class SidePanelApp {
         // Show user-friendly error message
         const errorHTML = `
             <div class="init-error">
-                <h3>⚠️ Initialization Error</h3>
+                <h3>Initialization Error</h3>
                 <p>The Zyph Extension failed to initialize properly.</p>
                 <p><strong>Error:</strong> ${error.message}</p>
                 <button onclick="location.reload()" class="btn primary">Reload Extension</button>
@@ -107,7 +110,7 @@ window.Zyph.SidePanelApp = class SidePanelApp {
 
         try {
             // Test storage access
-            const testData = await chrome.storage.local.get('zyphFolders');
+            const testData = await chrome.storage.local.get('zyphFolderMeta');
             health.storage = true;
 
             // Test API key

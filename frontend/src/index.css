@@ -1,0 +1,376 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    --background: 222 47% 11%;
+    --foreground: 213 31% 91%;
+
+    --card: 222 84% 5%;
+    --card-foreground: 213 31% 91%;
+
+    --popover: 222 84% 5%;
+    --popover-foreground: 213 31% 91%;
+
+    --primary: 265 85% 58%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 222 47% 11%;
+    --secondary-foreground: 213 31% 91%;
+
+    --muted: 223 47% 11%;
+    --muted-foreground: 215.4 16.3% 56.9%;
+
+    --accent: 216 34% 17%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 216 34% 17%;
+    --input: 216 34% 17%;
+    --ring: 265 85% 58%;
+
+    --radius: 0.75rem;
+
+    /* Enhanced design tokens */
+    --primary-glow: 265 85% 70%;
+    --primary-variant: 280 85% 65%;
+    --accent-bright: 195 85% 65%;
+    
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(265 85% 58%), hsl(280 85% 65%));
+    --gradient-accent: linear-gradient(135deg, hsl(195 85% 65%), hsl(265 85% 58%));
+    --gradient-subtle: linear-gradient(180deg, hsl(222 84% 5%), hsl(222 47% 11%));
+    
+    /* Shadows */
+    --shadow-elegant: 0 10px 30px -10px hsl(265 85% 58% / 0.3);
+    --shadow-glow: 0 0 40px hsl(265 85% 70% / 0.2);
+
+    --sidebar-background: 222 84% 5%;
+    --sidebar-foreground: 213 31% 91%;
+    --sidebar-primary: 265 85% 58%;
+    --sidebar-primary-foreground: 210 40% 98%;
+    --sidebar-accent: 216 34% 17%;
+    --sidebar-accent-foreground: 213 31% 91%;
+    --sidebar-border: 216 34% 17%;
+    --sidebar-ring: 265 85% 58%;
+  }
+
+  .light {
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    --primary: 265 85% 58%;
+    --primary-foreground: 0 0% 98%;
+
+    --secondary: 210 40% 98%;
+    --secondary-foreground: 222 47% 11%;
+
+    --muted: 210 40% 98%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+
+    --accent: 210 40% 98%;
+    --accent-foreground: 222 47% 11%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 265 85% 58%;
+
+    /* Enhanced design tokens for light mode */
+    --primary-glow: 265 85% 70%;
+    --primary-variant: 280 85% 65%;
+    --accent-bright: 195 85% 65%;
+    
+    /* Gradients for light mode */
+    --gradient-primary: linear-gradient(135deg, hsl(265 85% 58%), hsl(280 85% 65%));
+    --gradient-accent: linear-gradient(135deg, hsl(195 85% 65%), hsl(265 85% 58%));
+    --gradient-subtle: linear-gradient(180deg, hsl(0 0% 100%), hsl(210 40% 98%));
+    
+    /* Shadows for light mode */
+    --shadow-elegant: 0 10px 30px -10px hsl(265 85% 58% / 0.15);
+    --shadow-glow: 0 0 40px hsl(265 85% 70% / 0.1);
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 265 85% 58%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 210 40% 98%;
+    --sidebar-accent-foreground: 222 47% 11%;
+    --sidebar-border: 214.3 31.8% 91.4%;
+    --sidebar-ring: 265 85% 58%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    /* Enhanced scrollbar */
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--primary) / 0.3) transparent;
+  }
+
+  /* Enhanced scrollbar for webkit */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--primary) / 0.3);
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--primary) / 0.5);
+  }
+
+  /* Smooth focus outline */
+  *:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  /* Global animations and transitions */
+  .animate-fade-in {
+    animation: fadeIn 0.5s ease-out;
+  }
+
+  .animate-slide-in-left {
+    animation: slideInLeft 0.3s ease-out;
+  }
+
+  .animate-slide-in-right {
+    animation: slideInRight 0.3s ease-out;
+  }
+
+  .animate-slide-in-up {
+    animation: slideInUp 0.4s ease-out;
+  }
+
+  .animate-pulse-glow {
+    animation: pulseGlow 2s ease-in-out infinite;
+  }
+
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+  }
+
+  /* Glassmorphism utility */
+  .glass {
+    backdrop-filter: blur(16px) saturate(180%);
+    background-color: hsla(var(--card) / 0.75);
+    border: 1px solid hsla(var(--border) / 0.18);
+  }
+
+  .glass-strong {
+    backdrop-filter: blur(20px) saturate(200%);
+    background-color: hsla(var(--card) / 0.85);
+    border: 1px solid hsla(var(--border) / 0.25);
+  }
+
+  /* Micro-interactions */
+  .hover-lift {
+    transition: transform 0.2s ease-out, box-shadow 0.2s ease-out;
+  }
+
+  .hover-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-elegant);
+  }
+
+  .hover-glow {
+    transition: box-shadow 0.3s ease-out;
+  }
+
+  .hover-glow:hover {
+    box-shadow: var(--shadow-glow);
+  }
+
+  /* Text animations */
+  .text-gradient {
+    background: var(--gradient-primary);
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-size: 200% 200%;
+    animation: gradientShift 3s ease-in-out infinite;
+  }
+
+  /* Enhanced button transitions */
+  .btn-enhanced {
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .btn-enhanced::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, hsla(var(--primary) / 0.2), transparent);
+    transition: left 0.5s;
+  }
+
+  .btn-enhanced:hover::before {
+    left: 100%;
+  }
+
+  /* Loading animations */
+  .skeleton {
+    background: linear-gradient(90deg,
+      hsla(var(--muted) / 0.2) 25%,
+      hsla(var(--muted) / 0.4) 50%,
+      hsla(var(--muted) / 0.2) 75%);
+    background-size: 200% 100%;
+    animation: skeleton-loading 2s infinite;
+  }
+}
+
+/* Keyframe animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulseGlow {
+  0%, 100% {
+    box-shadow: 0 0 20px hsla(var(--primary) / 0.4);
+  }
+  50% {
+    box-shadow: 0 0 30px hsla(var(--primary) / 0.6);
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes gradientShift {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+@keyframes skeleton-loading {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+/* Page transition animations */
+@keyframes pageSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Apply page animation to main content areas */
+[data-page] {
+  animation: pageSlideIn 0.4s ease-out;
+}
+
+/* Enhanced focus states for better accessibility */
+input:focus, textarea:focus, select:focus {
+  transition: all 0.2s ease-out;
+  box-shadow: 0 0 0 3px hsla(var(--ring) / 0.2);
+}
+
+/* Override for chat input to prevent double borders */
+.chat-input:focus {
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+/* Smooth transitions for interactive elements */
+button, [role="button"], a {
+  transition: all 0.2s ease-out;
+}
+
+/* Enhanced selection styles */
+::selection {
+  background-color: hsla(var(--primary) / 0.3);
+  color: hsl(var(--primary-foreground));
+}

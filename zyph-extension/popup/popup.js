@@ -21,12 +21,11 @@ class PopupManager {
 
     async loadData() {
         try {
-            const result = await chrome.storage.local.get('zyphFolders');
-            this.folders = result.zyphFolders || [];
+            this.folders = await this.fetchRemoteFolders();
             this.updateStats();
             this.renderRecentFolders();
         } catch (error) {
-            console.error('Error loading folders:', error);
+            console.error('[Popup] Error loading folders:', error);
             this.folders = [];
             this.updateStats();
             this.renderEmptyState();
@@ -36,7 +35,7 @@ class PopupManager {
     updateStats() {
         const totalFolders = this.folders.length;
         const nestedFolders = this.folders.filter(folder => folder.parentId).length;
-        
+
         this.folderCountEl.textContent = totalFolders;
         this.nestedCountEl.textContent = nestedFolders;
     }
@@ -48,11 +47,10 @@ class PopupManager {
         }
 
         const recentFolders = [...this.folders]
-            .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+            .sort((a, b) => a.path.localeCompare(b.path))
             .slice(0, 5);
 
         this.folderListEl.innerHTML = '';
-        
         recentFolders.forEach(folder => {
             const folderElement = this.createFolderElement(folder);
             this.folderListEl.appendChild(folderElement);
@@ -62,19 +60,18 @@ class PopupManager {
     createFolderElement(folder) {
         const div = document.createElement('div');
         div.className = 'folder-item';
-        
-        const childCount = folder.children ? folder.children.length : 0;
-        
+
         div.innerHTML = `
             <svg class="folder-icon" viewBox="0 0 24 24" fill="currentColor">
-                ${this.getIconSvg(folder.icon)}
+                ${this.getIconSvg('folder')}
             </svg>
-            <span class="folder-name">${folder.name}</span>
-            ${childCount > 0 ? `<span class="folder-count">${childCount}</span>` : ''}
+            <div class="folder-details">
+                <span class="folder-name">${folder.name}</span>
+                <span class="folder-path">${folder.path}</span>
+            </div>
         `;
 
         div.addEventListener('click', () => this.openSidePanel());
-        
         return div;
     }
 
@@ -84,7 +81,7 @@ class PopupManager {
                 <svg viewBox="0 0 24 24" fill="currentColor">
                     <path d="M10 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2h-8l-2-2z"/>
                 </svg>
-                <p>No folders created yet.<br>Start organizing your information!</p>
+                <p>No folders available yet.<br>Connect to Zyph.com and manage your folders there.</p>
             </div>
         `;
     }
@@ -105,11 +102,11 @@ class PopupManager {
         try {
             const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
             const tab = tabs[0];
-            
+
             await chrome.sidePanel.open({ windowId: tab.windowId });
             window.close();
         } catch (error) {
-            console.error('Error opening side panel:', error);
+            console.error('[Popup] Error opening side panel:', error);
         }
     }
 
@@ -117,17 +114,69 @@ class PopupManager {
         try {
             const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
             const tab = tabs[0];
-            
+
             await chrome.sidePanel.open({ windowId: tab.windowId });
-            
-            chrome.runtime.sendMessage({
-                action: 'triggerQuickCreate'
-            });
-            
+
+            chrome.runtime.sendMessage({ action: 'triggerQuickCreate' });
             window.close();
         } catch (error) {
-            console.error('Error triggering quick create:', error);
+            console.error('[Popup] Error triggering quick create:', error);
         }
+    }
+
+    async fetchRemoteFolders() {
+        if (window?.Zyph?.Api) {
+            try {
+                const remote = await window.Zyph.Api.fetchFolders({ forceRefresh: false });
+                const flattened = this.flattenRemoteFolders(remote);
+                if (flattened.length) {
+                    return flattened;
+                }
+            } catch (error) {
+                console.warn('[Popup] Failed to fetch remote folders:', error);
+            }
+        }
+
+        try {
+            const cached = await chrome.storage.local.get('zyphRemoteFolders');
+            const flat = cached?.zyphRemoteFolders?.flat;
+            if (Array.isArray(flat) && flat.length) {
+                return flat.map(folder => ({
+                    id: folder.id,
+                    name: folder.name,
+                    path: folder.path,
+                    parentId: folder.parentId || null,
+                    icon: 'folder'
+                }));
+            }
+        } catch (error) {
+            console.warn('[Popup] Failed to read cached remote folders:', error);
+        }
+
+        return [];
+    }
+
+    flattenRemoteFolders(nodes, parentId = null, parentPath = '') {
+        if (!Array.isArray(nodes)) {
+            return [];
+        }
+
+        const list = [];
+        nodes.forEach(node => {
+            const path = node.path || (parentPath ? `${parentPath}/${node.name}` : node.name);
+            list.push({
+                id: node.id,
+                name: node.name,
+                path,
+                parentId,
+                icon: 'folder'
+            });
+
+            if (Array.isArray(node.children) && node.children.length > 0) {
+                list.push(...this.flattenRemoteFolders(node.children, node.id, path));
+            }
+        });
+        return list;
     }
 }
 

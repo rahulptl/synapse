@@ -14,7 +14,11 @@
       "Bash(grep:*)",
       "Bash(sed:*)",
       "Bash(python3:*)",
-      "Read(/var/folders/g2/fl1bn5ln7dxbsb0smclztrdr0000gn/T/TemporaryItems/NSIRD_screencaptureui_QexC2s/**)"
+      "Read(/var/folders/g2/fl1bn5ln7dxbsb0smclztrdr0000gn/T/TemporaryItems/NSIRD_screencaptureui_QexC2s/**)",
+      "Bash(echo:*)",
+      "mcp__ide__getDiagnostics",
+      "Bash(npx supabase functions deploy:*)",
+      "Bash(npx supabase link:*)"
     ],
     "deny": [],
     "ask": []

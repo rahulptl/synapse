@@ -1,0 +1,4 @@
+1. When I hit send message in chat in zyph.com, my message doesnt show till the answer from gpt comes back, it should show my message then wait for the gpt asnwer.
+2. make the left pane of chat sticky, both panes should be independently scrollabe. 
+4. On converstaion delete it is showing a chrome popup, instead show a well defined dialog box that this action cannot be undone. 
+5. in knowledge base everything is showing as "Ready to process" even though it is processed. can we have some suble icon say that says reprocess in case it got updated or failed to process? 

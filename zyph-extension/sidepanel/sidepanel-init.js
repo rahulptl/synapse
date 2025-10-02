@@ -23,7 +23,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Show error to user
         const errorHTML = `
             <div class="init-error" style="padding: 20px; text-align: center; color: #f44336;">
-                <h3>⚠️ Extension Error</h3>
+                <h3>Extension Error</h3>
                 <p>The Zyph Extension failed to load.</p>
                 <p><strong>Error:</strong> ${error.message}</p>
                 <p>Try reloading the extension in chrome://extensions/</p>
