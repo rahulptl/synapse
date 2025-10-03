@@ -394,3 +394,138 @@ async def validate_dual_auth(
 
 # Create security service instance
 security_service = SecurityService()
+
+
+# JWT token validation for Cloud SQL auth
+async def validate_jwt_token(
+    authorization: Optional[str] = Header(None)
+) -> dict:
+    """
+    Validate JWT token from Cloud SQL auth system.
+
+    Args:
+        authorization: Bearer token from Authorization header
+
+    Returns:
+        dict: User information from token payload
+
+    Raises:
+        HTTPException: If token is invalid or missing
+    """
+    from app.services.auth_service import auth_service
+
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid authorization header",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    token = authorization.split(" ")[1]
+    payload = await auth_service.verify_access_token(token)
+
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return {
+        "user_id": payload.get("sub"),
+        "email": payload.get("email"),
+        "valid": True,
+        "auth_method": "cloud_sql_jwt"
+    }
+
+
+# Updated dual auth that supports Cloud SQL JWT, Supabase JWT, and API keys
+async def validate_any_auth(
+    x_api_key: Optional[str] = Header(None, alias="x-api-key"),
+    x_user_id: Optional[str] = Header(None, alias="x-user-id"),
+    authorization: Optional[str] = Header(None)
+) -> dict:
+    """
+    FastAPI dependency that supports Cloud SQL JWT, Supabase JWT, and API key authentication.
+
+    Priority:
+    1. If x-api-key header is present, use API key authentication (for extension)
+    2. If Authorization header is present, try Cloud SQL JWT first, then Supabase JWT (for web app)
+    3. Otherwise, raise authentication error
+
+    Args:
+        x_api_key: API key from header (extension)
+        x_user_id: Optional user ID from header (extension)
+        authorization: Bearer token (web app)
+
+    Returns:
+        dict: Validated user information
+    """
+    # Try API key authentication first (for browser extension)
+    if x_api_key:
+        try:
+            return await SecurityService.validate_api_key(x_api_key, x_user_id)
+        except HTTPException:
+            raise
+
+    # Try JWT authentication (both Cloud SQL and Supabase)
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ")[1]
+
+        # Try Cloud SQL JWT first
+        try:
+            from app.services.auth_service import auth_service
+            payload = await auth_service.verify_access_token(token)
+            if payload:
+                return {
+                    "user_id": payload.get("sub"),
+                    "email": payload.get("email"),
+                    "valid": True,
+                    "auth_method": "cloud_sql_jwt"
+                }
+        except Exception:
+            pass
+
+        # Try Supabase JWT (for backward compatibility during migration)
+        try:
+            if settings.SUPABASE_JWT_SECRET:
+                payload = jwt.decode(
+                    token,
+                    settings.SUPABASE_JWT_SECRET,
+                    algorithms=["HS256"],
+                    audience="authenticated"
+                )
+
+                user_id = payload.get("sub")
+                email = payload.get("email")
+
+                if user_id:
+                    # Check if user exists in Cloud SQL auth
+                    from app.models.auth import User
+                    from sqlalchemy import select
+                    async with AsyncSessionLocal() as session:
+                        stmt = select(User).where(User.id == user_id)
+                        result = await session.execute(stmt)
+                        user = result.scalars().first()
+
+                        return {
+                            "user_id": user_id,
+                            "email": email,
+                            "valid": True,
+                            "auth_method": "supabase_jwt"
+                        }
+        except JWTError:
+            pass
+
+        # Invalid JWT
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # No valid authentication provided
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Authentication required. Provide either x-api-key header or Authorization bearer token."
+    )

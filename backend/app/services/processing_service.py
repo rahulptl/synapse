@@ -7,12 +7,40 @@ import re
 import unicodedata
 from typing import List, Optional, Dict, Any
 from uuid import UUID
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
-import magic
-from pypdf import PdfReader
-import docx
-from bs4 import BeautifulSoup
+
+_magic_import_error: Optional[Exception] = None
+try:
+    import magic  # type: ignore[import]
+except (ImportError, AttributeError, OSError) as exc:  # pragma: no cover - environment specific
+    magic = None
+    _magic_import_error = exc
+
+_pypdf_import_error: Optional[Exception] = None
+try:
+    from pypdf import PdfReader  # type: ignore[import]
+except ImportError as primary_exc:  # pragma: no cover - environment specific
+    try:
+        from PyPDF2 import PdfReader  # type: ignore[import]
+    except ImportError as fallback_exc:  # pragma: no cover - environment specific
+        PdfReader = None  # type: ignore[misc]
+        _pypdf_import_error = fallback_exc
+
+_docx_import_error: Optional[Exception] = None
+try:
+    import docx  # type: ignore[import]
+except ImportError as exc:  # pragma: no cover - environment specific
+    docx = None
+    _docx_import_error = exc
+
+_bs4_import_error: Optional[Exception] = None
+try:
+    from bs4 import BeautifulSoup
+except ImportError as exc:  # pragma: no cover - environment specific
+    BeautifulSoup = None
+    _bs4_import_error = exc
 
 from app.models.database import KnowledgeItem, Vector
 from app.models.schemas import ProcessingStatus, ContentType
@@ -20,6 +48,15 @@ from app.core.embeddings import embedding_service
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+if _magic_import_error:
+    logger.warning("python-magic unavailable; MIME sniffing disabled: %s", _magic_import_error)
+if _pypdf_import_error:
+    logger.warning("pypdf unavailable; PDF extraction disabled: %s", _pypdf_import_error)
+if _docx_import_error:
+    logger.warning("python-docx unavailable; DOC/DOCX extraction disabled: %s", _docx_import_error)
+if _bs4_import_error:
+    logger.warning("beautifulsoup4 unavailable; HTML extraction disabled: %s", _bs4_import_error)
 
 
 class ProcessingService:
@@ -193,6 +230,11 @@ class ProcessingService:
         try:
             from app.core.storage import storage_service
 
+            if PdfReader is None:
+                raise RuntimeError(
+                    "pypdf/PyPDF2 is required for PDF text extraction but is not installed."
+                )
+
             # Check if content is stored externally (handle both old and new formats)
             if item.content.startswith("[FILE_STORED:") or item.content.startswith("[FILE:"):
                 # Extract storage path from content
@@ -261,6 +303,11 @@ class ProcessingService:
         try:
             from app.core.storage import storage_service
 
+            if docx is None:
+                raise RuntimeError(
+                    "python-docx is required for DOC/DOCX extraction but is not installed."
+                )
+
             # Check if content is stored externally (handle both old and new formats)
             if item.content.startswith("[FILE_STORED:") or item.content.startswith("[FILE:"):
                 # Extract storage path from content
@@ -308,6 +355,11 @@ class ProcessingService:
             Plain text extracted from HTML
         """
         try:
+            if BeautifulSoup is None:
+                raise RuntimeError(
+                    "beautifulsoup4 is required for HTML extraction but is not installed."
+                )
+
             soup = BeautifulSoup(content, 'html.parser')
             # Remove script and style elements
             for script in soup(["script", "style"]):

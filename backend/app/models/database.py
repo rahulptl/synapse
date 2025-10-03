@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import uuid4
 from sqlalchemy import (
-    String, Text, DateTime, Boolean, Integer,
+    String, Text, DateTime, Boolean, Integer, Float,
     ForeignKey, JSON, LargeBinary, Index
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -173,13 +173,74 @@ class Message(Base):
     message_metadata: Mapped[Optional[dict]] = mapped_column("metadata", JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
+    # Reference to processing job (optional)
+    job_id: Mapped[Optional[UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("processing_jobs.id"))
+
     # Relationships
     conversation = relationship("Conversation", back_populates="messages")
     user = relationship("Profile", foreign_keys=[user_id])
+    job = relationship("ProcessingJob", foreign_keys=[job_id], back_populates="message", uselist=False)
 
     # Indexes
     __table_args__ = (
         Index("idx_messages_conversation_id", "conversation_id"),
         Index("idx_messages_user_id", "user_id"),
         Index("idx_messages_created_at", "created_at"),
+    )
+
+
+class ProcessingJob(Base):
+    """Background processing jobs for long-running queries."""
+    __tablename__ = "processing_jobs"
+
+    # Primary fields
+    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("profiles.user_id"), nullable=False)
+    conversation_id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("conversations.id"), nullable=False)
+
+    # Job details
+    job_type: Mapped[str] = mapped_column(Text, nullable=False)  # "aggregation", "full_folder_summary", "filtered_aggregation"
+    status: Mapped[str] = mapped_column(Text, default="queued")  # queued, processing, completed, failed, cancelled
+    user_query: Mapped[str] = mapped_column(Text, nullable=False)
+    intent_data: Mapped[dict] = mapped_column(JSON)  # Parsed intent from classification
+
+    # Progress tracking
+    progress: Mapped[float] = mapped_column(Float, default=0.0)  # 0.0 to 1.0
+    total_items: Mapped[int] = mapped_column(Integer, default=0)
+    total_batches: Mapped[int] = mapped_column(Integer, default=0)
+    processed_items: Mapped[int] = mapped_column(Integer, default=0)
+    processed_batches: Mapped[int] = mapped_column(Integer, default=0)
+    failed_batches: Mapped[int] = mapped_column(Integer, default=0)
+    current_phase: Mapped[str] = mapped_column(Text, default="queued")  # queued, map, reduce, synthesis, complete
+
+    # Results
+    result: Mapped[Optional[dict]] = mapped_column(JSON)  # Final answer with sources
+    aggregation_details: Mapped[Optional[dict]] = mapped_column(JSON)  # Detailed breakdown
+    intermediate_results: Mapped[Optional[dict]] = mapped_column(JSON)  # Map phase results (for debugging/resume)
+    error_message: Mapped[Optional[str]] = mapped_column(Text)
+    error_details: Mapped[Optional[dict]] = mapped_column(JSON)  # Stack trace, failed batch info
+
+    # Timing
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    estimated_completion_seconds: Mapped[Optional[int]] = mapped_column(Integer)
+    actual_duration_seconds: Mapped[Optional[float]] = mapped_column(Float)
+
+    # Metadata
+    processing_metadata: Mapped[Optional[dict]] = mapped_column(JSON)  # Model used, chunk size, etc.
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    user = relationship("Profile", foreign_keys=[user_id])
+    conversation = relationship("Conversation", foreign_keys=[conversation_id])
+    message = relationship("Message", back_populates="job", uselist=False)
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_processing_jobs_user_status", "user_id", "status"),
+        Index("idx_processing_jobs_conversation", "conversation_id"),
+        Index("idx_processing_jobs_status", "status"),
+        Index("idx_processing_jobs_created_at", "created_at"),
     )

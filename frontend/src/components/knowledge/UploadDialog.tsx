@@ -34,15 +34,15 @@ export function UploadDialog({ folderId, onUploadComplete }: UploadDialogProps) 
   const [uploadProgress, setUploadProgress] = useState<FileUploadProgress[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
-  const { user, session } = useAuth();
+  const { user, accessToken } = useAuth();
 
   const getAuthData = () => {
-    if (!user || !session?.access_token) {
+    if (!user || !accessToken) {
       throw new Error('User not authenticated');
     }
     return {
       userId: user.id,
-      accessToken: session.access_token,
+      accessToken,
     };
   };
 

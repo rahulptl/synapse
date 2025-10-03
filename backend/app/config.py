@@ -41,6 +41,14 @@ class Settings(BaseSettings):
     AWS_S3_REGION: Optional[str] = None
     AWS_S3_ENDPOINT_URL: Optional[str] = None
 
+    # GCS (Google Cloud Storage)
+    GCS_BUCKET_NAME: Optional[str] = None
+    GCS_PROJECT_ID: Optional[str] = None
+    GOOGLE_APPLICATION_CREDENTIALS: Optional[str] = None  # Path to service account JSON (local dev only)
+
+    # Cloud SQL
+    CLOUD_SQL_CONNECTION_NAME: Optional[str] = None  # Format: PROJECT_ID:REGION:INSTANCE_NAME
+
     # Processing
     MAX_CONTENT_SIZE_MB: int = 50
     CHUNK_SIZE: int = 500

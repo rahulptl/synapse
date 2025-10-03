@@ -6,6 +6,8 @@ from typing import Optional
 from abc import ABC, abstractmethod
 import boto3
 from supabase import create_client, Client
+from google.cloud import storage
+from google.oauth2 import service_account
 import os
 import tempfile
 
@@ -181,6 +183,81 @@ class S3StorageBackend(StorageBackend):
             return False
 
 
+class GCSStorageBackend(StorageBackend):
+    """Google Cloud Storage backend."""
+
+    def __init__(self):
+        if not settings.GCS_BUCKET_NAME:
+            raise ValueError("GCS_BUCKET_NAME must be configured")
+
+        # Initialize GCS client
+        if settings.GOOGLE_APPLICATION_CREDENTIALS:
+            # Local development with service account key file
+            credentials = service_account.Credentials.from_service_account_file(
+                settings.GOOGLE_APPLICATION_CREDENTIALS
+            )
+            self.client = storage.Client(
+                credentials=credentials,
+                project=settings.GCS_PROJECT_ID
+            )
+        else:
+            # Cloud Run uses Application Default Credentials (no key file needed)
+            self.client = storage.Client(project=settings.GCS_PROJECT_ID)
+
+        # Extract bucket name and folder prefix if present
+        # Format: "bucket_name/folder" or just "bucket_name"
+        bucket_parts = settings.GCS_BUCKET_NAME.split('/', 1)
+        bucket_name = bucket_parts[0]
+        self.folder_prefix = bucket_parts[1] + '/' if len(bucket_parts) > 1 else ''
+
+        # Get environment-based folder if no explicit folder in bucket name
+        if not self.folder_prefix:
+            env = settings.ENVIRONMENT.lower()
+            if env in ['local', 'development', 'production']:
+                env_folder = 'dev' if env == 'development' else env
+                self.folder_prefix = f'{env_folder}/'
+
+        self.bucket = self.client.bucket(bucket_name)
+
+    def _get_full_path(self, path: str) -> str:
+        """Get full path including folder prefix."""
+        return f"{self.folder_prefix}{path}" if self.folder_prefix else path
+
+    async def upload_content(self, path: str, content: bytes, content_type: str) -> str:
+        """Upload content to GCS."""
+        try:
+            full_path = self._get_full_path(path)
+            blob = self.bucket.blob(full_path)
+            blob.upload_from_string(content, content_type=content_type)
+
+            # Return public URL
+            return blob.public_url
+        except Exception as e:
+            logger.error(f"GCS upload failed: {e}")
+            raise
+
+    async def download_content(self, path: str) -> bytes:
+        """Download content from GCS."""
+        try:
+            full_path = self._get_full_path(path)
+            blob = self.bucket.blob(full_path)
+            return blob.download_as_bytes()
+        except Exception as e:
+            logger.error(f"GCS download failed: {e}")
+            raise
+
+    async def delete_content(self, path: str) -> bool:
+        """Delete content from GCS."""
+        try:
+            full_path = self._get_full_path(path)
+            blob = self.bucket.blob(full_path)
+            blob.delete()
+            return True
+        except Exception as e:
+            logger.error(f"GCS delete failed: {e}")
+            return False
+
+
 class StorageService:
     """Main storage service that delegates to the configured backend."""
 
@@ -191,7 +268,9 @@ class StorageService:
         """Create the appropriate storage backend based on configuration."""
         backend_type = settings.STORAGE_BACKEND.lower()
 
-        if backend_type == "supabase":
+        if backend_type == "gcs":
+            return GCSStorageBackend()
+        elif backend_type == "supabase":
             return SupabaseStorageBackend()
         elif backend_type == "s3":
             return S3StorageBackend()

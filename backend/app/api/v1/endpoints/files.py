@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, B
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import validate_dual_auth
+from app.core.security import validate_any_auth
 from app.services.file_service import file_service
 from app.models.schemas import ProcessContentRequest
 import logging
@@ -72,7 +72,7 @@ async def upload_file(
     title: str = Form(...),
     description: str = Form(None),
     db: AsyncSession = Depends(get_db),
-    auth_data: dict = Depends(validate_dual_auth)
+    auth_data: dict = Depends(validate_any_auth)
 ):
     """
     Upload a file and create a knowledge item.
@@ -114,7 +114,7 @@ async def upload_file(
 async def process_content(
     process_request: ProcessContentRequest,
     db: AsyncSession = Depends(get_db),
-    auth_data: dict = Depends(validate_dual_auth)
+    auth_data: dict = Depends(validate_any_auth)
 ):
     """
     Process content for embeddings generation.
@@ -149,7 +149,7 @@ async def process_content(
 async def download_file(
     item_id: UUID,
     db: AsyncSession = Depends(get_db),
-    auth_data: dict = Depends(validate_dual_auth)
+    auth_data: dict = Depends(validate_any_auth)
 ):
     """
     Download a file from storage.
@@ -173,7 +173,7 @@ async def download_file(
 async def get_processing_status(
     item_id: UUID,
     db: AsyncSession = Depends(get_db),
-    auth_data: dict = Depends(validate_dual_auth)
+    auth_data: dict = Depends(validate_any_auth)
 ):
     """
     Get processing status for a knowledge item.

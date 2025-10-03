@@ -6,7 +6,7 @@ from typing import Optional, List
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import validate_api_key_dependency, validate_supabase_token, validate_dual_auth
+from app.core.security import validate_api_key_dependency, validate_supabase_token, validate_any_auth
 from app.core.database import get_db
 from app.services.api_key_service import api_key_service
 from app.models.schemas import ApiKeyValidation, ApiKeyCreate, ApiKeyResponse

@@ -100,7 +100,9 @@ export function AuthPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                minLength={6}
+                minLength={8}
+                maxLength={100}
+                title="Password must be at least 8 characters and include uppercase, lowercase, and numeric characters"
               />
             </div>
             

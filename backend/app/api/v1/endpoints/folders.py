@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import validate_dual_auth
+from app.core.security import validate_any_auth
 from app.services.folder_service import folder_service
 from app.services.content_service import content_service
 from app.models.schemas import (
@@ -20,7 +20,7 @@ router = APIRouter()
 @router.get("")
 async def get_folders(
     db: AsyncSession = Depends(get_db),
-    auth_data: dict = Depends(validate_dual_auth)
+    auth_data: dict = Depends(validate_any_auth)
 ):
     """
     Get all folders for the authenticated user in hierarchical structure.
@@ -42,7 +42,7 @@ async def get_folders(
 async def create_folder(
     folder_data: FolderCreate,
     db: AsyncSession = Depends(get_db),
-    auth_data: dict = Depends(validate_dual_auth)
+    auth_data: dict = Depends(validate_any_auth)
 ):
     """
     Create a new folder.
@@ -79,7 +79,7 @@ async def create_folder(
 async def get_folder(
     folder_id: UUID = Path(...),
     db: AsyncSession = Depends(get_db),
-    auth_data: dict = Depends(validate_dual_auth)
+    auth_data: dict = Depends(validate_any_auth)
 ):
     """
     Get a specific folder by ID.
@@ -114,7 +114,7 @@ async def update_folder(
     update_data: FolderUpdate,
     folder_id: UUID = Path(...),
     db: AsyncSession = Depends(get_db),
-    auth_data: dict = Depends(validate_dual_auth)
+    auth_data: dict = Depends(validate_any_auth)
 ):
     """
     Update a folder.
@@ -154,7 +154,7 @@ async def update_folder(
 async def delete_folder(
     folder_id: UUID = Path(...),
     db: AsyncSession = Depends(get_db),
-    auth_data: dict = Depends(validate_dual_auth)
+    auth_data: dict = Depends(validate_any_auth)
 ):
     """
     Delete a folder.
@@ -188,7 +188,7 @@ async def delete_folder(
 async def get_folder_content(
     folder_id: UUID = Path(...),
     db: AsyncSession = Depends(get_db),
-    auth_data: dict = Depends(validate_dual_auth)
+    auth_data: dict = Depends(validate_any_auth)
 ) -> Dict[str, Any]:
     """
     Get content for a specific folder.

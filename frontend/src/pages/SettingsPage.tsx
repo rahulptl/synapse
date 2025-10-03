@@ -8,7 +8,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Copy, Eye, EyeOff, Key, Plus, Trash2, User } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
 import { apiClient } from '@/services/apiClient';
 import { useToast } from '@/hooks/use-toast';
 
@@ -30,9 +29,9 @@ interface Profile {
 }
 
 export default function SettingsPage() {
-  const { user, loading, session } = useAuth();
+  const { user, loading, accessToken } = useAuth();
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const [fullName, setFullName] = useState('');
   const [isCreatingKey, setIsCreatingKey] = useState(false);
   const [newKeyName, setNewKeyName] = useState('');
   const [newKeyExpiry, setNewKeyExpiry] = useState('');
@@ -42,19 +41,19 @@ export default function SettingsPage() {
 
   // Helper to get auth data for API calls
   const getAuthData = () => {
-    if (!user || !session?.access_token) {
+    if (!user || !accessToken) {
       throw new Error('User not authenticated');
     }
     return {
       userId: user.id,
-      accessToken: session.access_token,
+      accessToken: accessToken,
     };
   };
 
   useEffect(() => {
     if (user) {
       loadApiKeys();
-      loadProfile();
+      setFullName(user.full_name || '');
     }
   }, [user]);
 
@@ -68,27 +67,6 @@ export default function SettingsPage() {
       toast({
         title: "Error",
         description: "Failed to load API keys",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const loadProfile = async () => {
-    if (!user) return;
-    
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('user_id', user.id)
-        .single();
-
-      if (error && error.code !== 'PGRST116') throw error;
-      setProfile(data);
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to load profile",
         variant: "destructive",
       });
     }
@@ -156,32 +134,15 @@ export default function SettingsPage() {
     });
   };
 
-  const updateProfile = async (updatedProfile: Partial<Profile>) => {
-    if (!user) return;
-
-    try {
-      const { error } = await supabase
-        .from('profiles')
-        .upsert({
-          user_id: user.id,
-          email: user.email || '',
-          ...updatedProfile,
-        });
-
-      if (error) throw error;
-      await loadProfile();
-
-      toast({
-        title: "Success",
-        description: "Profile updated successfully",
-      });
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to update profile",
-        variant: "destructive",
-      });
-    }
+  // Note: Profile updates would need a backend endpoint
+  // For now, we just update local state
+  const updateProfile = (newFullName: string) => {
+    setFullName(newFullName);
+    // TODO: Call backend API to update profile
+    toast({
+      title: "Info",
+      description: "Profile update not yet implemented",
+    });
   };
 
   if (loading) {
@@ -229,9 +190,9 @@ export default function SettingsPage() {
                 <Label htmlFor="fullName">Full Name</Label>
                 <Input
                   id="fullName"
-                  value={profile?.full_name || ''}
-                  onChange={(e) => setProfile(prev => prev ? { ...prev, full_name: e.target.value } : null)}
-                  onBlur={(e) => updateProfile({ full_name: e.target.value })}
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  onBlur={(e) => updateProfile(e.target.value)}
                 />
               </div>
             </CardContent>

@@ -29,7 +29,7 @@ interface KnowledgeItem {
 }
 
 export default function KnowledgePage() {
-  const { user, loading, session } = useAuth();
+  const { user, accessToken, loading } = useAuth();
   const [folders, setFolders] = useState<Folder[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [folderItems, setFolderItems] = useState<KnowledgeItem[]>([]);
@@ -38,20 +38,20 @@ export default function KnowledgePage() {
   const { toast } = useToast();
 
   const getAuthData = () => {
-    if (!user || !session?.access_token) {
+    if (!user || !accessToken) {
       throw new Error('User not authenticated');
     }
     return {
       userId: user.id,
-      accessToken: session.access_token,
+      accessToken,
     };
   };
 
   useEffect(() => {
-    if (user) {
+    if (user && accessToken) {
       loadFolders();
     }
-  }, [user]);
+  }, [user, accessToken]);
 
   useEffect(() => {
     if (selectedFolder) {

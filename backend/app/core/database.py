@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.pool import NullPool
 import logging
+import re
 
 from app.config import settings
 
@@ -24,10 +25,36 @@ class Base(DeclarativeBase):
     pass
 
 
+def get_database_url() -> str:
+    """Get database URL with Cloud SQL socket path if configured."""
+    base_url = str(settings.DATABASE_URL)
+
+    # If running on Cloud Run with Cloud SQL connection
+    if settings.CLOUD_SQL_CONNECTION_NAME:
+        # Replace host:port pattern with Cloud SQL Unix socket path
+        # Pattern: postgresql+asyncpg://user:pass@host:port/dbname
+        # Becomes: postgresql+asyncpg://user:pass@/dbname?host=/cloudsql/PROJECT:REGION:INSTANCE
+
+        # Remove host and port, add Cloud SQL socket path
+        base_url = re.sub(
+            r'@[^/]+/',
+            f'@/',
+            base_url
+        )
+
+        # Add host parameter for Cloud SQL socket
+        if '?' in base_url:
+            base_url += f'&host=/cloudsql/{settings.CLOUD_SQL_CONNECTION_NAME}'
+        else:
+            base_url += f'?host=/cloudsql/{settings.CLOUD_SQL_CONNECTION_NAME}'
+
+    return base_url
+
+
 # Create async engine with pgbouncer compatibility
 # Use NullPool to disable connection pooling since pgbouncer handles pooling
 engine = create_async_engine(
-    str(settings.DATABASE_URL),
+    get_database_url(),
     poolclass=NullPool,  # Disable SQLAlchemy pooling, let pgbouncer handle it
     echo=False,  # Disable detailed SQL logging
     future=True,

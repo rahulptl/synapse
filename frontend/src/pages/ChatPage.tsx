@@ -10,7 +10,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Send, MessageSquare, Plus, Folder, Bot, Search, Brain, Sparkles, ExternalLink, AlertTriangle, Trash2, Menu } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { apiClient } from '@/services/apiClient';
 
@@ -49,7 +48,7 @@ interface HashtagInfo {
 }
 
 export default function ChatPage() {
-  const { user, loading } = useAuth();
+  const { user, loading, accessToken } = useAuth();
 
   // Add custom CSS animations
   useEffect(() => {
@@ -205,13 +204,12 @@ export default function ChatPage() {
   };
 
   const loadConversations = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) return;
+    if (!user || !accessToken) return;
 
+    try {
       const response = await apiClient.getConversations({
-        userId: user?.id || '',
-        accessToken: session.access_token
+        userId: user.id,
+        accessToken: accessToken
       });
 
       setConversations(response.data || response || []);
@@ -225,20 +223,16 @@ export default function ChatPage() {
   };
 
   const loadUserFolders = async () => {
-    if (!user) return;
+    if (!user || !accessToken) return;
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) return;
-
       const response = await apiClient.getFolders({
         userId: user.id,
-        accessToken: session.access_token
+        accessToken: accessToken
       });
 
-      const folders = response.data || response || [];
-      // Ensure folders is an array
-      const folderArray = Array.isArray(folders) ? folders : [];
+      const foldersData = (response as any).folders ?? (response as any).data ?? response ?? [];
+      const folderArray = Array.isArray(foldersData) ? foldersData : [];
       setUserFolders(folderArray.map((folder: any) => ({
         id: folder.id,
         name: folder.name
@@ -249,15 +243,14 @@ export default function ChatPage() {
   };
 
   const loadMessages = async (conversationId: string) => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) return;
+    if (!user || !accessToken) return;
 
+    try {
       const response = await apiClient.getConversationMessages(
         conversationId,
         {
-          userId: user?.id || '',
-          accessToken: session.access_token
+          userId: user.id,
+          accessToken: accessToken
         }
       );
 
@@ -276,17 +269,14 @@ export default function ChatPage() {
   };
 
   const createNewConversation = async () => {
-    if (!user) return;
+    if (!user || !accessToken) return;
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) return;
-
       const response = await apiClient.createConversation(
         { title: 'New Conversation' },
         {
           userId: user.id,
-          accessToken: session.access_token
+          accessToken: accessToken
         }
       );
 
@@ -308,15 +298,12 @@ export default function ChatPage() {
   };
 
   const confirmDeleteConversation = async () => {
-    if (!conversationToDelete || !user) return;
+    if (!conversationToDelete || !user || !accessToken) return;
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) return;
-
       await apiClient.deleteConversation(conversationToDelete, {
         userId: user.id,
-        accessToken: session.access_token
+        accessToken: accessToken
       });
 
       // Remove from conversations list
@@ -344,7 +331,7 @@ export default function ChatPage() {
   };
 
   const sendMessage = async () => {
-    if (!inputMessage.trim() || !user) return;
+    if (!inputMessage.trim() || !user || !accessToken) return;
 
     const userMessage = inputMessage.trim();
     setInputMessage('');
@@ -362,12 +349,6 @@ export default function ChatPage() {
     setMessages(prev => [...prev, tempUserMessage]);
 
     try {
-      // Get user session for authentication
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) {
-        throw new Error("Authentication required");
-      }
-
       // Use the backend RAG chat endpoint
       const response = await apiClient.chatWithRag(
         {
@@ -377,7 +358,7 @@ export default function ChatPage() {
         },
         {
           userId: user.id,
-          accessToken: session.access_token
+          accessToken: accessToken
         }
       );
 
@@ -524,8 +505,7 @@ export default function ChatPage() {
 
       // Try to fetch the actual content from knowledge base via backend API
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session?.access_token) {
+        if (!user || !accessToken) {
           setSelectedSource((prev: any) => prev ? {
             ...prev,
             content: "Authentication required to load source content."
@@ -533,7 +513,6 @@ export default function ChatPage() {
           return;
         }
 
-        // Search for content by title - you might need to adjust this based on your backend search API
         const response = await apiClient.searchContent(
           {
             query: source.title,
@@ -541,8 +520,8 @@ export default function ChatPage() {
             limit: 1
           },
           {
-            userId: user?.id || '',
-            accessToken: session.access_token
+            userId: user.id,
+            accessToken
           }
         );
 

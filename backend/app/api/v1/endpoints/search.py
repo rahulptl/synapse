@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import validate_dual_auth
+from app.core.security import validate_any_auth
 from app.services.search_service import search_service
 from app.models.schemas import (
     SearchQuery, ContentType
@@ -20,7 +20,7 @@ router = APIRouter()
 async def vector_search(
     search_query: SearchQuery,
     db: AsyncSession = Depends(get_db),
-    auth_data: dict = Depends(validate_dual_auth)
+    auth_data: dict = Depends(validate_any_auth)
 ):
     """
     Perform semantic vector search.
@@ -58,7 +58,7 @@ async def vector_search(
 async def text_search(
     search_query: SearchQuery,
     db: AsyncSession = Depends(get_db),
-    auth_data: dict = Depends(validate_dual_auth)
+    auth_data: dict = Depends(validate_any_auth)
 ):
     """
     Perform text-based search.
@@ -92,7 +92,7 @@ async def search(
     limit: int = 5,
     similarity_threshold: float = 0.7,
     db: AsyncSession = Depends(get_db),
-    auth_data: dict = Depends(validate_dual_auth)
+    auth_data: dict = Depends(validate_any_auth)
 ):
     """
     Unified search endpoint with query parameters.

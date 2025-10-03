@@ -235,6 +235,9 @@ class ChatRequest(BaseSchema):
 class ChatResponse(BaseSchema):
     response: str
     conversation_id: UUID
+    job_id: Optional[str] = None
+    job_status: Optional[str] = None
+    estimated_completion_seconds: Optional[int] = None
     sources: List[Dict[str, Any]]
     context_count: int
     hashtag_info: Dict[str, Any]
@@ -349,6 +352,23 @@ class ApiKeyResponse(BaseSchema):
     last_used_at: Optional[datetime] = None
     is_active: bool
     created_at: datetime
+
+
+# Processing Job schemas
+class ProcessingJobStatus(BaseSchema):
+    """Processing job status schema."""
+    job_id: UUID
+    status: str  # queued, processing, completed, failed, cancelled
+    progress: float  # 0.0 to 1.0
+    current_phase: str
+    processed_items: int
+    total_items: int
+    estimated_completion_seconds: Optional[int]
+    result: Optional[Dict[str, Any]]
+    aggregation_details: Optional[Dict[str, Any]]
+    error_message: Optional[str]
+    started_at: datetime
+    completed_at: Optional[datetime]
 
 
 # Update forward references

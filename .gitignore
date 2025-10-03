@@ -1,2 +1,32 @@
 backend/env/
 frontend/node_modules/
+
+# Environment files
+.env
+.env.local
+.env.dev
+.env.prod
+*.env
+
+# GCP Service Account Keys
+backend/keys/
+*.json
+!package*.json
+!tsconfig*.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

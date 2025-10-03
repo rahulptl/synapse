@@ -1,0 +1,44 @@
+env/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.env
+.env.*
+!.env.example
+*.db
+*.sqlite3
+.pytest_cache/
+.coverage
+htmlcov/
+.DS_Store
+.vscode/
+.idea/
+*.log
+.mypy_cache/
+alembic/versions/*.pyc
+
+# Local development files
+keys/
+*.key
+*.pem
+*.json
+!requirements.txt
+
+# Documentation
+*.md
+!README.md
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Testing
+tests/
+*.test.py
+
+# CI/CD
+.github/

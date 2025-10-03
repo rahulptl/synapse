@@ -18,9 +18,23 @@
       "Bash(echo:*)",
       "mcp__ide__getDiagnostics",
       "Bash(npx supabase functions deploy:*)",
-      "Bash(npx supabase link:*)"
+      "Bash(npx supabase link:*)",
+      "Bash(git push:*)",
+      "Bash(git reset:*)",
+      "Bash(git commit:*)",
+      "Bash(uvicorn:*)",
+      "Bash(python3.12:*)",
+      "Bash(source:*)",
+      "Bash(pip install:*)",
+      "Bash(python:*)",
+      "Bash(chmod:*)",
+      "Bash(docker compose:*)",
+      "Bash(docker logs:*)",
+      "Bash(docker restart:*)",
+      "Bash(curl:*)"
     ],
     "deny": [],
     "ask": []
-  }
+  },
+  "outputStyle": "Explanatory"
 }

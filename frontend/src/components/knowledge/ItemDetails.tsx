@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { Clock, ExternalLink, FileText, User, Trash2, Download } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { supabase } from '@/integrations/supabase/client';
 
 interface KnowledgeItem {
   id: string;
@@ -21,58 +20,8 @@ interface ItemDetailsProps {
 }
 
 export function ItemDetails({ item, onDeleteItem }: ItemDetailsProps) {
-  const [fileUrl, setFileUrl] = useState<string | null>(null);
-  const [fileText, setFileText] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [urlError, setUrlError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    // Cleanup any previous blob URLs
-    if (fileUrl) URL.revokeObjectURL(fileUrl);
-    setFileUrl(null);
-    setFileText(null);
-    setUrlError(null);
-
-    if (item?.metadata?.storage_path) {
-      setLoading(true);
-      supabase.storage
-        .from('zyph-storage')
-        .download(item.metadata.storage_path)
-        .then(async ({ data, error }) => {
-          if (!active) return;
-          if (error) {
-            console.error('Download error:', error);
-            setUrlError(error.message || 'Failed to download file');
-            return;
-          }
-          if (!data) {
-            setUrlError('No file data returned');
-            return;
-          }
-          const mime = item.metadata?.mime_type || '';
-          if (mime.startsWith('text/')) {
-            try {
-              const text = await data.text();
-              if (active) setFileText(text);
-            } catch (e: any) {
-              setUrlError(e?.message || 'Failed to read text file');
-            }
-          } else {
-            const url = URL.createObjectURL(data);
-            setFileUrl(url);
-          }
-        })
-        .finally(() => {
-          if (active) setLoading(false);
-        });
-    }
-
-    return () => {
-      active = false;
-      if (fileUrl) URL.revokeObjectURL(fileUrl);
-    };
-  }, [item?.metadata?.storage_path]);
+  // File preview removed - would need backend API endpoint for file downloads
+  // For now, just display metadata
 
   if (!item) {
     return (
@@ -167,76 +116,29 @@ export function ItemDetails({ item, onDeleteItem }: ItemDetailsProps) {
             <FileText className="h-4 w-4 mr-2 text-blue-400" />
             Content
           </h4>
-          {item.content?.startsWith('[FILE:') && item.metadata?.storage_path ? (
-            <div className="bg-white/5 backdrop-blur-sm border border-white/5 rounded-lg p-4">
-              {!fileUrl && !fileText ? (
-                <div className="text-sm text-gray-400">
-                  {loading ? 'Loading file…' : urlError ? `Error: ${urlError}` : 'Unable to load file'}
-                </div>
-              ) : item.metadata.mime_type?.startsWith('image/') && fileUrl ? (
-                <img
-                  src={fileUrl}
-                  alt={item.title}
-                  className="max-w-full h-auto rounded-lg shadow-md"
-                />
-              ) : item.metadata.mime_type === 'application/pdf' && fileUrl ? (
-                <div className="space-y-3">
-                  <iframe
-                    src={fileUrl}
-                    className="w-full h-96 border border-white/10 rounded-lg bg-white"
-                    title={item.title}
-                  />
-                  <a
-                    href={fileUrl}
-                    download={item.metadata.original_filename}
-                    className="inline-flex items-center gap-2 text-blue-400 hover:text-blue-300 transition-colors text-sm"
-                  >
-                    <Download className="h-4 w-4" />
-                    Download PDF
-                  </a>
-                </div>
-              ) : (item.content_type === 'text' || item.metadata.mime_type?.startsWith('text/')) && (fileText || fileUrl) ? (
-                <div className="space-y-3">
-                  {fileText ? (
-                    <pre className="whitespace-pre-wrap break-words text-sm leading-relaxed text-gray-200 max-h-96 overflow-y-auto">{fileText}</pre>
-                  ) : null}
-                  {fileUrl ? (
-                    <a
-                      href={fileUrl}
-                      download={item.metadata.original_filename}
-                      className="inline-flex items-center gap-2 text-blue-400 hover:text-blue-300 transition-colors text-sm"
-                    >
-                      <Download className="h-4 w-4" />
-                      Download {item.metadata.original_filename || 'File'}
-                    </a>
-                  ) : null}
-                </div>
-              ) : fileUrl ? (
-                <a
-                  href={fileUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 text-blue-400 hover:text-blue-300 transition-colors"
-                >
-                  <Download className="h-4 w-4" />
-                  Download {item.metadata.original_filename || 'File'}
-                </a>
-              ) : null}
-            </div>
-          ) : (
-            <div className="bg-white/5 backdrop-blur-sm border border-white/5 rounded-lg p-4">
-              {item.content_type === 'document' && item.metadata?.fileStored === 'none' ? (
-                <p className="text-sm text-gray-400 leading-relaxed">
-                  This item references a file that wasn't uploaded to storage, so it can't be previewed here.
-                  Please use the Upload panel to upload the file to this folder to enable inline viewing.
+          <div className="bg-white/5 backdrop-blur-sm border border-white/5 rounded-lg p-4">
+            {item.content?.startsWith('[FILE:') && item.metadata?.storage_path ? (
+              <div className="space-y-2">
+                <p className="text-sm text-gray-400">
+                  File preview not available in this version.
                 </p>
-              ) : (
-                <pre className="whitespace-pre-wrap break-words text-sm leading-relaxed text-gray-200 max-h-96 overflow-y-auto">
-                  {item.content || 'No content available'}
-                </pre>
-              )}
-            </div>
-          )}
+                {item.metadata?.original_filename && (
+                  <p className="text-xs text-gray-500">
+                    Filename: {item.metadata.original_filename}
+                  </p>
+                )}
+              </div>
+            ) : item.content_type === 'document' && item.metadata?.fileStored === 'none' ? (
+              <p className="text-sm text-gray-400 leading-relaxed">
+                This item references a file that wasn't uploaded to storage, so it can't be previewed here.
+                Please use the Upload panel to upload the file to this folder to enable inline viewing.
+              </p>
+            ) : (
+              <pre className="whitespace-pre-wrap break-words text-sm leading-relaxed text-gray-200 max-h-96 overflow-y-auto">
+                {item.content || 'No content available'}
+              </pre>
+            )}
+          </div>
         </div>
 
         {item.metadata && Object.keys(item.metadata).length > 0 && (

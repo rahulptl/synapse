@@ -1,0 +1,78 @@
+version: '3.8'
+
+services:
+  cloud-sql-proxy:
+    image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.8.0
+    container_name: synapse-cloud-sql-proxy
+    command:
+      - "synapse-473918:asia-south1:synapse"
+      - "--address=0.0.0.0"
+      - "--port=5432"
+    volumes:
+      - ./backend/keys:/keys:ro
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /keys/synapse-storage-service.json
+    ports:
+      - "5432:5432"
+    networks:
+      - synapse-network
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: synapse-backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./backend/.env.local
+    volumes:
+      # Mount service account key
+      - ./backend/keys:/app/keys:ro
+      # Mount code for hot reload (optional, comment out for production-like testing)
+      - ./backend/app:/app/app
+    environment:
+      # Override for Docker
+      ENVIRONMENT: local
+      # Service account path inside container
+      GOOGLE_APPLICATION_CREDENTIALS: /app/keys/synapse-storage-service.json
+      # Override DATABASE_URL to use cloud-sql-proxy service
+      DATABASE_URL: postgresql+asyncpg://local_user:Dell%406.75%402019@cloud-sql-proxy:5432/local
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - synapse-network
+    depends_on:
+      - cloud-sql-proxy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Frontend accessed via localhost:3000, API proxied through nginx to backend
+        VITE_BACKEND_API_URL: http://localhost:3000/api
+    container_name: synapse-frontend
+    ports:
+      - "3000:80"
+    networks:
+      - synapse-network
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  synapse-network:
+    driver: bridge

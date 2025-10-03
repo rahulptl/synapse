@@ -1,8 +1,10 @@
 # Core FastAPI dependencies
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
-pydantic==2.5.0
+pydantic>=2.5.0
+pydantic-core>=2.14.5
 pydantic-settings==2.1.0
+email-validator==2.1.0
 
 # Database
 sqlalchemy==2.0.23
@@ -12,22 +14,24 @@ asyncpg==0.29.0
 # Authentication & Security
 python-multipart==0.0.6
 python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
 cryptography==41.0.7
 
 # HTTP client
-httpx==0.25.2
+httpx==0.24.1
 
 # Storage backends
 boto3==1.34.0  # AWS S3
 google-cloud-storage==2.10.0  # Google Cloud Storage
+supabase==2.3.0  # Supabase client
 
 # Background tasks
 celery==5.3.4
 redis==5.0.1
 
 # Text processing
-pypdf2==3.0.1
+PyPDF2==3.0.1
+python-docx==0.8.11
+beautifulsoup4==4.12.2
 python-magic==0.4.27
 
 # Vector database

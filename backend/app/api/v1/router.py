@@ -5,6 +5,7 @@ from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
     auth,
+    cloud_auth,
     content,
     folders,
     search,
@@ -16,6 +17,7 @@ api_router = APIRouter()
 
 # Include all endpoint routers
 api_router.include_router(auth.router, prefix="/auth", tags=["authentication"])
+api_router.include_router(cloud_auth.router, prefix="/cloud-auth", tags=["cloud-sql-auth"])
 api_router.include_router(content.router, prefix="/content", tags=["content"])
 api_router.include_router(folders.router, prefix="/folders", tags=["folders"])
 api_router.include_router(search.router, prefix="/search", tags=["search"])

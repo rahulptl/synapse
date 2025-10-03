@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Header, Path, BackgroundT
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import validate_dual_auth
+from app.core.security import validate_any_auth
 from app.services.content_service import content_service
 from app.models.schemas import (
     KnowledgeItemCreate, KnowledgeItemUpdate, ContentType
@@ -24,7 +24,7 @@ async def create_content(
     item_data: KnowledgeItemCreate,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    auth_data: dict = Depends(validate_dual_auth)
+    auth_data: dict = Depends(validate_any_auth)
 ):
     """
     Create a new knowledge item.
@@ -85,7 +85,7 @@ async def create_content(
 async def get_content(
     content_id: UUID = Path(...),
     db: AsyncSession = Depends(get_db),
-    auth_data: dict = Depends(validate_dual_auth)
+    auth_data: dict = Depends(validate_any_auth)
 ):
     """
     Get a knowledge item by ID with full content.
@@ -124,7 +124,7 @@ async def update_content(
     background_tasks: BackgroundTasks,
     content_id: UUID = Path(...),
     db: AsyncSession = Depends(get_db),
-    auth_data: dict = Depends(validate_dual_auth)
+    auth_data: dict = Depends(validate_any_auth)
 ):
     """
     Update a knowledge item.
@@ -186,7 +186,7 @@ async def reprocess_content(
     content_id: UUID = Path(...),
     background_tasks: BackgroundTasks = None,
     db: AsyncSession = Depends(get_db),
-    auth_data: dict = Depends(validate_dual_auth)
+    auth_data: dict = Depends(validate_any_auth)
 ):
     """
     Reprocess a knowledge item to update its embeddings.
@@ -230,7 +230,7 @@ async def reprocess_content(
 async def delete_content(
     content_id: UUID = Path(...),
     db: AsyncSession = Depends(get_db),
-    auth_data: dict = Depends(validate_dual_auth)
+    auth_data: dict = Depends(validate_any_auth)
 ):
     """
     Delete a knowledge item.
@@ -262,7 +262,7 @@ async def list_content(
     skip: int = 0,
     limit: int = 100,
     db: AsyncSession = Depends(get_db),
-    auth_data: dict = Depends(validate_dual_auth)
+    auth_data: dict = Depends(validate_any_auth)
 ):
     """
     List knowledge items with optional filters.

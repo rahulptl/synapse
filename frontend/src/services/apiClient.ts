@@ -1,6 +1,6 @@
 /**
  * Centralized API client for backend communication
- * Replaces direct Supabase function calls and database access
+ * Handles all authenticated requests to the Cloud SQL backend
  */
 
 export interface ApiResponse<T = any> {
@@ -17,10 +17,16 @@ export interface AuthHeaders {
 
 class ApiClient {
   private baseUrl: string;
+  private apiVersionPath: string;
   private defaultHeaders: Record<string, string>;
 
   constructor() {
-    this.baseUrl = import.meta.env.VITE_BACKEND_API_URL || 'http://localhost:8000';
+    const rawBaseUrl = import.meta.env.VITE_BACKEND_API_URL || 'http://localhost:8000';
+    const normalizedBaseUrl = rawBaseUrl.replace(/\/$/, '');
+    this.baseUrl = normalizedBaseUrl.endsWith('/api')
+      ? normalizedBaseUrl
+      : `${normalizedBaseUrl}/api`;
+    this.apiVersionPath = '/v1';
     this.defaultHeaders = {
       'Content-Type': 'application/json',
     };
@@ -49,7 +55,7 @@ class ApiClient {
       Object.assign(headers, this.getAuthHeaders(auth.userId, auth.accessToken));
     }
 
-    const response = await fetch(`${this.baseUrl}${endpoint}`, {
+    const response = await fetch(this.buildUrl(endpoint), {
       ...fetchOptions,
       headers,
     });
@@ -63,15 +69,20 @@ class ApiClient {
   }
 
   // Folder operations
+  private buildUrl(path: string): string {
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    return `${this.baseUrl}${this.apiVersionPath}${normalizedPath}`;
+  }
+
   async getFolders(auth: { userId: string; accessToken: string }) {
-    return this.request('/api/v1/folders', { auth });
+    return this.request('/folders', { auth });
   }
 
   async createFolder(
     folderData: { name: string; description?: string; parent_id?: string },
     auth: { userId: string; accessToken: string }
   ) {
-    return this.request('/api/v1/folders', {
+    return this.request('/folders', {
       method: 'POST',
       body: JSON.stringify(folderData),
       auth,
@@ -79,14 +90,14 @@ class ApiClient {
   }
 
   async deleteFolder(folderId: string, auth: { userId: string; accessToken: string }) {
-    return this.request(`/api/v1/folders/${folderId}`, {
+    return this.request(`/folders/${folderId}`, {
       method: 'DELETE',
       auth,
     });
   }
 
   async getFolderContent(folderId: string, auth: { userId: string; accessToken: string }) {
-    return this.request(`/api/v1/folders/${folderId}/content`, { auth });
+    return this.request(`/folders/${folderId}/content`, { auth });
   }
 
   // Content operations
@@ -101,7 +112,7 @@ class ApiClient {
     },
     auth: { userId: string; accessToken: string }
   ) {
-    return this.request('/api/v1/content', {
+    return this.request('/content', {
       method: 'POST',
       body: JSON.stringify(contentData),
       auth,
@@ -109,18 +120,18 @@ class ApiClient {
   }
 
   async getContent(contentId: string, auth: { userId: string; accessToken: string }) {
-    return this.request(`/api/v1/content/${contentId}`, { auth });
+    return this.request(`/content/${contentId}`, { auth });
   }
 
   async deleteContent(contentId: string, auth: { userId: string; accessToken: string }) {
-    return this.request(`/api/v1/content/${contentId}`, {
+    return this.request(`/content/${contentId}`, {
       method: 'DELETE',
       auth,
     });
   }
 
   async reprocessContent(contentId: string, auth: { userId: string; accessToken: string }) {
-    return this.request(`/api/v1/content/${contentId}/reprocess`, {
+    return this.request(`/content/${contentId}/reprocess`, {
       method: 'POST',
       auth,
     });
@@ -135,7 +146,7 @@ class ApiClient {
       ...this.getAuthHeaders(auth.userId, auth.accessToken),
     };
 
-    const response = await fetch(`${this.baseUrl}/api/v1/files/upload`, {
+    const response = await fetch(this.buildUrl('/files/upload'), {
       method: 'POST',
       headers,
       body: formData,
@@ -164,13 +175,13 @@ class ApiClient {
     const { search_type = 'text', ...params } = searchData;
 
     if (search_type === 'vector') {
-      return this.request('/api/v1/search/vector', {
+      return this.request('/search/vector', {
         method: 'POST',
         body: JSON.stringify(params),
         auth,
       });
     } else {
-      return this.request('/api/v1/search/text', {
+      return this.request('/search/text', {
         method: 'POST',
         body: JSON.stringify(params),
         auth,
@@ -187,7 +198,7 @@ class ApiClient {
     },
     auth: { userId: string; accessToken: string }
   ) {
-    return this.request('/api/v1/chat', {
+    return this.request('/chat', {
       method: 'POST',
       body: JSON.stringify(chatData),
       auth,
@@ -195,14 +206,14 @@ class ApiClient {
   }
 
   async getConversations(auth: { userId: string; accessToken: string }) {
-    return this.request('/api/v1/chat/conversations', { auth });
+    return this.request('/chat/conversations', { auth });
   }
 
   async createConversation(
     conversationData: { title: string },
     auth: { userId: string; accessToken: string }
   ) {
-    return this.request('/api/v1/chat/conversations', {
+    return this.request('/chat/conversations', {
       method: 'POST',
       body: JSON.stringify(conversationData),
       auth,
@@ -213,25 +224,25 @@ class ApiClient {
     conversationId: string,
     auth: { userId: string; accessToken: string }
   ) {
-    return this.request(`/api/v1/chat/conversations/${conversationId}/messages`, { auth });
+    return this.request(`/chat/conversations/${conversationId}/messages`, { auth });
   }
 
   async deleteConversation(
     conversationId: string,
     auth: { userId: string; accessToken: string }
   ) {
-    return this.request(`/api/v1/chat/conversations/${conversationId}`, {
+    return this.request(`/chat/conversations/${conversationId}`, {
       method: 'DELETE',
       auth,
     });
   }
 
-  // API Key management operations (only for web app with Supabase auth)
+  // API Key management operations (only for web app with Cloud SQL auth)
   async createApiKey(
     apiKeyData: { name: string; expires_in_days?: number },
     auth: { userId: string; accessToken: string }
   ) {
-    return this.request('/api/v1/auth/api-keys', {
+    return this.request('/auth/api-keys', {
       method: 'POST',
       body: JSON.stringify(apiKeyData),
       auth,
@@ -239,14 +250,14 @@ class ApiClient {
   }
 
   async getApiKeys(auth: { userId: string; accessToken: string }) {
-    return this.request('/api/v1/auth/api-keys', { auth });
+    return this.request('/auth/api-keys', { auth });
   }
 
   async deleteApiKey(
     apiKeyId: string,
     auth: { userId: string; accessToken: string }
   ) {
-    return this.request(`/api/v1/auth/api-keys/${apiKeyId}`, {
+    return this.request(`/auth/api-keys/${apiKeyId}`, {
       method: 'DELETE',
       auth,
     });

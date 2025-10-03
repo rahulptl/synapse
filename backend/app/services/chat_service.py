@@ -9,14 +9,19 @@ from sqlalchemy.orm import defer
 import logging
 import re
 
-from app.models.database import Conversation, Message, KnowledgeItem
+from app.models.database import Conversation, Message, KnowledgeItem, ProcessingJob, Profile
+from app.models.auth import User
 from app.models.schemas import (
     ChatRequest, ChatResponse, MessageRole, ConversationCreate,
     Conversation as ConversationSchema, Message as MessageSchema
 )
 from app.services.search_service import search_service, convert_numpy_types
+from app.services.intent_service import intent_classifier
+from app.services.mapreduce_service import mapreduce_service
 from app.core.embeddings import chat_service as ai_chat_service
 from app.config import settings
+from datetime import datetime, timezone
+from sqlalchemy import func
 
 logger = logging.getLogger(__name__)
 
@@ -28,15 +33,17 @@ class ChatService:
         self,
         db: AsyncSession,
         user_id: UUID,
-        chat_request: ChatRequest
+        chat_request: ChatRequest,
+        background_tasks: Any = None
     ) -> ChatResponse:
         """
-        Process a chat request and generate a response.
+        Process a chat request and generate a response with intent-driven routing.
 
         Args:
             db: Database session
             user_id: User ID
             chat_request: Chat request with message and context
+            background_tasks: FastAPI BackgroundTasks for async processing
 
         Returns:
             ChatResponse: Generated response with sources and context
@@ -48,7 +55,7 @@ class ChatService:
             )
 
             # Store user message
-            await self._store_message(
+            user_message = await self._store_message(
                 db, user_id, conversation.id, MessageRole.USER, chat_request.message
             )
 
@@ -73,75 +80,255 @@ class ChatService:
             if hashtags:
                 logger.info(f"Found {len(matched_folders)}/{len(hashtags)} matching folders for hashtags")
 
-            # Use cleaned message for hybrid search (BM25 + semantic), with folder filtering if applicable
-            search_query = cleaned_message if cleaned_message.strip() else chat_request.message
-            context_results = await search_service.hybrid_search(
-                db=db,
-                user_id=user_id,
-                query_text=search_query,
+            # Count items in folders for estimation
+            folder_item_counts = {}
+            if folder_ids:
+                for folder_id in folder_ids:
+                    count_stmt = select(func.count(KnowledgeItem.id)).where(
+                        KnowledgeItem.folder_id == folder_id,
+                        KnowledgeItem.user_id == user_id,
+                        KnowledgeItem.processing_status == "completed"
+                    )
+                    result = await db.execute(count_stmt)
+                    folder_item_counts[folder_id] = result.scalar() or 0
+
+            # INTENT CLASSIFICATION
+            intent_data = await intent_classifier.classify_intent(
+                user_query=chat_request.message,
                 folder_ids=folder_ids,
-                limit=10,  # Get more results with hybrid ranking
-                semantic_weight=0.7,  # 70% semantic similarity
-                bm25_weight=0.3       # 30% keyword matching
+                folder_item_counts=folder_item_counts
             )
 
-            # Check if hashtags were used but no folders matched
-            unrecognized_hashtags = [tag for tag in hashtags
-                                   if not any(folder["name"] == tag for folder in matched_folders)]
+            logger.info(f"Intent: {intent_data['intent_type']}, "
+                       f"Async: {intent_data['requires_async']}, "
+                       f"Est. time: {intent_data['estimated_time_seconds']}s")
 
-            # Build conversation history
-            conversation_history = await self._get_conversation_history(
-                db, conversation.id, limit=settings.MAX_CHAT_HISTORY
-            )
-
-            # Generate AI response with enhanced context
-            ai_response = await self._generate_ai_response_enhanced(
-                chat_request.message,
-                context_results,
-                conversation_history,
-                hashtags,
-                recognized_folders,
-                unrecognized_hashtags,
-                folder_ids
-            )
-
-            # Store assistant message with metadata
-            sources_metadata = [
-                {
-                    "title": result["title"],
-                    "source": result.get("source_url", f"Folder: {result.get('folder_name', 'Unknown')}"),
-                    "similarity": float(result["similarity"])  # Convert to native Python float for JSON serialization
-                } for result in context_results
-            ]
-
-            assistant_message = await self._store_message(
-                db, user_id, conversation.id, MessageRole.ASSISTANT, ai_response,
-                metadata={"sources": sources_metadata}
-            )
-
-            # Build enhanced hashtag info
-            enhanced_hashtag_info = {
-                "detected_hashtags": hashtags,
-                "recognized_folders": recognized_folders,
-                "unrecognized_hashtags": unrecognized_hashtags,
-                "folder_filtered": folder_ids is not None and len(folder_ids) > 0
-            }
-
-            # Defensive conversion to ensure no numpy types in response
-            context_results = convert_numpy_types(context_results)
-            enhanced_hashtag_info = convert_numpy_types(enhanced_hashtag_info)
-
-            return ChatResponse(
-                response=ai_response,
-                conversation_id=conversation.id,
-                sources=context_results,
-                context_count=len(context_results),
-                hashtag_info=enhanced_hashtag_info
-            )
+            # ROUTING: Quick vs Long-running
+            if intent_data["requires_async"] and folder_ids and background_tasks:
+                # Long-running query - create job and process in background
+                return await self._handle_async_query(
+                    db=db,
+                    user_id=user_id,
+                    conversation=conversation,
+                    user_message=user_message,
+                    chat_request=chat_request,
+                    intent_data=intent_data,
+                    folder_ids=folder_ids,
+                    hashtags=hashtags,
+                    matched_folders=matched_folders,
+                    background_tasks=background_tasks
+                )
+            else:
+                # Quick query - existing flow
+                return await self._handle_quick_query(
+                    db=db,
+                    user_id=user_id,
+                    conversation=conversation,
+                    chat_request=chat_request,
+                    cleaned_message=cleaned_message,
+                    folder_ids=folder_ids,
+                    hashtags=hashtags,
+                    matched_folders=matched_folders
+                )
 
         except Exception as e:
             logger.error(f"Chat processing failed: {e}")
             raise
+
+    async def _handle_async_query(
+        self,
+        db: AsyncSession,
+        user_id: UUID,
+        conversation: Conversation,
+        user_message: Message,
+        chat_request: ChatRequest,
+        intent_data: Dict[str, Any],
+        folder_ids: List[UUID],
+        hashtags: List[str],
+        matched_folders: List[Dict[str, Any]],
+        background_tasks: Any
+    ) -> ChatResponse:
+        """Handle long-running async query."""
+
+        # Create processing job
+        job = ProcessingJob(
+            user_id=user_id,
+            conversation_id=conversation.id,
+            message_id=user_message.id,
+            job_type=intent_data["intent_type"],
+            status="queued",
+            user_query=chat_request.message,
+            intent_data=intent_data,
+            estimated_completion_seconds=int(intent_data["estimated_time_seconds"])
+        )
+
+        db.add(job)
+        await db.commit()
+        await db.refresh(job)
+
+        # Schedule background processing
+        background_tasks.add_task(
+            self._process_job_in_background,
+            job.id,
+            user_id,
+            folder_ids
+        )
+
+        # Build hashtag info
+        enhanced_hashtag_info = {
+            "detected_hashtags": hashtags,
+            "recognized_folders": matched_folders,
+            "folder_filtered": True
+        }
+
+        # Return immediate response
+        estimated_time_str = f"{intent_data['estimated_time_seconds']:.0f} seconds"
+        if intent_data['estimated_time_seconds'] > 60:
+            estimated_time_str = f"{intent_data['estimated_time_seconds'] / 60:.1f} minutes"
+
+        response_message = (
+            f"I'm analyzing {intent_data['estimated_items']} items in your folder. "
+            f"This will take approximately {estimated_time_str}. "
+            f"Feel free to explore other conversations—I'll have your answer ready when you return. "
+            f"You can also stay on this page to watch the progress."
+        )
+
+        return ChatResponse(
+            response=response_message,
+            conversation_id=conversation.id,
+            job_id=str(job.id),
+            job_status="queued",
+            estimated_completion_seconds=job.estimated_completion_seconds,
+            sources=[],
+            context_count=0,
+            hashtag_info=enhanced_hashtag_info
+        )
+
+    async def _handle_quick_query(
+        self,
+        db: AsyncSession,
+        user_id: UUID,
+        conversation: Conversation,
+        chat_request: ChatRequest,
+        cleaned_message: str,
+        folder_ids: Optional[List[UUID]],
+        hashtags: List[str],
+        matched_folders: List[Dict[str, Any]]
+    ) -> ChatResponse:
+        """Handle quick query with existing RAG flow."""
+
+        # Use cleaned message for hybrid search (BM25 + semantic), with folder filtering if applicable
+        search_query = cleaned_message if cleaned_message.strip() else chat_request.message
+        context_results = await search_service.hybrid_search(
+            db=db,
+            user_id=user_id,
+            query_text=search_query,
+            folder_ids=folder_ids,
+            limit=10,
+            semantic_weight=0.7,
+            bm25_weight=0.3
+        )
+
+        # Check if hashtags were used but no folders matched
+        unrecognized_hashtags = [tag for tag in hashtags
+                               if not any(folder["name"] == tag for folder in matched_folders)]
+
+        # Build conversation history
+        conversation_history = await self._get_conversation_history(
+            db, conversation.id, limit=settings.MAX_CHAT_HISTORY
+        )
+
+        # Generate AI response with enhanced context
+        ai_response = await self._generate_ai_response_enhanced(
+            chat_request.message,
+            context_results,
+            conversation_history,
+            hashtags,
+            matched_folders,
+            unrecognized_hashtags,
+            folder_ids
+        )
+
+        # Store assistant message with metadata
+        sources_metadata = [
+            {
+                "title": result["title"],
+                "source": result.get("source_url", f"Folder: {result.get('folder_name', 'Unknown')}"),
+                "similarity": float(result["similarity"])
+            } for result in context_results
+        ]
+
+        assistant_message = await self._store_message(
+            db, user_id, conversation.id, MessageRole.ASSISTANT, ai_response,
+            metadata={"sources": sources_metadata}
+        )
+
+        # Build enhanced hashtag info
+        enhanced_hashtag_info = {
+            "detected_hashtags": hashtags,
+            "recognized_folders": matched_folders,
+            "unrecognized_hashtags": unrecognized_hashtags,
+            "folder_filtered": folder_ids is not None and len(folder_ids) > 0
+        }
+
+        # Defensive conversion to ensure no numpy types in response
+        context_results = convert_numpy_types(context_results)
+        enhanced_hashtag_info = convert_numpy_types(enhanced_hashtag_info)
+
+        return ChatResponse(
+            response=ai_response,
+            conversation_id=conversation.id,
+            sources=context_results,
+            context_count=len(context_results),
+            hashtag_info=enhanced_hashtag_info
+        )
+
+    async def _process_job_in_background(
+        self,
+        job_id: UUID,
+        user_id: UUID,
+        folder_ids: List[UUID]
+    ):
+        """Background task to process long-running job."""
+
+        # Create new DB session for background task
+        from app.core.database import async_session_maker
+
+        async with async_session_maker() as db:
+            try:
+                # Get job
+                job = await db.get(ProcessingJob, job_id)
+                if not job:
+                    logger.error(f"Job {job_id} not found")
+                    return
+
+                # Process with map-reduce
+                result = await mapreduce_service.process_query(
+                    db=db,
+                    job=job,
+                    user_query=job.user_query,
+                    intent_data=job.intent_data,
+                    folder_ids=folder_ids
+                )
+
+                # Store as message in conversation
+                await self._store_message(
+                    db=db,
+                    user_id=user_id,
+                    conversation_id=job.conversation_id,
+                    role=MessageRole.ASSISTANT,
+                    content=result["response"],
+                    metadata={
+                        "sources": result.get("sources", []),
+                        "job_id": str(job_id),
+                        "aggregation_details": job.aggregation_details
+                    }
+                )
+
+                logger.info(f"Job {job_id} completed successfully")
+
+            except Exception as e:
+                logger.error(f"Background job {job_id} failed: {e}", exc_info=True)
 
     async def get_conversation(
         self,
@@ -314,6 +501,8 @@ class ChatService:
             if conversation:
                 return conversation
 
+        await self._ensure_profile_exists(db, user_id)
+
         # Create new conversation
         conversation = Conversation(
             user_id=user_id,
@@ -324,6 +513,30 @@ class ChatService:
         await db.commit()
         await db.refresh(conversation)
         return conversation
+
+    async def _ensure_profile_exists(self, db: AsyncSession, user_id: UUID) -> Profile:
+        """Ensure a profile row exists for the given user."""
+        stmt = select(Profile).where(Profile.user_id == user_id)
+        result = await db.execute(stmt)
+        profile = result.scalars().first()
+        if profile:
+            return profile
+
+        user_stmt = select(User).where(User.id == user_id)
+        user_result = await db.execute(user_stmt)
+        user = user_result.scalars().first()
+        if not user:
+            raise ValueError("User not found for profile creation")
+
+        profile = Profile(
+            user_id=user.id,
+            email=user.email,
+            full_name=user.full_name
+        )
+
+        db.add(profile)
+        await db.flush()
+        return profile
 
     async def _store_message(
         self,
