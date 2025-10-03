@@ -1,0 +1,93 @@
+# Cloud Build configuration for backend deployment
+# This file provides more control over the build and deployment process
+
+steps:
+  # Step 1: Build the Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-f'
+      - 'Dockerfile.backend'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/synapse-backend-$_ENV:$COMMIT_SHA'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/synapse-backend-$_ENV:latest'
+      - '.'
+    id: 'build-image'
+
+  # Step 2: Push the Docker image to GCR
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/synapse-backend-$_ENV:$COMMIT_SHA'
+    id: 'push-image-sha'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/synapse-backend-$_ENV:latest'
+    id: 'push-image-latest'
+
+  # Step 3: Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'synapse-backend-$_ENV'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/synapse-backend-$_ENV:$COMMIT_SHA'
+      - '--region'
+      - '$_REGION'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+      - '--max-instances'
+      - '$_MAX_INSTANCES'
+      - '--min-instances'
+      - '$_MIN_INSTANCES'
+      - '--memory'
+      - '$_MEMORY'
+      - '--cpu'
+      - '$_CPU'
+      - '--timeout'
+      - '300'
+      - '--concurrency'
+      - '80'
+      - '--set-env-vars'
+      - 'ENVIRONMENT=$_ENVIRONMENT,API_V1_STR=/api/v1,CLOUD_SQL_CONNECTION_NAME=$_CLOUD_SQL_CONNECTION,STORAGE_BACKEND=gcs,GCS_BUCKET_NAME=$_GCS_BUCKET,GCS_PROJECT_ID=$PROJECT_ID,DATABASE_URL=$_DATABASE_URL,MAX_CONTENT_SIZE_MB=50,CHUNK_SIZE=500,CHUNK_OVERLAP=50,SIMILARITY_THRESHOLD=0.7,EMBEDDING_MODEL=text-embedding-ada-002,CHAT_MODEL=gpt-4o-mini,MAX_CHAT_HISTORY=10,CHAT_TIMEOUT_SECONDS=60,RATE_LIMIT_PER_MINUTE=$_RATE_LIMIT,LOG_LEVEL=$_LOG_LEVEL,ENABLE_CACHING=true,CACHE_TTL_SECONDS=3600'
+      - '--set-secrets'
+      - 'SECRET_KEY=$_SECRET_KEY_NAME:latest,OPENAI_API_KEY=$_OPENAI_KEY_NAME:latest'
+      - '--add-cloudsql-instances'
+      - '$_CLOUD_SQL_CONNECTION'
+    id: 'deploy-cloud-run'
+
+# Substitute variables based on trigger (can be overridden by trigger settings)
+substitutions:
+  _ENV: 'dev'
+  _ENVIRONMENT: 'development'
+  _REGION: 'asia-south1'
+  _CLOUD_SQL_CONNECTION: 'synapse-473918:asia-south1:synapse'
+  _GCS_BUCKET: 'synapse_storage'
+  _DATABASE_URL: 'postgresql+asyncpg://dev_user:YOUR_PASSWORD@/dev'
+  _SECRET_KEY_NAME: 'dev-secret-key'
+  _OPENAI_KEY_NAME: 'dev-openai-key'
+  _MAX_INSTANCES: '10'
+  _MIN_INSTANCES: '0'
+  _MEMORY: '1Gi'
+  _CPU: '1'
+  _RATE_LIMIT: '60'
+  _LOG_LEVEL: 'INFO'
+
+# Images to store in Container Registry
+images:
+  - 'gcr.io/$PROJECT_ID/synapse-backend-$_ENV:$COMMIT_SHA'
+  - 'gcr.io/$PROJECT_ID/synapse-backend-$_ENV:latest'
+
+# Build timeout
+timeout: 1200s
+
+# Use Cloud Build service account
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: 'N1_HIGHCPU_8'
