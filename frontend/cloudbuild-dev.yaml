@@ -1,0 +1,10 @@
+# Development Environment Cloud Build Configuration
+# This file contains environment-specific substitutions for dev deployment
+
+substitutions:
+  _ENV: 'dev'
+  _REGION: 'asia-south1'
+  _BACKEND_URL: 'https://synapse-backend-dev-XXXXXXXXXX-el.a.run.app'
+
+# Import the main cloudbuild.yaml
+# Use this file with: gcloud builds submit --config=frontend/cloudbuild.yaml --substitutions-file=frontend/cloudbuild-dev.yaml

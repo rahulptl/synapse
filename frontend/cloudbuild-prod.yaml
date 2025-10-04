@@ -1,0 +1,10 @@
+# Production Environment Cloud Build Configuration
+# This file contains environment-specific substitutions for prod deployment
+
+substitutions:
+  _ENV: 'prod'
+  _REGION: 'asia-south1'
+  _BACKEND_URL: 'https://synapse-backend-prod-XXXXXXXXXX-el.a.run.app'
+
+# Import the main cloudbuild.yaml
+# Use this file with: gcloud builds submit --config=frontend/cloudbuild.yaml --substitutions-file=frontend/cloudbuild-prod.yaml
