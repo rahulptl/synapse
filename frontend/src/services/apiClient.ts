@@ -22,11 +22,21 @@ class ApiClient {
 
   constructor() {
     const rawBaseUrl = import.meta.env.VITE_BACKEND_API_URL || 'http://localhost:8000';
+    // Remove trailing slash and ensure we don't double-add /api
     const normalizedBaseUrl = rawBaseUrl.replace(/\/$/, '');
-    this.baseUrl = normalizedBaseUrl.endsWith('/api')
-      ? normalizedBaseUrl
-      : `${normalizedBaseUrl}/api`;
-    this.apiVersionPath = '/v1';
+
+    // Always use /api/v1 prefix - backend expects this
+    if (normalizedBaseUrl.endsWith('/api/v1')) {
+      this.baseUrl = normalizedBaseUrl.replace('/api/v1', '');
+      this.apiVersionPath = '/api/v1';
+    } else if (normalizedBaseUrl.endsWith('/api')) {
+      this.baseUrl = normalizedBaseUrl.replace('/api', '');
+      this.apiVersionPath = '/api/v1';
+    } else {
+      this.baseUrl = normalizedBaseUrl;
+      this.apiVersionPath = '/api/v1';
+    }
+
     this.defaultHeaders = {
       'Content-Type': 'application/json',
     };
