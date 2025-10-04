@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
 
     # Database
-    DATABASE_URL: PostgresDsn
+    DATABASE_URL: str  # Changed from PostgresDsn to support Cloud SQL Unix socket format
     DATABASE_POOL_SIZE: int = 5
     DATABASE_MAX_OVERFLOW: int = 10
 
