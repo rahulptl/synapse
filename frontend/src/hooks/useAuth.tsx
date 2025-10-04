@@ -36,7 +36,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (token) {
         setAccessToken(token);
         try {
-          const response = await fetch(`${API_BASE_URL}/v1/cloud-auth/me`, {
+          const response = await fetch(`${API_BASE_URL}/api/v1/cloud-auth/me`, {
             headers: {
               'Authorization': `Bearer ${token}`,
             },
@@ -74,7 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/v1/cloud-auth/refresh`, {
+      const response = await fetch(`${API_BASE_URL}/api/v1/cloud-auth/refresh`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -105,7 +105,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/v1/cloud-auth/login`, {
+      const response = await fetch(`${API_BASE_URL}/api/v1/cloud-auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -131,7 +131,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signUp = async (email: string, password: string, fullName: string) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/v1/cloud-auth/signup`, {
+      const response = await fetch(`${API_BASE_URL}/api/v1/cloud-auth/signup`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -164,7 +164,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (refreshTokenValue) {
       try {
-        await fetch(`${API_BASE_URL}/v1/cloud-auth/logout`, {
+        await fetch(`${API_BASE_URL}/api/v1/cloud-auth/logout`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
