@@ -23,12 +23,16 @@ def setup_cors(app: FastAPI) -> None:
             "http://127.0.0.1:3001",
             "http://localhost:8080",
             "http://127.0.0.1:8080",
+            # Cloud Run development URLs (both old and new formats)
+            "https://synapse-frontend-dev-7e75zz4oja-el.a.run.app",
+            "https://synapse-frontend-dev-11007620517.asia-south1.run.app",
         ]
     else:
         # In production, be more restrictive
         allowed_origins = [
-            "https://your-frontend-domain.com",
-            # Add your actual production domains here
+            "https://synapse-frontend-prod-7e75zz4oja-el.a.run.app",
+            "https://synapse-frontend-prod-11007620517.asia-south1.run.app",
+            # Add your custom domain here if you have one
         ]
 
     app.add_middleware(
