@@ -149,18 +149,24 @@ echo "   ✅ Granted roles/storage.objectAdmin"
 
 echo ""
 
-# Create GCS buckets
-echo "5️⃣ Creating GCS buckets..."
-for bucket in synapse-storage-dev synapse-storage-prod; do
-    if gcloud storage buckets describe gs://$bucket &> /dev/null; then
-        echo "   ⏭️  Bucket 'gs://$bucket' already exists, skipping"
-    else
-        gcloud storage buckets create gs://$bucket \
-            --location=$REGION \
-            --uniform-bucket-level-access
-        echo "   ✅ Bucket 'gs://$bucket' created"
-    fi
+# Create GCS bucket (single bucket with folders for each environment)
+echo "5️⃣ Creating GCS bucket..."
+BUCKET_NAME="synapse_storage"
+if gcloud storage buckets describe gs://$BUCKET_NAME &> /dev/null; then
+    echo "   ⏭️  Bucket 'gs://$BUCKET_NAME' already exists, skipping"
+else
+    gcloud storage buckets create gs://$BUCKET_NAME \
+        --location=$REGION \
+        --uniform-bucket-level-access
+    echo "   ✅ Bucket 'gs://$BUCKET_NAME' created"
+fi
+
+echo "   Creating environment folders..."
+for env in local dev prod; do
+    # Create a placeholder file to ensure the folder exists
+    echo "Environment: $env" | gcloud storage cp - gs://$BUCKET_NAME/$env/.keep 2>/dev/null || echo "   Folder $env/ ready"
 done
+echo "   ✅ Folders created: local/, dev/, prod/"
 echo ""
 
 echo "✨ All prerequisites set up successfully!"
@@ -169,7 +175,7 @@ echo "📋 Summary:"
 echo "   • Databases: dev, prod"
 echo "   • Service Account: $SA_EMAIL"
 echo "   • Secrets: backend-secret-key, openai-api-key, database-url-dev, database-url-prod"
-echo "   • Buckets: gs://synapse-storage-dev, gs://synapse-storage-prod"
+echo "   • Bucket: gs://$BUCKET_NAME with folders (local/, dev/, prod/)"
 echo ""
 echo "Next steps:"
 echo "   1. Initialize database schema:"

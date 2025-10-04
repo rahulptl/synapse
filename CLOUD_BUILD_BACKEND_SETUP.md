@@ -80,18 +80,19 @@ gcloud projects add-iam-policy-binding synapse-473918 \
   --role="roles/storage.admin"
 ```
 
-### 4. Create GCS Buckets
+### 4. Create GCS Bucket
 
 ```bash
-# Create dev storage bucket
-gcloud storage buckets create gs://synapse-storage-dev \
+# Create single storage bucket with environment folders
+gcloud storage buckets create gs://synapse_storage \
   --location=asia-south1 \
   --uniform-bucket-level-access
 
-# Create prod storage bucket
-gcloud storage buckets create gs://synapse-storage-prod \
-  --location=asia-south1 \
-  --uniform-bucket-level-access
+# Folders (local/, dev/, prod/) will be created automatically on first use
+# Or create them manually:
+echo "Environment: local" | gcloud storage cp - gs://synapse_storage/local/.keep
+echo "Environment: dev" | gcloud storage cp - gs://synapse_storage/dev/.keep
+echo "Environment: prod" | gcloud storage cp - gs://synapse_storage/prod/.keep
 ```
 
 ### 5. Initialize Database Schema
@@ -125,7 +126,7 @@ gcloud builds submit \
 ```bash
 gcloud builds submit \
   --config=backend/cloudbuild.yaml \
-  --substitutions=_ENV=prod,_ENVIRONMENT=production,_REGION=asia-south1,_MIN_INSTANCES=1,_RATE_LIMIT=100,_LOG_LEVEL=WARNING,_GCS_BUCKET=synapse-storage-prod
+  --substitutions=_ENV=prod,_ENVIRONMENT=production,_REGION=asia-south1,_MIN_INSTANCES=1,_RATE_LIMIT=100,_LOG_LEVEL=WARNING
 ```
 
 ### Automated Deployment with Cloud Build Triggers
@@ -150,7 +151,7 @@ gcloud builds triggers create github \
   --repo-owner="rahulptl" \
   --tag-pattern="^v.*" \
   --build-config="backend/cloudbuild.yaml" \
-  --substitutions="_ENV=prod,_ENVIRONMENT=production,_REGION=asia-south1,_MIN_INSTANCES=1,_RATE_LIMIT=100,_LOG_LEVEL=WARNING,_GCS_BUCKET=synapse-storage-prod"
+  --substitutions="_ENV=prod,_ENVIRONMENT=production,_REGION=asia-south1,_MIN_INSTANCES=1,_RATE_LIMIT=100,_LOG_LEVEL=WARNING"
 ```
 
 ## Configuration
@@ -162,7 +163,8 @@ The Cloud Build configuration sets these environment variables on the Cloud Run 
 - `ENVIRONMENT`: development or production
 - `API_V1_STR`: /api/v1
 - `STORAGE_BACKEND`: gcs
-- `GCS_BUCKET_NAME`: Bucket name based on environment
+- `GCS_BUCKET_NAME`: synapse_storage (single bucket for all environments)
+- `GCS_FOLDER_PREFIX`: dev, prod, or local (determines subfolder within bucket)
 - All other app settings (chunk size, models, timeouts, etc.)
 
 ### Secrets (via Secret Manager)

@@ -80,16 +80,23 @@ else
 fi
 echo ""
 
-# Check GCS buckets
-echo "5️⃣ Checking GCS buckets..."
-for bucket in synapse-storage-dev synapse-storage-prod; do
-    if gcloud storage buckets describe gs://$bucket --project=$PROJECT_ID &> /dev/null; then
-        echo "✅ Bucket 'gs://$bucket' exists"
-    else
-        echo "❌ Bucket 'gs://$bucket' not found"
-        echo "   Run: gcloud storage buckets create gs://$bucket --location=$REGION --uniform-bucket-level-access"
-    fi
-done
+# Check GCS bucket (single bucket with environment folders)
+echo "5️⃣ Checking GCS bucket..."
+BUCKET_NAME="synapse_storage"
+if gcloud storage buckets describe gs://$BUCKET_NAME --project=$PROJECT_ID &> /dev/null; then
+    echo "✅ Bucket 'gs://$BUCKET_NAME' exists"
+    echo "   Checking environment folders..."
+    for env in local dev prod; do
+        if gcloud storage ls gs://$BUCKET_NAME/$env/ &> /dev/null 2>&1; then
+            echo "   ✅ Folder '$env/' exists"
+        else
+            echo "   ℹ️  Folder '$env/' will be created on first use"
+        fi
+    done
+else
+    echo "❌ Bucket 'gs://$BUCKET_NAME' not found"
+    echo "   Run: gcloud storage buckets create gs://$BUCKET_NAME --location=$REGION --uniform-bucket-level-access"
+fi
 echo ""
 
 # Check existing Cloud Run services
