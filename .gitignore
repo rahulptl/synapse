@@ -14,6 +14,11 @@ backend/keys/
 !package*.json
 !tsconfig*.json
 
+# Local Development Data
+postgres_data/
+local_storage/
+backend/storage/
+
 # Python
 __pycache__/
 *.pyc

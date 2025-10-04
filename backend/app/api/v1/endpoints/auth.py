@@ -6,7 +6,7 @@ from typing import Optional, List
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import validate_api_key_dependency, validate_supabase_token, validate_any_auth
+from app.core.security import validate_api_key_dependency, validate_supabase_token, validate_any_auth, validate_jwt_token
 from app.core.database import get_db
 from app.services.api_key_service import api_key_service
 from app.models.schemas import ApiKeyValidation, ApiKeyCreate, ApiKeyResponse
@@ -33,11 +33,11 @@ async def validate_api_key(
 async def create_api_key(
     api_key_data: ApiKeyCreate,
     db: AsyncSession = Depends(get_db),
-    auth_data: dict = Depends(validate_supabase_token)
+    auth_data: dict = Depends(validate_jwt_token)
 ):
     """
     Create a new API key for the authenticated user.
-    Only accessible via Supabase JWT (web app).
+    Only accessible via Cloud SQL JWT (web app).
     """
     user_id = UUID(auth_data["user_id"])
 
@@ -58,11 +58,11 @@ async def create_api_key(
 @router.get("/api-keys", response_model=List[ApiKeyResponse])
 async def list_api_keys(
     db: AsyncSession = Depends(get_db),
-    auth_data: dict = Depends(validate_supabase_token)
+    auth_data: dict = Depends(validate_jwt_token)
 ):
     """
     List all API keys for the authenticated user.
-    Only accessible via Supabase JWT (web app).
+    Only accessible via Cloud SQL JWT (web app).
     """
     user_id = UUID(auth_data["user_id"])
 
@@ -77,7 +77,7 @@ async def list_api_keys(
 async def delete_api_key(
     api_key_id: UUID,
     db: AsyncSession = Depends(get_db),
-    auth_data: dict = Depends(validate_supabase_token)
+    auth_data: dict = Depends(validate_jwt_token)
 ):
     """
     Delete an API key.

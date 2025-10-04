@@ -77,9 +77,32 @@ export default function SettingsPage() {
 
     try {
       const auth = getAuthData();
+
+      // Calculate expires_in_days and validate max 365 days
+      let expiresInDays: number | undefined = undefined;
+      if (newKeyExpiry) {
+        expiresInDays = Math.ceil((new Date(newKeyExpiry).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+        if (expiresInDays > 365) {
+          toast({
+            title: "Invalid expiry date",
+            description: "API keys can only be valid for up to 365 days",
+            variant: "destructive",
+          });
+          return;
+        }
+        if (expiresInDays < 1) {
+          toast({
+            title: "Invalid expiry date",
+            description: "Expiry date must be in the future",
+            variant: "destructive",
+          });
+          return;
+        }
+      }
+
       const apiKeyData = {
         name: newKeyName.trim(),
-        expires_in_days: newKeyExpiry ? Math.ceil((new Date(newKeyExpiry).getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : undefined
+        expires_in_days: expiresInDays
       };
 
       const response = await apiClient.createApiKey(apiKeyData, auth);
@@ -231,12 +254,14 @@ export default function SettingsPage() {
                     </div>
                     
                     <div>
-                      <Label htmlFor="keyExpiry">Expiry Date (Optional)</Label>
+                      <Label htmlFor="keyExpiry">Expiry Date (Optional, max 365 days)</Label>
                       <Input
                         id="keyExpiry"
                         type="date"
                         value={newKeyExpiry}
                         onChange={(e) => setNewKeyExpiry(e.target.value)}
+                        min={new Date().toISOString().split('T')[0]}
+                        max={new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
                       />
                     </div>
                     

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Clock, ExternalLink, FileText, User, Trash2, Download } from 'lucide-react';
+import { Clock, ExternalLink, FileText, User, Trash2, Download, ArrowLeft } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
@@ -12,14 +12,18 @@ interface KnowledgeItem {
   metadata?: any;
   created_at: string;
   updated_at: string;
+  is_chunked?: boolean;
+  total_chunks?: number;
+  processing_status?: string;
 }
 
 interface ItemDetailsProps {
   item: KnowledgeItem | null;
   onDeleteItem: (itemId: string) => void;
+  onBack?: () => void;
 }
 
-export function ItemDetails({ item, onDeleteItem }: ItemDetailsProps) {
+export function ItemDetails({ item, onDeleteItem, onBack }: ItemDetailsProps) {
   // File preview removed - would need backend API endpoint for file downloads
   // For now, just display metadata
 
@@ -60,6 +64,21 @@ export function ItemDetails({ item, onDeleteItem }: ItemDetailsProps) {
   return (
     <div className="h-full flex flex-col bg-gradient-to-br from-slate-900/50 to-gray-800/50">
       <div className="p-5 border-b border-white/10">
+        {/* Mobile back button */}
+        {onBack && (
+          <div className="lg:hidden mb-4">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onBack}
+              className="text-white hover:bg-white/10 -ml-2"
+            >
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back to list
+            </Button>
+          </div>
+        )}
+
         <div className="flex items-start justify-between">
           <div className="flex-1 min-w-0">
             <h1 className="text-xl font-bold text-white mb-2 leading-tight">{item.title}</h1>
@@ -132,6 +151,20 @@ export function ItemDetails({ item, onDeleteItem }: ItemDetailsProps) {
               <p className="text-sm text-gray-400 leading-relaxed">
                 This item references a file that wasn't uploaded to storage, so it can't be previewed here.
                 Please use the Upload panel to upload the file to this folder to enable inline viewing.
+              </p>
+            ) : item.processing_status === 'processing' ? (
+              <div className="space-y-2">
+                <p className="text-sm text-gray-400 leading-relaxed">
+                  Content is being processed for search. This may take a few moments...
+                </p>
+                <div className="flex items-center space-x-2 text-yellow-500">
+                  <div className="animate-spin h-4 w-4 border-2 border-yellow-500 border-t-transparent rounded-full"></div>
+                  <span className="text-xs">Processing</span>
+                </div>
+              </div>
+            ) : item.processing_status === 'pending' ? (
+              <p className="text-sm text-gray-400 leading-relaxed">
+                Content is queued for processing and will be searchable soon.
               </p>
             ) : (
               <pre className="whitespace-pre-wrap break-words text-sm leading-relaxed text-gray-200 max-h-96 overflow-y-auto">

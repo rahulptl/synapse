@@ -1,15 +1,1 @@
-1. [done] Subfolders now show as nested options in the Save to Zyph context menu.
-2. [done] Removed the OpenAI API key controls from settings; only the Zyph.com key remains.
-3. [done] Replaced the manual user ID input with an automatic read-only user label in settings.
-4. [done] Remote sync badges switch to “Synced” once ingestion completes.
-5. [done] Folder rows now display icon, name, and status on a single line.
-6. [done] Removed the Zyph.com search block from the side panel.
-7. [done] Replaced UI emojis with Material-style SVG icons and text alternatives.
-8. [done] Block saving from protected pages and surface a warning instead.
-9. [done] Trimmed noisy logs and removed unused features/components for leaner code.
-10. [done] the indentation is wrong for the folder with subfolders and without folders, subfolders should have a higger indentation than the parent folder. 
-11. [done] the context menu ( when I right click is not syncing when I create a new folder on zyph.com ). the new folder should also show when I right click. 
-12. [done] on the settings page, if a api key already exists, then we dont need to show the input box for zyph, instead we can just show connected along with details. 
-13. [done] Think about a feature where I can drop and drop documents into zyph folders.
-14. [done] Clean up the code, remove unused code and bloat
-15. the upload feature for 
+1. Github workflows to trriger build and depploy by branch manually only. "dev", "prod". 

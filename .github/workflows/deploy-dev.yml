@@ -1,0 +1,234 @@
+name: Deploy to Development (GCP Cloud Run)
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_backend:
+        description: 'Deploy Backend'
+        required: true
+        type: boolean
+        default: true
+      deploy_frontend:
+        description: 'Deploy Frontend'
+        required: true
+        type: boolean
+        default: true
+
+env:
+  PROJECT_ID: synapse-473918
+  REGION: asia-south1  # Mumbai
+  ENV: dev
+
+  # Service names
+  BACKEND_SERVICE: synapse-backend-dev
+  FRONTEND_SERVICE: synapse-frontend-dev
+
+  # Cloud SQL
+  CLOUD_SQL_CONNECTION: synapse-473918:asia-south1:synapse
+  SERVICE_ACCOUNT: synapse-backend@synapse-473918.iam.gserviceaccount.com
+
+  # Storage
+  GCS_BUCKET: synapse_storage
+
+jobs:
+  deploy-backend:
+    if: ${{ github.event.inputs.deploy_backend == 'true' }}
+    name: Deploy Backend to Cloud Run (Dev)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: dev
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for GCR
+        run: gcloud auth configure-docker
+
+      - name: Build and Push Backend Image
+        run: |
+          cd backend
+
+          # Pull previous image for caching
+          docker pull gcr.io/$PROJECT_ID/synapse-backend:latest || true
+
+          # Build with cache
+          docker build \
+            --cache-from gcr.io/$PROJECT_ID/synapse-backend:latest \
+            -t gcr.io/$PROJECT_ID/synapse-backend:${{ github.sha }} \
+            -t gcr.io/$PROJECT_ID/synapse-backend:dev \
+            -t gcr.io/$PROJECT_ID/synapse-backend:latest \
+            .
+
+          # Push all tags
+          docker push gcr.io/$PROJECT_ID/synapse-backend:${{ github.sha }}
+          docker push gcr.io/$PROJECT_ID/synapse-backend:dev
+          docker push gcr.io/$PROJECT_ID/synapse-backend:latest
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy $BACKEND_SERVICE \
+            --image gcr.io/$PROJECT_ID/synapse-backend:${{ github.sha }} \
+            --region $REGION \
+            --platform managed \
+            --allow-unauthenticated \
+            --port 8000 \
+            --min-instances 0 \
+            --max-instances 5 \
+            --memory 512Mi \
+            --cpu 1 \
+            --timeout 300 \
+            --set-env-vars ENVIRONMENT=development,API_V1_STR=/api/v1,MAX_CONTENT_SIZE_MB=50,CHUNK_SIZE=500,CHUNK_OVERLAP=50,SIMILARITY_THRESHOLD=0.7,EMBEDDING_MODEL=text-embedding-ada-002,CHAT_MODEL=gpt-4.1-mini,MAX_CHAT_HISTORY=10,CHAT_TIMEOUT_SECONDS=60,RATE_LIMIT_PER_MINUTE=60,LOG_LEVEL=INFO,ENABLE_CACHING=true,CACHE_TTL_SECONDS=3600,STORAGE_BACKEND=gcs,GCS_BUCKET_NAME=$GCS_BUCKET,GCS_FOLDER_PREFIX=dev,GCS_PROJECT_ID=$PROJECT_ID \
+            --set-secrets SECRET_KEY=backend-secret-key:latest,OPENAI_API_KEY=openai-api-key:latest,DATABASE_URL=database-url-dev:latest \
+            --add-cloudsql-instances $CLOUD_SQL_CONNECTION \
+            --service-account $SERVICE_ACCOUNT
+
+      - name: Get Backend URL
+        id: backend-url
+        run: |
+          BACKEND_URL=$(gcloud run services describe $BACKEND_SERVICE --region $REGION --format 'value(status.url)')
+          echo "url=$BACKEND_URL" >> $GITHUB_OUTPUT
+          echo "Backend deployed to: $BACKEND_URL"
+
+      - name: Test Backend Health
+        run: |
+          BACKEND_URL=${{ steps.backend-url.outputs.url }}
+          echo "Testing backend health endpoint..."
+          curl -f $BACKEND_URL/health || exit 1
+          echo "✓ Backend is healthy"
+
+    outputs:
+      backend_url: ${{ steps.backend-url.outputs.url }}
+
+  deploy-frontend:
+    if: ${{ github.event.inputs.deploy_frontend == 'true' }}
+    name: Deploy Frontend to Cloud Run (Dev)
+    runs-on: ubuntu-latest
+    needs: deploy-backend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: dev
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for GCR
+        run: gcloud auth configure-docker
+
+      - name: Get Backend URL
+        id: backend-url
+        run: |
+          if [ -n "${{ needs.deploy-backend.outputs.backend_url }}" ]; then
+            BACKEND_URL="${{ needs.deploy-backend.outputs.backend_url }}"
+          else
+            BACKEND_URL=$(gcloud run services describe $BACKEND_SERVICE --region $REGION --format 'value(status.url)' 2>/dev/null || echo "https://synapse-backend-dev-XXXXXXXXXX-el.a.run.app")
+          fi
+          echo "url=$BACKEND_URL" >> $GITHUB_OUTPUT
+          echo "Using backend URL: $BACKEND_URL"
+
+      - name: Build and Push Frontend Image
+        run: |
+          cd frontend
+
+          # Pull previous image for caching
+          docker pull gcr.io/$PROJECT_ID/synapse-frontend:latest || true
+
+          # Build with backend URL
+          docker build \
+            --cache-from gcr.io/$PROJECT_ID/synapse-frontend:latest \
+            --build-arg VITE_BACKEND_API_URL=${{ steps.backend-url.outputs.url }} \
+            -t gcr.io/$PROJECT_ID/synapse-frontend:${{ github.sha }} \
+            -t gcr.io/$PROJECT_ID/synapse-frontend:dev \
+            -t gcr.io/$PROJECT_ID/synapse-frontend:latest \
+            .
+
+          # Push all tags
+          docker push gcr.io/$PROJECT_ID/synapse-frontend:${{ github.sha }}
+          docker push gcr.io/$PROJECT_ID/synapse-frontend:dev
+          docker push gcr.io/$PROJECT_ID/synapse-frontend:latest
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy $FRONTEND_SERVICE \
+            --image gcr.io/$PROJECT_ID/synapse-frontend:${{ github.sha }} \
+            --region $REGION \
+            --platform managed \
+            --allow-unauthenticated \
+            --port 8080 \
+            --min-instances 0 \
+            --max-instances 3 \
+            --memory 256Mi \
+            --cpu 1 \
+            --timeout 60
+
+      - name: Get Frontend URL
+        id: frontend-url
+        run: |
+          FRONTEND_URL=$(gcloud run services describe $FRONTEND_SERVICE --region $REGION --format 'value(status.url)')
+          echo "url=$FRONTEND_URL" >> $GITHUB_OUTPUT
+          echo "Frontend deployed to: $FRONTEND_URL"
+
+      - name: Test Frontend
+        run: |
+          FRONTEND_URL=${{ steps.frontend-url.outputs.url }}
+          echo "Testing frontend..."
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" $FRONTEND_URL)
+          if [ $HTTP_CODE -eq 200 ]; then
+            echo "✓ Frontend is accessible"
+          else
+            echo "✗ Frontend returned HTTP $HTTP_CODE"
+            exit 1
+          fi
+
+    outputs:
+      frontend_url: ${{ steps.frontend-url.outputs.url }}
+
+  summary:
+    name: Deployment Summary
+    runs-on: ubuntu-latest
+    needs: [deploy-backend, deploy-frontend]
+    if: always()
+
+    steps:
+      - name: Print Deployment Summary
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "  Synapse Development Deployment Complete"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+          echo "Environment: DEVELOPMENT"
+          echo "Region: $REGION (Mumbai)"
+          echo "Commit: ${{ github.sha }}"
+          echo ""
+
+          if [ -n "${{ needs.deploy-backend.outputs.backend_url }}" ]; then
+            echo "✓ Backend:  ${{ needs.deploy-backend.outputs.backend_url }}"
+          else
+            echo "○ Backend:  Not deployed"
+          fi
+
+          if [ -n "${{ needs.deploy-frontend.outputs.frontend_url }}" ]; then
+            echo "✓ Frontend: ${{ needs.deploy-frontend.outputs.frontend_url }}"
+          else
+            echo "○ Frontend: Not deployed"
+          fi
+
+          echo ""
+          echo "API Docs: ${{ needs.deploy-backend.outputs.backend_url }}/docs"
+          echo ""

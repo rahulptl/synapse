@@ -76,14 +76,15 @@ export function ItemList({ items, selectedItem, onItemSelect, onDeleteItem, onRe
       case 'processing':
         return 'Processing for search...';
       case 'completed':
-        return 'Searchable';
+        // If marked completed but no chunks, something went wrong
+        return item.total_chunks > 0 ? 'Searchable' : 'Processing incomplete';
       case 'failed':
         return 'Processing failed';
       case 'pending':
         return 'Pending processing';
       default:
-        // If no status but content exists, assume it's searchable
-        return item.content ? 'Searchable' : 'Ready to process';
+        // Don't assume searchable without chunks
+        return 'Not yet searchable';
     }
   };
 
@@ -106,42 +107,42 @@ export function ItemList({ items, selectedItem, onItemSelect, onDeleteItem, onRe
 
   return (
     <div className="h-full flex flex-col">
-      <div className="flex-1 p-4 overflow-y-auto">
+      <div className="flex-1 p-4 overflow-y-auto overflow-x-hidden">
         {items.map((item, index) => (
-          <div key={item.id}>
+          <div key={item.id} className="w-full">
             <Card
-              className={`group cursor-pointer transition-all duration-300 border-0 ${
+              className={`group cursor-pointer transition-all duration-300 border-0 w-full overflow-hidden ${
                 selectedItem === item.id
                   ? 'bg-gradient-to-r from-blue-500/25 to-purple-500/25 shadow-lg ring-2 ring-blue-400/40 scale-[1.02]'
                   : 'bg-white/8 hover:bg-white/12 shadow-sm hover:shadow-lg hover:-translate-y-0.5'
               }`}
               onClick={() => onItemSelect(item.id)}
             >
-            <CardContent className="p-4">
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center space-x-3 flex-1 min-w-0">
-                  <div className={`p-2 rounded-lg transition-colors ${
-                    selectedItem === item.id ? 'bg-blue-400/30 text-blue-200' : 'bg-white/10 text-gray-300 group-hover:bg-white/20'
-                  }`}>
-                    {getContentTypeIcon(item.content_type)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h4 className={`font-semibold text-sm leading-tight truncate transition-colors ${
-                      selectedItem === item.id ? 'text-white' : 'text-gray-200 group-hover:text-white'
-                    }`}>{item.title}</h4>
+            <CardContent className="p-4 w-full">
+              <div className="flex items-start gap-3 mb-3 w-full min-w-0">
+                <div className={`p-2 rounded-lg transition-colors flex-shrink-0 ${
+                  selectedItem === item.id ? 'bg-blue-400/30 text-blue-200' : 'bg-white/10 text-gray-300 group-hover:bg-white/20'
+                }`}>
+                  {getContentTypeIcon(item.content_type)}
+                </div>
+                <div className="flex-1 min-w-0 overflow-hidden">
+                  <h4 className={`font-semibold text-sm leading-tight truncate transition-colors ${
+                    selectedItem === item.id ? 'text-white' : 'text-gray-200 group-hover:text-white'
+                  }`}>{item.title}</h4>
+                  <div className="flex items-center gap-2 mt-1">
+                    <Badge className={`text-xs px-2 py-1 ${getContentTypeColor(item.content_type)} border-0 flex-shrink-0`}>
+                      {item.content_type}
+                    </Badge>
+                    {item.processing_status && getProcessingStatusIcon(item.processing_status)}
                   </div>
                 </div>
-                <div className="flex items-center space-x-2 flex-shrink-0">
-                  <Badge className={`text-xs px-2 py-1 ${getContentTypeColor(item.content_type)} border-0`}>
-                    {item.content_type}
-                  </Badge>
-                  {item.processing_status && getProcessingStatusIcon(item.processing_status)}
+                <div className="flex items-center space-x-1 flex-shrink-0">
                   {/* Show reprocess button for all items with content */}
                   {onReprocessItem && (
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-blue-500/20 hover:text-blue-400"
+                      className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-blue-500/20 hover:text-blue-400 hidden md:flex"
                       onClick={(e) => {
                         e.stopPropagation();
                         onReprocessItem(item.id);
@@ -154,7 +155,7 @@ export function ItemList({ items, selectedItem, onItemSelect, onDeleteItem, onRe
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500/20 hover:text-red-400"
+                    className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500/20 hover:text-red-400 hidden md:flex"
                     onClick={(e) => {
                       e.stopPropagation();
                       onDeleteItem(item.id);
@@ -165,29 +166,29 @@ export function ItemList({ items, selectedItem, onItemSelect, onDeleteItem, onRe
                 </div>
               </div>
 
-              <p className="text-sm text-gray-400 line-clamp-2 mb-3 leading-relaxed">
+              <p className="text-sm text-gray-400 line-clamp-2 mb-3 leading-relaxed break-words">
                 {item.content ? item.content.substring(0, 120) + '...' : 'No content preview available'}
               </p>
 
-              <div className="flex items-center justify-between text-xs">
-                <div className="flex items-center space-x-1 text-gray-400">
+              <div className="flex items-center justify-between text-xs gap-2 min-w-0">
+                <div className="flex items-center space-x-1 text-gray-400 flex-shrink-0">
                   <Calendar className="h-3 w-3" />
-                  <span className="font-medium">{formatDate(item.created_at)}</span>
+                  <span className="font-medium whitespace-nowrap">{formatDate(item.created_at)}</span>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 min-w-0 overflow-hidden">
                   {item.source_url && (
-                    <div className="flex items-center space-x-1 text-gray-400">
-                      <ExternalLink className="h-3 w-3" />
+                    <div className="flex items-center space-x-1 text-gray-400 min-w-0 hidden sm:flex">
+                      <ExternalLink className="h-3 w-3 flex-shrink-0" />
                       <span className="truncate max-w-24 font-medium">
                         {new URL(item.source_url).hostname}
                       </span>
                     </div>
                   )}
 
-                  <div className="flex items-center gap-1.5 text-gray-400">
+                  <div className="flex items-center gap-1.5 text-gray-400 flex-shrink-0">
                     {getProcessingStatusIcon(item.processing_status)}
-                    <span className="text-xs font-medium">
+                    <span className="text-xs font-medium hidden sm:inline">
                       {getProcessingStatusText(item)}
                     </span>
                   </div>

@@ -1,0 +1,419 @@
+name: Deploy to Production (GCP Cloud Run)
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_backend:
+        description: 'Deploy Backend'
+        required: true
+        type: boolean
+        default: true
+      deploy_frontend:
+        description: 'Deploy Frontend'
+        required: true
+        type: boolean
+        default: true
+      skip_approval:
+        description: 'Skip manual approval (USE WITH CAUTION)'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  PROJECT_ID: synapse-473918
+  REGION: asia-south1  # Mumbai
+  ENV: prod
+
+  # Service names
+  BACKEND_SERVICE: synapse-backend-prod
+  FRONTEND_SERVICE: synapse-frontend-prod
+
+  # Cloud SQL
+  CLOUD_SQL_CONNECTION: synapse-473918:asia-south1:synapse
+  SERVICE_ACCOUNT: synapse-backend@synapse-473918.iam.gserviceaccount.com
+
+  # Storage
+  GCS_BUCKET: synapse_storage
+
+jobs:
+  pre-deployment-checks:
+    name: Pre-Deployment Checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: prod
+
+      - name: Verify branch is prod
+        run: |
+          if [ "${{ github.ref }}" != "refs/heads/prod" ]; then
+            echo "Error: This workflow must run on the 'prod' branch"
+            exit 1
+          fi
+          echo "✓ Running on prod branch"
+
+      - name: Check for required secrets
+        run: |
+          REQUIRED_SECRETS=("GCP_SA_KEY")
+          for secret in "${REQUIRED_SECRETS[@]}"; do
+            if [ -z "${{ secrets[secret] }}" ]; then
+              echo "Error: Required secret $secret is not set"
+              exit 1
+            fi
+          done
+          echo "✓ All required secrets are configured"
+
+      - name: Validate environment files
+        run: |
+          # Check backend Dockerfile exists
+          if [ ! -f "backend/Dockerfile" ]; then
+            echo "Error: backend/Dockerfile not found"
+            exit 1
+          fi
+
+          # Check frontend Dockerfile exists
+          if [ ! -f "frontend/Dockerfile" ]; then
+            echo "Error: frontend/Dockerfile not found"
+            exit 1
+          fi
+
+          echo "✓ All required files present"
+
+  manual-approval:
+    name: Manual Approval Required
+    runs-on: ubuntu-latest
+    needs: pre-deployment-checks
+    if: ${{ github.event.inputs.skip_approval != 'true' }}
+    environment:
+      name: production-approval
+
+    steps:
+      - name: Wait for approval
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "  PRODUCTION DEPLOYMENT - APPROVAL REQUIRED"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+          echo "This deployment will update:"
+          echo "  • Backend:  ${{ github.event.inputs.deploy_backend }}"
+          echo "  • Frontend: ${{ github.event.inputs.deploy_frontend }}"
+          echo ""
+          echo "Commit: ${{ github.sha }}"
+          echo "Branch: ${{ github.ref }}"
+          echo "Actor:  ${{ github.actor }}"
+          echo ""
+          echo "Please review and approve this deployment."
+          echo ""
+
+  deploy-backend:
+    if: ${{ github.event.inputs.deploy_backend == 'true' }}
+    name: Deploy Backend to Cloud Run (Production)
+    runs-on: ubuntu-latest
+    needs: [pre-deployment-checks, manual-approval]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: prod
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for GCR
+        run: gcloud auth configure-docker
+
+      - name: Get current production image (for rollback)
+        id: current-image
+        run: |
+          CURRENT_IMAGE=$(gcloud run services describe $BACKEND_SERVICE --region $REGION --format 'value(spec.template.spec.containers[0].image)' 2>/dev/null || echo "none")
+          echo "current=$CURRENT_IMAGE" >> $GITHUB_OUTPUT
+          echo "Current production image: $CURRENT_IMAGE"
+
+      - name: Build and Push Backend Image
+        run: |
+          cd backend
+
+          # Pull previous image for caching
+          docker pull gcr.io/$PROJECT_ID/synapse-backend:prod || true
+
+          # Build with cache
+          docker build \
+            --cache-from gcr.io/$PROJECT_ID/synapse-backend:prod \
+            -t gcr.io/$PROJECT_ID/synapse-backend:${{ github.sha }} \
+            -t gcr.io/$PROJECT_ID/synapse-backend:prod \
+            -t gcr.io/$PROJECT_ID/synapse-backend:prod-$(date +%Y%m%d-%H%M%S) \
+            .
+
+          # Push all tags
+          docker push gcr.io/$PROJECT_ID/synapse-backend:${{ github.sha }}
+          docker push gcr.io/$PROJECT_ID/synapse-backend:prod
+          docker push gcr.io/$PROJECT_ID/synapse-backend:prod-$(date +%Y%m%d-%H%M%S)
+
+      - name: Deploy to Cloud Run (Production)
+        run: |
+          gcloud run deploy $BACKEND_SERVICE \
+            --image gcr.io/$PROJECT_ID/synapse-backend:${{ github.sha }} \
+            --region $REGION \
+            --platform managed \
+            --allow-unauthenticated \
+            --port 8000 \
+            --min-instances 1 \
+            --max-instances 10 \
+            --memory 1Gi \
+            --cpu 2 \
+            --timeout 300 \
+            --set-env-vars ENVIRONMENT=production,API_V1_STR=/api/v1,MAX_CONTENT_SIZE_MB=50,CHUNK_SIZE=500,CHUNK_OVERLAP=50,SIMILARITY_THRESHOLD=0.7,EMBEDDING_MODEL=text-embedding-ada-002,CHAT_MODEL=gpt-4o-mini,MAX_CHAT_HISTORY=10,CHAT_TIMEOUT_SECONDS=60,RATE_LIMIT_PER_MINUTE=120,LOG_LEVEL=WARNING,ENABLE_CACHING=true,CACHE_TTL_SECONDS=3600,STORAGE_BACKEND=gcs,GCS_BUCKET_NAME=$GCS_BUCKET,GCS_FOLDER_PREFIX=prod,GCS_PROJECT_ID=$PROJECT_ID \
+            --set-secrets SECRET_KEY=backend-secret-key:latest,OPENAI_API_KEY=openai-api-key:latest,DATABASE_URL=database-url-prod:latest \
+            --add-cloudsql-instances $CLOUD_SQL_CONNECTION \
+            --service-account $SERVICE_ACCOUNT \
+            --no-traffic
+
+      - name: Get Backend URL
+        id: backend-url
+        run: |
+          BACKEND_URL=$(gcloud run services describe $BACKEND_SERVICE --region $REGION --format 'value(status.url)')
+          echo "url=$BACKEND_URL" >> $GITHUB_OUTPUT
+          echo "Backend deployed to: $BACKEND_URL"
+
+      - name: Run Health Checks
+        run: |
+          BACKEND_URL=${{ steps.backend-url.outputs.url }}
+          echo "Running comprehensive health checks..."
+
+          # Health endpoint
+          echo "Testing /health endpoint..."
+          HEALTH_RESPONSE=$(curl -s -f $BACKEND_URL/health) || exit 1
+          echo "✓ Health check passed"
+
+          # API endpoint
+          echo "Testing /api/v1/health endpoint..."
+          curl -s -f $BACKEND_URL/api/v1/health || exit 1
+          echo "✓ API health check passed"
+
+          # Check database connectivity
+          echo "✓ All health checks passed"
+
+      - name: Gradually shift traffic to new revision
+        run: |
+          echo "Shifting 100% traffic to new revision..."
+          gcloud run services update-traffic $BACKEND_SERVICE \
+            --region $REGION \
+            --to-latest
+          echo "✓ Traffic shifted to new revision"
+
+      - name: Verify deployment
+        run: |
+          BACKEND_URL=${{ steps.backend-url.outputs.url }}
+          echo "Final verification..."
+
+          # Test multiple times
+          for i in {1..5}; do
+            curl -s -f $BACKEND_URL/health > /dev/null || exit 1
+            sleep 2
+          done
+
+          echo "✓ Deployment verified"
+
+    outputs:
+      backend_url: ${{ steps.backend-url.outputs.url }}
+      rollback_image: ${{ steps.current-image.outputs.current }}
+
+  deploy-frontend:
+    if: ${{ github.event.inputs.deploy_frontend == 'true' }}
+    name: Deploy Frontend to Cloud Run (Production)
+    runs-on: ubuntu-latest
+    needs: [pre-deployment-checks, manual-approval, deploy-backend]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: prod
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for GCR
+        run: gcloud auth configure-docker
+
+      - name: Get current production image (for rollback)
+        id: current-image
+        run: |
+          CURRENT_IMAGE=$(gcloud run services describe $FRONTEND_SERVICE --region $REGION --format 'value(spec.template.spec.containers[0].image)' 2>/dev/null || echo "none")
+          echo "current=$CURRENT_IMAGE" >> $GITHUB_OUTPUT
+          echo "Current production image: $CURRENT_IMAGE"
+
+      - name: Get Backend URL
+        id: backend-url
+        run: |
+          if [ -n "${{ needs.deploy-backend.outputs.backend_url }}" ]; then
+            BACKEND_URL="${{ needs.deploy-backend.outputs.backend_url }}"
+          else
+            BACKEND_URL=$(gcloud run services describe $BACKEND_SERVICE --region $REGION --format 'value(status.url)' 2>/dev/null || echo "https://synapse-backend-prod-XXXXXXXXXX-el.a.run.app")
+          fi
+          echo "url=$BACKEND_URL" >> $GITHUB_OUTPUT
+          echo "Using backend URL: $BACKEND_URL"
+
+      - name: Build and Push Frontend Image
+        run: |
+          cd frontend
+
+          # Pull previous image for caching
+          docker pull gcr.io/$PROJECT_ID/synapse-frontend:prod || true
+
+          # Build with backend URL
+          docker build \
+            --cache-from gcr.io/$PROJECT_ID/synapse-frontend:prod \
+            --build-arg VITE_BACKEND_API_URL=${{ steps.backend-url.outputs.url }} \
+            -t gcr.io/$PROJECT_ID/synapse-frontend:${{ github.sha }} \
+            -t gcr.io/$PROJECT_ID/synapse-frontend:prod \
+            -t gcr.io/$PROJECT_ID/synapse-frontend:prod-$(date +%Y%m%d-%H%M%S) \
+            .
+
+          # Push all tags
+          docker push gcr.io/$PROJECT_ID/synapse-frontend:${{ github.sha }}
+          docker push gcr.io/$PROJECT_ID/synapse-frontend:prod
+          docker push gcr.io/$PROJECT_ID/synapse-frontend:prod-$(date +%Y%m%d-%H%M%S)
+
+      - name: Deploy to Cloud Run (Production)
+        run: |
+          gcloud run deploy $FRONTEND_SERVICE \
+            --image gcr.io/$PROJECT_ID/synapse-frontend:${{ github.sha }} \
+            --region $REGION \
+            --platform managed \
+            --allow-unauthenticated \
+            --port 8080 \
+            --min-instances 1 \
+            --max-instances 5 \
+            --memory 512Mi \
+            --cpu 1 \
+            --timeout 60 \
+            --no-traffic
+
+      - name: Get Frontend URL
+        id: frontend-url
+        run: |
+          FRONTEND_URL=$(gcloud run services describe $FRONTEND_SERVICE --region $REGION --format 'value(status.url)')
+          echo "url=$FRONTEND_URL" >> $GITHUB_OUTPUT
+          echo "Frontend deployed to: $FRONTEND_URL"
+
+      - name: Test Frontend
+        run: |
+          FRONTEND_URL=${{ steps.frontend-url.outputs.url }}
+          echo "Testing frontend..."
+
+          # Test multiple times
+          for i in {1..3}; do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" $FRONTEND_URL)
+            if [ $HTTP_CODE -eq 200 ]; then
+              echo "✓ Attempt $i: Frontend is accessible"
+            else
+              echo "✗ Attempt $i: Frontend returned HTTP $HTTP_CODE"
+              exit 1
+            fi
+            sleep 2
+          done
+
+      - name: Shift traffic to new revision
+        run: |
+          echo "Shifting 100% traffic to new revision..."
+          gcloud run services update-traffic $FRONTEND_SERVICE \
+            --region $REGION \
+            --to-latest
+          echo "✓ Traffic shifted to new revision"
+
+    outputs:
+      frontend_url: ${{ steps.frontend-url.outputs.url }}
+      rollback_image: ${{ steps.current-image.outputs.current }}
+
+  post-deployment-tests:
+    name: Post-Deployment Tests
+    runs-on: ubuntu-latest
+    needs: [deploy-backend, deploy-frontend]
+    if: always()
+
+    steps:
+      - name: Run integration tests
+        run: |
+          echo "Running post-deployment integration tests..."
+
+          BACKEND_URL="${{ needs.deploy-backend.outputs.backend_url }}"
+          FRONTEND_URL="${{ needs.deploy-frontend.outputs.frontend_url }}"
+
+          if [ -n "$BACKEND_URL" ]; then
+            echo "Testing backend endpoints..."
+            curl -f $BACKEND_URL/health || exit 1
+            curl -f $BACKEND_URL/api/v1/health || exit 1
+            echo "✓ Backend tests passed"
+          fi
+
+          if [ -n "$FRONTEND_URL" ]; then
+            echo "Testing frontend..."
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" $FRONTEND_URL)
+            if [ $HTTP_CODE -eq 200 ]; then
+              echo "✓ Frontend test passed"
+            else
+              echo "✗ Frontend test failed with HTTP $HTTP_CODE"
+              exit 1
+            fi
+          fi
+
+  summary:
+    name: Deployment Summary
+    runs-on: ubuntu-latest
+    needs: [deploy-backend, deploy-frontend, post-deployment-tests]
+    if: always()
+
+    steps:
+      - name: Print Deployment Summary
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "  Synapse Production Deployment Complete"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+          echo "Environment: PRODUCTION"
+          echo "Region: $REGION (Mumbai)"
+          echo "Commit: ${{ github.sha }}"
+          echo "Deployed by: ${{ github.actor }}"
+          echo "Timestamp: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+          echo ""
+
+          if [ -n "${{ needs.deploy-backend.outputs.backend_url }}" ]; then
+            echo "✓ Backend:  ${{ needs.deploy-backend.outputs.backend_url }}"
+            echo "  Rollback: ${{ needs.deploy-backend.outputs.rollback_image }}"
+          else
+            echo "○ Backend:  Not deployed"
+          fi
+
+          echo ""
+
+          if [ -n "${{ needs.deploy-frontend.outputs.frontend_url }}" ]; then
+            echo "✓ Frontend: ${{ needs.deploy-frontend.outputs.frontend_url }}"
+            echo "  Rollback: ${{ needs.deploy-frontend.outputs.rollback_image }}"
+          else
+            echo "○ Frontend: Not deployed"
+          fi
+
+          echo ""
+          echo "API Docs: ${{ needs.deploy-backend.outputs.backend_url }}/docs"
+          echo ""
+          echo "To rollback, use the saved image tags above"
+          echo ""
+
+      - name: Send notification (placeholder)
+        run: |
+          echo "Production deployment complete!"
+          # Add Slack/Email notification here if needed

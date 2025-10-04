@@ -15,7 +15,7 @@ def setup_cors(app: FastAPI) -> None:
         app: FastAPI application instance
     """
     # Determine allowed origins based on environment
-    if settings.ENVIRONMENT == "development":
+    if settings.ENVIRONMENT in ["development", "local"]:
         allowed_origins = [
             "http://localhost:3000",
             "http://localhost:3001",

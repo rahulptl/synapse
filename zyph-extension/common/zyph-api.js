@@ -1,6 +1,19 @@
 (function(global) {
-    const API_BASE_URL = 'http://localhost:8000/api/v1';
+    // Dynamic API_BASE_URL - loaded from config.js
+    let API_BASE_URL = 'http://localhost:8000/api/v1'; // Fallback default
     const DEFAULT_FOLDER_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+    // Load API URL from config on initialization
+    (async function initializeApiUrl() {
+        try {
+            if (typeof window !== 'undefined' && window.ZyphConfig) {
+                API_BASE_URL = await window.ZyphConfig.getApiBaseUrl();
+                console.log('[ZyphApi] Initialized with API URL:', API_BASE_URL);
+            }
+        } catch (error) {
+            console.warn('[ZyphApi] Failed to load API URL from config, using fallback:', error);
+        }
+    })();
 
     class ZyphApiError extends Error {
         constructor(message, options = {}) {
@@ -19,6 +32,21 @@
             this.lastFolderFetch = 0;
             this.folderCacheTtl = DEFAULT_FOLDER_CACHE_TTL;
             this.authLoadPromise = null;
+            this.apiBaseUrl = null;
+        }
+
+        async getApiBaseUrl() {
+            // Try to get from config first
+            if (typeof window !== 'undefined' && window.ZyphConfig) {
+                try {
+                    this.apiBaseUrl = await window.ZyphConfig.getApiBaseUrl();
+                    return this.apiBaseUrl;
+                } catch (error) {
+                    console.warn('[ZyphApi] Failed to load API URL from config:', error);
+                }
+            }
+            // Fallback to module-level constant
+            return API_BASE_URL;
         }
 
         async loadAuthFromStorage() {
@@ -103,9 +131,10 @@
         async validateApiKey(apiKey, userId = null) {
             const headers = this.buildHeaders(false, { apiKey, userId });
             headers.set('Content-Type', 'application/json');
+            const baseUrl = await this.getApiBaseUrl();
 
             try {
-                                const response = await fetch(`${API_BASE_URL}/auth/validate-api-key`, {
+                                const response = await fetch(`${baseUrl}/auth/validate-api-key`, {
                     method: 'POST',
                     headers
                 });
@@ -177,8 +206,10 @@
                 }
             }
 
+            const baseUrl = await this.getApiBaseUrl();
+
             try {
-                const response = await fetch(`${API_BASE_URL}${path}`, fetchOptions);
+                const response = await fetch(`${baseUrl}${path}`, fetchOptions);
                 if (response.status === 401 || response.status === 403) {
                     await this.clearAuth();
                     const body = await this.safeJson(response);

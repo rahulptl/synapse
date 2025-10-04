@@ -61,6 +61,13 @@ class Settings(BaseSettings):
     MAX_CHAT_HISTORY: int = 10
     CHAT_TIMEOUT_SECONDS: int = 60  # Increased for complex RAG responses
 
+    # RAG (Retrieval-Augmented Generation)
+    RAG_DEFAULT_LIMIT: int = 15  # Default maximum chunks to retrieve
+    RAG_MIN_RESULTS: int = 3  # Minimum chunks to return
+    RAG_MAX_RESULTS: int = 15  # Maximum chunks to return
+    RAG_MAX_CHUNKS_PER_DOC: int = 3  # Maximum chunks from same document
+    RAG_MIN_SIMILARITY: float = 0.3  # Minimum similarity threshold for inclusion
+
     # Rate limiting
     RATE_LIMIT_PER_MINUTE: int = 60
 

@@ -2,6 +2,7 @@
 File upload and processing service.
 """
 import io
+import re
 import logging
 from typing import Optional, Dict, Any
 from uuid import UUID
@@ -70,15 +71,8 @@ class FileService:
             if file_size > MAX_FILE_SIZE:
                 raise ValueError(f"File too large. Maximum size: 50MB")
 
-            # Generate unique filename like edge function
-            timestamp = int(datetime.now(timezone.utc).timestamp() * 1000)
-            import uuid
-            random_id = str(uuid.uuid4())
-            file_ext = ''
-            if file.filename and '.' in file.filename:
-                file_ext = '.' + file.filename.split('.')[-1]
-
-            storage_filename = f"{timestamp}-{random_id}{file_ext}"
+            # Generate clean, human-readable filename
+            storage_filename = self._generate_storage_filename(title, file.filename)
             storage_path = f"{user_id}/{folder_id}/{storage_filename}"
 
             # Detect content type like edge function
@@ -327,6 +321,54 @@ class FileService:
             return 'video'
 
         return 'file'
+
+    def _generate_storage_filename(self, title: str, original_filename: Optional[str]) -> str:
+        """
+        Generate clean, human-readable storage filename from title or filename.
+
+        Creates filesystem-safe filenames using title (preferred) or original filename.
+        Removes unsafe characters, limits length, and preserves file extensions.
+
+        Args:
+            title: Knowledge item title
+            original_filename: Original uploaded filename
+
+        Returns:
+            Sanitized filename with extension (e.g., "my_document.pdf")
+        """
+        # Use title if available, otherwise use original filename without extension
+        if title:
+            base_name = title
+        elif original_filename:
+            # Remove extension from original filename to use as base
+            base_name = original_filename.rsplit('.', 1)[0] if '.' in original_filename else original_filename
+        else:
+            base_name = 'untitled'
+
+        # Sanitize for filesystem safety
+        # Remove/replace unsafe characters: / \ : * ? " < > | and other non-printable chars
+        safe_name = re.sub(r'[/\\:*?"<>|\x00-\x1f\x7f-\x9f]', '_', base_name)
+
+        # Remove leading/trailing spaces and dots (problematic on some filesystems)
+        safe_name = safe_name.strip('. ')
+
+        # Replace multiple consecutive spaces, underscores, or hyphens with single underscore
+        safe_name = re.sub(r'[\s_-]+', '_', safe_name)
+
+        # Limit length to 200 chars (leaving room for extension and folder paths)
+        safe_name = safe_name[:200]
+
+        # Handle edge case: sanitization resulted in empty string
+        if not safe_name:
+            safe_name = 'file'
+
+        # Get extension from original filename
+        ext = ''
+        if original_filename and '.' in original_filename:
+            # Use lowercase extension for consistency
+            ext = '.' + original_filename.rsplit('.', 1)[1].lower()
+
+        return f"{safe_name}{ext}"
 
     async def _store_file_content_for_processing(self, knowledge_item_id: UUID, content: bytes):
         """

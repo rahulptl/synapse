@@ -64,7 +64,7 @@ steps:
       - '--timeout'
       - '300'
       - '--set-env-vars'
-      - 'ENVIRONMENT=${_ENVIRONMENT},API_V1_STR=/api/v1,MAX_CONTENT_SIZE_MB=50,CHUNK_SIZE=500,CHUNK_OVERLAP=50,SIMILARITY_THRESHOLD=0.7,EMBEDDING_MODEL=text-embedding-ada-002,CHAT_MODEL=gpt-4o-mini,MAX_CHAT_HISTORY=10,CHAT_TIMEOUT_SECONDS=60,RATE_LIMIT_PER_MINUTE=${_RATE_LIMIT},LOG_LEVEL=${_LOG_LEVEL},ENABLE_CACHING=true,CACHE_TTL_SECONDS=3600,STORAGE_BACKEND=gcs,GCS_BUCKET_NAME=${_GCS_BUCKET},GCS_FOLDER_PREFIX=${_ENV},GCS_PROJECT_ID=$PROJECT_ID'
+      - 'ENVIRONMENT=${_ENVIRONMENT},API_V1_STR=/api/v1,MAX_CONTENT_SIZE_MB=50,CHUNK_SIZE=500,CHUNK_OVERLAP=50,SIMILARITY_THRESHOLD=0.7,EMBEDDING_MODEL=text-embedding-ada-002,CHAT_MODEL=${_CHAT_MODEL},MAX_CHAT_HISTORY=10,CHAT_TIMEOUT_SECONDS=60,RATE_LIMIT_PER_MINUTE=${_RATE_LIMIT},LOG_LEVEL=${_LOG_LEVEL},ENABLE_CACHING=true,CACHE_TTL_SECONDS=3600,STORAGE_BACKEND=gcs,GCS_BUCKET_NAME=${_GCS_BUCKET},GCS_FOLDER_PREFIX=${_ENV},GCS_PROJECT_ID=$PROJECT_ID'
       - '--set-secrets'
       - 'SECRET_KEY=backend-secret-key:latest,OPENAI_API_KEY=openai-api-key:latest,DATABASE_URL=database-url-${_ENV}:latest'
       - '--add-cloudsql-instances'
@@ -72,15 +72,16 @@ steps:
       - '--service-account'
       - '${_SERVICE_ACCOUNT}'
 
-# Default substitution values for development
+# Default substitution values for development (cost-optimized)
 substitutions:
   _ENV: 'dev'
   _ENVIRONMENT: 'development'
   _REGION: 'asia-south1'
   _MIN_INSTANCES: '0'
-  _MAX_INSTANCES: '10'
-  _MEMORY: '1Gi'
-  _CPU: '2'
+  _MAX_INSTANCES: '5'  # Reduced from 10 to 5 for dev
+  _MEMORY: '512Mi'  # Reduced from 1Gi to 512Mi for dev cost savings
+  _CPU: '1'  # Reduced from 2 to 1 for dev cost savings
+  _CHAT_MODEL: 'gpt-4.1-mini'  # 83% cheaper than gpt-4o-mini with better performance
   _RATE_LIMIT: '60'
   _LOG_LEVEL: 'INFO'
   _GCS_BUCKET: 'synapse_storage'

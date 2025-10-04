@@ -7,7 +7,7 @@ import { AuthProvider, useAuth } from "./hooks/useAuth";
 import { Header } from "./components/layout/Header";
 import LandingPage from "./pages/LandingPage";
 import { AuthPage } from "./components/auth/AuthPage";
-import KnowledgePage from "./pages/KnowledgePage";
+import ResponsiveKnowledgePage from "./pages/ResponsiveKnowledgePage";
 import ChatPage from "./pages/ChatPage";
 import SettingsPage from "./pages/SettingsPage";
 import DocsPage from "./pages/DocsPage";
@@ -44,13 +44,13 @@ function AppContent() {
           <Route path="/" element={<LandingPage />} />
           <Route path="/auth" element={<AuthPage />} />
           <Route path="/docs" element={<DocsPage />} />
-          <Route 
-            path="/knowledge" 
+          <Route
+            path="/knowledge"
             element={
               <ProtectedRoute>
-                <KnowledgePage />
+                <ResponsiveKnowledgePage />
               </ProtectedRoute>
-            } 
+            }
           />
           <Route 
             path="/chat" 

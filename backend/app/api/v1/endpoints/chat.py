@@ -20,7 +20,7 @@ from app.models.schemas import (
 router = APIRouter()
 
 
-@router.post("/", response_model=ChatResponse)
+@router.post("", response_model=ChatResponse)
 async def chat(
     chat_request: ChatRequest,
     background_tasks: BackgroundTasks,

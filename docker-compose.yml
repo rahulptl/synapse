@@ -1,22 +1,24 @@
-version: '3.8'
-
 services:
-  cloud-sql-proxy:
-    image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.8.0
-    container_name: synapse-cloud-sql-proxy
-    command:
-      - "synapse-473918:asia-south1:synapse"
-      - "--address=0.0.0.0"
-      - "--port=5432"
-    volumes:
-      - ./backend/keys:/keys:ro
+  postgres:
+    image: ankane/pgvector:latest
+    container_name: synapse-postgres
     environment:
-      GOOGLE_APPLICATION_CREDENTIALS: /keys/synapse-storage-service.json
+      POSTGRES_DB: synapse_local
+      POSTGRES_USER: synapse
+      POSTGRES_PASSWORD: localdev123
     ports:
       - "5432:5432"
+    volumes:
+      - ./postgres_data:/var/lib/postgresql/data
+      - ./backend/init_local_db.sql:/docker-entrypoint-initdb.d/init.sql:ro
     networks:
       - synapse-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U synapse -d synapse_local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   backend:
     build:
@@ -28,22 +30,22 @@ services:
     env_file:
       - ./backend/.env.local
     volumes:
-      # Mount service account key
-      - ./backend/keys:/app/keys:ro
-      # Mount code for hot reload (optional, comment out for production-like testing)
+      # Mount code for hot reload
       - ./backend/app:/app/app
+      # Mount local file storage
+      - ./local_storage:/app/storage
     environment:
-      # Override for Docker
+      # Override for Docker Compose
       ENVIRONMENT: local
-      # Service account path inside container
-      GOOGLE_APPLICATION_CREDENTIALS: /app/keys/synapse-storage-service.json
-      # Override DATABASE_URL to use cloud-sql-proxy service
-      DATABASE_URL: postgresql+asyncpg://local_user:Dell%406.75%402019@cloud-sql-proxy:5432/local
+      DATABASE_URL: postgresql+asyncpg://synapse:localdev123@postgres:5432/synapse_local
+      STORAGE_BACKEND: local
+      LOCAL_STORAGE_PATH: /app/storage
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     networks:
       - synapse-network
     depends_on:
-      - cloud-sql-proxy
+      postgres:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -56,18 +58,18 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        # Frontend accessed via localhost:3000, API proxied through nginx to backend
-        VITE_BACKEND_API_URL: http://localhost:3000/api
+        # Frontend calls backend directly (same as production architecture)
+        VITE_BACKEND_API_URL: http://localhost:8000
     container_name: synapse-frontend
     ports:
-      - "3000:80"
+      - "3000:8080"
     networks:
       - synapse-network
     depends_on:
       backend:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80/health"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
       interval: 30s
       timeout: 10s
       retries: 3

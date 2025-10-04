@@ -7,6 +7,9 @@ import { ItemList } from '@/components/knowledge/ItemList';
 import { ItemDetails } from '@/components/knowledge/ItemDetails';
 import { UploadDialog } from '@/components/knowledge/UploadDialog';
 import { useToast } from '@/hooks/use-toast';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import { Menu, FolderOpen } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 interface Folder {
   id: string;
@@ -35,6 +38,7 @@ export default function KnowledgePage() {
   const [folderItems, setFolderItems] = useState<KnowledgeItem[]>([]);
   const [selectedItem, setSelectedItem] = useState<string | null>(null);
   const [selectedItemData, setSelectedItemData] = useState<KnowledgeItem | null>(null);
+  const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const { toast } = useToast();
 
   const getAuthData = () => {
@@ -206,9 +210,34 @@ export default function KnowledgePage() {
     return <Navigate to="/auth" replace />;
   }
 
+  // Handle mobile folder selection
+  const handleMobileFolderSelect = (folderId: string) => {
+    setSelectedFolder(folderId);
+    setIsMobileDrawerOpen(false); // Close drawer after selection
+  };
+
+  // Get currently selected folder name for mobile header
+  const getSelectedFolderName = (): string | null => {
+    if (!selectedFolder) return null;
+
+    const findFolder = (folders: Folder[]): Folder | null => {
+      for (const folder of folders) {
+        if (folder.id === selectedFolder) return folder;
+        if (folder.children) {
+          const found = findFolder(folder.children);
+          if (found) return found;
+        }
+      }
+      return null;
+    };
+
+    const folder = findFolder(folders);
+    return folder?.name || null;
+  };
+
   return (
     <div className="flex h-[calc(100vh-4rem)] bg-gradient-to-br from-slate-950 via-gray-900 to-slate-800">
-      {/* Left Sidebar - Folder Tree */}
+      {/* Desktop Sidebar - Folder Tree */}
       <div className="hidden md:block w-64 lg:w-80 flex-shrink-0 bg-white/5 backdrop-blur-2xl border-r border-white/10 shadow-2xl">
         <FolderTree
           folders={folders}
@@ -219,41 +248,99 @@ export default function KnowledgePage() {
         />
       </div>
 
+      {/* Mobile Drawer - Folder Tree */}
+      <Sheet open={isMobileDrawerOpen} onOpenChange={setIsMobileDrawerOpen}>
+        <SheetContent side="left" className="w-80 p-0 bg-gradient-to-br from-slate-950 via-gray-900 to-slate-800 border-r border-white/10">
+          <SheetHeader className="p-5 border-b border-white/10">
+            <SheetTitle className="text-white">Folders</SheetTitle>
+          </SheetHeader>
+          <div className="h-[calc(100%-5rem)] overflow-hidden">
+            <FolderTree
+              folders={folders}
+              selectedFolder={selectedFolder}
+              onFolderSelect={handleMobileFolderSelect}
+              onCreateFolder={createFolder}
+              onDeleteFolder={deleteFolder}
+            />
+          </div>
+        </SheetContent>
+      </Sheet>
+
       {/* Main Content Area */}
-      <div className="flex-1 flex bg-gradient-to-br from-slate-900/80 to-gray-800/80 backdrop-blur-sm">
+      <div className="flex-1 flex flex-col bg-gradient-to-br from-slate-900/80 to-gray-800/80 backdrop-blur-sm">
         {selectedFolder ? (
           <>
-            {/* Item List */}
-            <div className="w-full md:w-80 lg:w-96 flex-shrink-0 bg-white/5 backdrop-blur-xl md:border-r border-white/10 shadow-xl overflow-y-auto">
-              <div className="p-4 border-b border-white/10 flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-semibold text-white">Items</h3>
-                  <p className="text-sm text-gray-400">{folderItems.length} item{folderItems.length !== 1 ? 's' : ''}</p>
-                </div>
-                <UploadDialog
-                  folderId={selectedFolder}
-                  onUploadComplete={() => loadFolderItems(selectedFolder)}
-                />
-              </div>
-              <ItemList
-                items={folderItems}
-                selectedItem={selectedItem}
-                onItemSelect={setSelectedItem}
-                onDeleteItem={deleteItem}
-                onReprocessItem={reprocessItem}
+            {/* Mobile Header with Folder Name and Menu */}
+            <div className="md:hidden bg-white/5 backdrop-blur-xl border-b border-white/10 px-4 py-3 flex items-center justify-between">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setIsMobileDrawerOpen(true)}
+                className="h-9 px-3 text-white hover:bg-white/10"
+              >
+                <Menu className="h-5 w-5 mr-2" />
+                <FolderOpen className="h-4 w-4 mr-2 text-blue-400" />
+                <span className="text-sm font-medium truncate max-w-[200px]">
+                  {getSelectedFolderName() || 'Folder'}
+                </span>
+              </Button>
+              <UploadDialog
+                folderId={selectedFolder}
+                onUploadComplete={() => loadFolderItems(selectedFolder)}
               />
             </div>
 
-            {/* Item Details */}
-            <div className="hidden lg:block flex-1 bg-gradient-to-br from-slate-900/50 to-gray-800/50">
-              <ItemDetails
-                item={selectedItemData}
-                onDeleteItem={deleteItem}
-              />
+            {/* Item List and Details Container */}
+            <div className="flex-1 flex flex-row overflow-hidden">
+              {/* Item List - Hidden on mobile when item selected */}
+              <div className={`w-full md:w-80 lg:w-96 flex-shrink-0 bg-white/5 backdrop-blur-xl md:border-r border-white/10 shadow-xl overflow-y-auto ${
+                selectedItem ? 'hidden lg:flex lg:flex-col' : 'flex flex-col'
+              }`}>
+                {/* Desktop Header */}
+                <div className="hidden md:block p-4 border-b border-white/10 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">Items</h3>
+                    <p className="text-sm text-gray-400">{folderItems.length} item{folderItems.length !== 1 ? 's' : ''}</p>
+                  </div>
+                  <UploadDialog
+                    folderId={selectedFolder}
+                    onUploadComplete={() => loadFolderItems(selectedFolder)}
+                  />
+                </div>
+                <ItemList
+                  items={folderItems}
+                  selectedItem={selectedItem}
+                  onItemSelect={setSelectedItem}
+                  onDeleteItem={deleteItem}
+                  onReprocessItem={reprocessItem}
+                />
+              </div>
+
+              {/* Item Details - Full screen on mobile when item selected, side panel on desktop */}
+              <div className={`flex-1 bg-gradient-to-br from-slate-900/50 to-gray-800/50 ${
+                selectedItem ? 'block' : 'hidden lg:block'
+              }`}>
+                <ItemDetails
+                  item={selectedItemData}
+                  onDeleteItem={deleteItem}
+                  onBack={() => setSelectedItem(null)}
+                />
+              </div>
             </div>
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center">
+          <div className="flex-1 flex flex-col items-center justify-center">
+            {/* Mobile Floating Button */}
+            <div className="md:hidden fixed bottom-6 right-6 z-10">
+              <Button
+                size="lg"
+                onClick={() => setIsMobileDrawerOpen(true)}
+                className="h-14 w-14 rounded-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 shadow-2xl shadow-blue-500/50 text-white"
+              >
+                <Menu className="h-6 w-6" />
+              </Button>
+            </div>
+
             <div className="text-center space-y-6 px-6">
               <div className="relative">
                 <div className="absolute inset-0 bg-gradient-to-r from-blue-400/30 via-emerald-400/30 to-indigo-400/30 rounded-full blur-2xl animate-pulse"></div>
@@ -268,7 +355,27 @@ export default function KnowledgePage() {
                   Welcome to your Knowledge Base
                 </h3>
                 <p className="text-gray-300 max-w-lg mx-auto text-lg leading-relaxed">
-                  Select a folder from the sidebar to explore your knowledge. Organize, search, and discover insights from your personal collection.
+                  {folders.length === 0 ? (
+                    <>
+                      Get started by creating your first folder.
+                      <span className="block mt-2 md:hidden text-blue-400 font-medium">
+                        Tap the menu button to create folders
+                      </span>
+                      <span className="hidden md:block text-blue-400 font-medium">
+                        Use the sidebar to create and organize folders
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      Select a folder to explore your knowledge.
+                      <span className="block mt-2 md:hidden text-blue-400 font-medium">
+                        Tap the menu button to browse folders
+                      </span>
+                      <span className="hidden md:block text-blue-400 font-medium">
+                        Choose from {folders.length} folder{folders.length !== 1 ? 's' : ''} in the sidebar
+                      </span>
+                    </>
+                  )}
                 </p>
               </div>
               <div className="flex flex-wrap justify-center gap-3">
