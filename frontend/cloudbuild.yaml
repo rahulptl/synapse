@@ -1,12 +1,22 @@
 steps:
-  # Build the Docker image with build arguments
+  # Pull previous image for Docker layer caching
+  - name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - 'docker pull gcr.io/$PROJECT_ID/synapse-frontend:latest || exit 0'
+    dir: 'frontend'
+
+  # Build the Docker image with build arguments and cache
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
+      - '--cache-from'
+      - 'gcr.io/$PROJECT_ID/synapse-frontend:latest'
       - '--build-arg'
       - 'VITE_BACKEND_API_URL=${_BACKEND_URL}'
       - '-t'
-      - 'gcr.io/$PROJECT_ID/synapse-frontend:$COMMIT_SHA'
+      - 'gcr.io/$PROJECT_ID/synapse-frontend:$BUILD_ID'
       - '-t'
       - 'gcr.io/$PROJECT_ID/synapse-frontend:${_ENV}'
       - '-t'
@@ -18,7 +28,7 @@ steps:
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'push'
-      - 'gcr.io/$PROJECT_ID/synapse-frontend:$COMMIT_SHA'
+      - 'gcr.io/$PROJECT_ID/synapse-frontend:$BUILD_ID'
 
   - name: 'gcr.io/cloud-builders/docker'
     args:
@@ -37,7 +47,7 @@ steps:
       - 'deploy'
       - 'synapse-frontend-${_ENV}'
       - '--image'
-      - 'gcr.io/$PROJECT_ID/synapse-frontend:$COMMIT_SHA'
+      - 'gcr.io/$PROJECT_ID/synapse-frontend:$BUILD_ID'
       - '--region'
       - '${_REGION}'
       - '--platform'
