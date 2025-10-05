@@ -59,8 +59,8 @@ export function UploadDialog({ folderId, onUploadComplete }: UploadDialogProps) 
     if (!selectedFiles) return;
     const newFiles = Array.from(selectedFiles);
 
-    // Validate file sizes (200MB limit to match backend)
-    const MAX_FILE_SIZE = 200 * 1024 * 1024; // 200MB
+    // Validate file sizes (32MB Cloud Run limit)
+    const MAX_FILE_SIZE = 32 * 1024 * 1024; // 32MB (Cloud Run maximum)
     const oversizedFiles = newFiles.filter(f => f.size > MAX_FILE_SIZE);
 
     if (oversizedFiles.length > 0) {
@@ -70,7 +70,7 @@ export function UploadDialog({ folderId, onUploadComplete }: UploadDialogProps) 
 
       toast({
         title: "File too large",
-        description: `${oversizedFiles.length} file(s) exceed 200MB limit: ${fileList}`,
+        description: `${oversizedFiles.length} file(s) exceed 32MB limit: ${fileList}. Cloud Run has a 32MB request size limit.`,
         variant: "destructive",
       });
       return;

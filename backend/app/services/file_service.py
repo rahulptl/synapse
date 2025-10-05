@@ -65,16 +65,17 @@ class FileService:
             file_content = await file.read()
             file_size = len(file_content)
 
-            # Check file size - increased limit to support larger documents
-            # Cloud Storage supports up to 5TB, so storage is not a concern
-            MAX_FILE_SIZE = 200 * 1024 * 1024  # 200MB limit
+            # Check file size - Cloud Run has a 32MB request body limit
+            # For larger files, use direct GCS upload with signed URLs
+            MAX_FILE_SIZE = 32 * 1024 * 1024  # 32MB limit (Cloud Run maximum)
 
             if file_size > MAX_FILE_SIZE:
                 file_size_mb = file_size / (1024 * 1024)
                 max_size_mb = MAX_FILE_SIZE / (1024 * 1024)
                 raise ValueError(
                     f"File too large. Your file is {file_size_mb:.1f}MB, "
-                    f"but maximum size is {max_size_mb:.0f}MB"
+                    f"but maximum size is {max_size_mb:.0f}MB. "
+                    f"Cloud Run has a 32MB request limit. For larger files, please contact support."
                 )
 
             # Log file upload for monitoring
