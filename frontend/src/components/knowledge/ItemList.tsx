@@ -15,6 +15,9 @@ interface KnowledgeItem {
   is_chunked?: boolean;
   total_chunks?: number;
   processing_status?: string;
+  vector_count?: number;
+  vectors_with_embeddings?: number;
+  is_searchable?: boolean;
 }
 
 interface ItemListProps {
@@ -66,25 +69,36 @@ export function ItemList({ items, selectedItem, onItemSelect, onDeleteItem, onRe
   };
 
   const getProcessingStatusText = (item: KnowledgeItem) => {
-    // Check if item has been chunked/processed - this is the most reliable indicator
-    if (item.is_chunked && item.total_chunks && item.total_chunks > 0) {
+    // Use is_searchable flag if available (from enhanced status endpoint)
+    if (item.is_searchable === true) {
       return `Searchable (${item.total_chunks} chunks)`;
     }
 
-    // Otherwise check explicit status
+    // Check if item has been chunked/processed
+    if (item.is_chunked && item.total_chunks && item.total_chunks > 0) {
+      // Check vector status if available
+      if (item.vector_count !== undefined && item.vectors_with_embeddings !== undefined) {
+        if (item.vectors_with_embeddings === item.total_chunks) {
+          return `Searchable (${item.total_chunks} chunks)`;
+        } else if (item.vectors_with_embeddings > 0) {
+          return `Processing embeddings (${item.vectors_with_embeddings}/${item.total_chunks})`;
+        }
+      }
+      return `Searchable (${item.total_chunks} chunks)`;
+    }
+
+    // Check explicit status
     switch (item.processing_status) {
       case 'processing':
         return 'Processing for search...';
       case 'completed':
-        // If marked completed but no chunks, something went wrong
         return item.total_chunks > 0 ? 'Searchable' : 'Processing incomplete';
       case 'failed':
-        return 'Processing failed';
+        return 'Processing failed - Click to retry';
       case 'pending':
-        return 'Pending processing';
+        return 'Queued for processing...';
       default:
-        // Don't assume searchable without chunks
-        return 'Not yet searchable';
+        return 'Processing...';  // More optimistic default
     }
   };
 

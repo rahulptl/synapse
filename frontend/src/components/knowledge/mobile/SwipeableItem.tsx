@@ -6,6 +6,7 @@ interface SwipeableItemProps {
   children: ReactNode;
   onDelete?: () => void;
   onReprocess?: () => void;
+  onSwipe?: () => void; // Callback when user starts swiping
   threshold?: number;
 }
 
@@ -18,10 +19,16 @@ export function SwipeableItem({
   children,
   onDelete,
   onReprocess,
+  onSwipe,
   threshold = 80,
 }: SwipeableItemProps) {
   const handlers: SwipeHandlers = {
     onSwipeLeft: () => {
+      // Notify parent that user swiped
+      if (onSwipe) {
+        onSwipe();
+      }
+
       if (onDelete) {
         // Trigger haptic feedback if available
         if ('vibrate' in navigator) {
@@ -31,6 +38,11 @@ export function SwipeableItem({
       }
     },
     onSwipeRight: () => {
+      // Notify parent that user swiped
+      if (onSwipe) {
+        onSwipe();
+      }
+
       if (onReprocess) {
         // Trigger haptic feedback if available
         if ('vibrate' in navigator) {

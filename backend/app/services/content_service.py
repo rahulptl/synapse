@@ -345,11 +345,13 @@ class ContentService:
         if not folder:
             raise ValueError("Folder not found or insufficient permissions")
 
-        # Get content items
+        # Get content items with vectors eagerly loaded for status calculation
+        from sqlalchemy.orm import selectinload
+
         content_stmt = select(KnowledgeItem).where(
             KnowledgeItem.folder_id == folder_id,
             KnowledgeItem.user_id == user_id
-        ).order_by(KnowledgeItem.created_at.desc())
+        ).options(selectinload(KnowledgeItem.vectors)).order_by(KnowledgeItem.created_at.desc())
 
         content_result = await db.execute(content_stmt)
         content_items = content_result.scalars().all()
@@ -357,6 +359,28 @@ class ContentService:
         # Convert content items to match edge function format
         content_list = []
         for item in content_items:
+            # Count vectors with actual embeddings
+            vector_count = len(item.vectors) if item.vectors else 0
+            vectors_with_embeddings = 0
+
+            if item.vectors:
+                for vector in item.vectors:
+                    # Check for None explicitly to avoid "array truth value" error
+                    if vector.embedding is not None and len(vector.embedding) > 0:
+                        # Check if not all zeros (placeholder embedding)
+                        try:
+                            if not all(x == 0.0 for x in vector.embedding):
+                                vectors_with_embeddings += 1
+                        except (TypeError, ValueError):
+                            # If we can't iterate, assume it's a valid embedding
+                            vectors_with_embeddings += 1
+
+            # Determine if searchable
+            is_searchable = (
+                item.processing_status == "completed" and
+                item.is_chunked and
+                vectors_with_embeddings > 0
+            )
             # Load full content if stored externally
             content = item.content
             if item.item_metadata and item.item_metadata.get("stored_in_storage"):
@@ -369,14 +393,35 @@ class ContentService:
                         logger.error(f"Failed to load stored content: {e}")
                         # Keep the storage reference as content
 
+            # Format timestamps as UTC ISO strings with 'Z' suffix
+            # Database stores UTC times but doesn't include timezone info
+            # Adding 'Z' tells JavaScript to interpret as UTC
+            created_at_str = None
+            if item.created_at:
+                created_at_str = item.created_at.isoformat()
+                if not created_at_str.endswith('Z') and '+' not in created_at_str:
+                    created_at_str += 'Z'
+
+            updated_at_str = None
+            if item.updated_at:
+                updated_at_str = item.updated_at.isoformat()
+                if not updated_at_str.endswith('Z') and '+' not in updated_at_str:
+                    updated_at_str += 'Z'
+
             content_list.append({
                 "id": item.id,
                 "title": item.title,
                 "content": content,  # Include the actual content
                 "content_type": item.content_type,
                 "source_url": item.source_url,
-                "created_at": item.created_at.isoformat() if item.created_at else None,
-                "updated_at": item.updated_at.isoformat() if item.updated_at else None,
+                "processing_status": item.processing_status,
+                "is_chunked": item.is_chunked,
+                "total_chunks": item.total_chunks,
+                "vector_count": vector_count,
+                "vectors_with_embeddings": vectors_with_embeddings,
+                "is_searchable": is_searchable,
+                "created_at": created_at_str,
+                "updated_at": updated_at_str,
                 "metadata": item.item_metadata
             })
 

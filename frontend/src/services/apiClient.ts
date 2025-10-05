@@ -170,6 +170,63 @@ class ApiClient {
     return response.json();
   }
 
+  async uploadFileWithProgress(
+    formData: FormData,
+    auth: { userId: string; accessToken: string },
+    onProgress: (progress: number) => void
+  ): Promise<any> {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+
+      // Track upload progress
+      xhr.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable) {
+          const percentComplete = Math.round((event.loaded / event.total) * 100);
+          onProgress(percentComplete);
+        }
+      });
+
+      // Handle completion
+      xhr.addEventListener('load', () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const response = JSON.parse(xhr.responseText);
+            resolve(response);
+          } catch (e) {
+            reject(new Error('Failed to parse response'));
+          }
+        } else {
+          try {
+            const errorData = JSON.parse(xhr.responseText);
+            reject(new Error(errorData.detail || errorData.message || `Upload failed: ${xhr.statusText}`));
+          } catch (e) {
+            reject(new Error(`Upload failed: ${xhr.statusText}`));
+          }
+        }
+      });
+
+      // Handle errors
+      xhr.addEventListener('error', () => {
+        reject(new Error('Upload failed: Network error'));
+      });
+
+      xhr.addEventListener('abort', () => {
+        reject(new Error('Upload cancelled'));
+      });
+
+      // Set up and send request
+      xhr.open('POST', this.buildUrl('/files/upload'));
+      xhr.setRequestHeader('Authorization', `Bearer ${auth.accessToken}`);
+      xhr.setRequestHeader('x-user-id', auth.userId);
+
+      xhr.send(formData);
+    });
+  }
+
+  async getProcessingStatus(itemId: string, auth: { userId: string; accessToken: string }) {
+    return this.request(`/files/status/${itemId}`, { auth });
+  }
+
   // Search operations
   async searchContent(
     searchData: {

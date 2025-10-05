@@ -65,11 +65,24 @@ class FileService:
             file_content = await file.read()
             file_size = len(file_content)
 
-            # Check file size (use same limit as edge function)
-            # Edge functions don't have explicit size limits, but we'll use reasonable defaults
-            MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB limit
+            # Check file size - increased limit to support larger documents
+            # Cloud Storage supports up to 5TB, so storage is not a concern
+            MAX_FILE_SIZE = 200 * 1024 * 1024  # 200MB limit
+
             if file_size > MAX_FILE_SIZE:
-                raise ValueError(f"File too large. Maximum size: 50MB")
+                file_size_mb = file_size / (1024 * 1024)
+                max_size_mb = MAX_FILE_SIZE / (1024 * 1024)
+                raise ValueError(
+                    f"File too large. Your file is {file_size_mb:.1f}MB, "
+                    f"but maximum size is {max_size_mb:.0f}MB"
+                )
+
+            # Log file upload for monitoring
+            logger.info(
+                f"Uploading file: {file.filename} "
+                f"({file_size / (1024 * 1024):.1f}MB) "
+                f"for user {user_id}"
+            )
 
             # Generate clean, human-readable filename
             storage_filename = self._generate_storage_filename(title, file.filename)
@@ -260,7 +273,7 @@ class FileService:
         item_id: UUID
     ) -> Dict[str, Any]:
         """
-        Get processing status for a knowledge item.
+        Get detailed processing status for a knowledge item.
 
         Args:
             db: Database session
@@ -268,25 +281,77 @@ class FileService:
             item_id: Knowledge item ID
 
         Returns:
-            Dict with processing status information
+            Dict with comprehensive processing status information including:
+            - processing_status: Current status (pending, processing, completed, failed)
+            - is_chunked: Whether item has been chunked
+            - total_chunks: Number of chunks created
+            - vector_count: Total number of vectors
+            - vectors_with_embeddings: Number of vectors with actual embeddings
+            - is_searchable: Whether item is ready for search
         """
+        from sqlalchemy.orm import selectinload
+
+        # Get item with vectors loaded
         stmt = select(KnowledgeItem).where(
             KnowledgeItem.id == item_id,
             KnowledgeItem.user_id == user_id
-        )
+        ).options(selectinload(KnowledgeItem.vectors))
+
         result = await db.execute(stmt)
         item = result.scalar_one_or_none()
 
         if not item:
             raise ValueError("Knowledge item not found or access denied")
 
+        # Count vectors
+        vector_count = len(item.vectors) if item.vectors else 0
+
+        # Count vectors with actual embeddings (not placeholder zeros)
+        vectors_with_embeddings = 0
+        if item.vectors:
+            for vector in item.vectors:
+                # Check for None explicitly to avoid "array truth value" error
+                if vector.embedding is not None and len(vector.embedding) > 0:
+                    # Check if not all zeros (placeholder)
+                    try:
+                        if not all(x == 0.0 for x in vector.embedding):
+                            vectors_with_embeddings += 1
+                    except (TypeError, ValueError):
+                        # If we can't iterate, assume it's a valid embedding
+                        vectors_with_embeddings += 1
+
+        # Determine if searchable
+        is_searchable = (
+            item.processing_status == "completed" and
+            item.is_chunked and
+            vectors_with_embeddings > 0
+        )
+
+        # Format timestamps as UTC ISO strings with 'Z' suffix
+        created_at_str = None
+        if item.created_at:
+            created_at_str = item.created_at.isoformat()
+            if not created_at_str.endswith('Z') and '+' not in created_at_str:
+                created_at_str += 'Z'
+
+        updated_at_str = None
+        if item.updated_at:
+            updated_at_str = item.updated_at.isoformat()
+            if not updated_at_str.endswith('Z') and '+' not in updated_at_str:
+                updated_at_str += 'Z'
+
         return {
-            "knowledge_item_id": item.id,
+            "knowledge_item_id": str(item.id),
             "processing_status": item.processing_status,
+            "is_chunked": item.is_chunked,
+            "total_chunks": item.total_chunks,
+            "vector_count": vector_count,
+            "vectors_with_embeddings": vectors_with_embeddings,
+            "is_searchable": is_searchable,
             "content_type": item.content_type,
             "title": item.title,
-            "created_at": item.created_at,
-            "updated_at": item.updated_at
+            "created_at": created_at_str,
+            "updated_at": updated_at_str
         }
 
     def _get_content_type_from_file(self, filename: str, mime_type: str) -> str:

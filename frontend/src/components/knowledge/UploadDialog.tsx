@@ -58,6 +58,24 @@ export function UploadDialog({ folderId, onUploadComplete }: UploadDialogProps) 
   const handleFileSelect = (selectedFiles: FileList | null) => {
     if (!selectedFiles) return;
     const newFiles = Array.from(selectedFiles);
+
+    // Validate file sizes (200MB limit to match backend)
+    const MAX_FILE_SIZE = 200 * 1024 * 1024; // 200MB
+    const oversizedFiles = newFiles.filter(f => f.size > MAX_FILE_SIZE);
+
+    if (oversizedFiles.length > 0) {
+      const fileList = oversizedFiles.map(f =>
+        `${f.name} (${(f.size / (1024 * 1024)).toFixed(1)}MB)`
+      ).join(', ');
+
+      toast({
+        title: "File too large",
+        description: `${oversizedFiles.length} file(s) exceed 200MB limit: ${fileList}`,
+        variant: "destructive",
+      });
+      return;
+    }
+
     setFiles(prev => [...prev, ...newFiles]);
 
     if (!title && newFiles.length > 0) {
@@ -122,18 +140,28 @@ export function UploadDialog({ folderId, onUploadComplete }: UploadDialogProps) 
           formData.append('title', files.length === 1 ? title : `${title} - ${file.name}`);
           if (description) formData.append('description', description);
 
-          const progressInterval = setInterval(() => {
-            setUploadProgress(prev =>
-              prev.map((p, idx) =>
-                idx === i && p.progress < 90
-                  ? { ...p, progress: p.progress + 10 }
-                  : p
-              )
-            );
-          }, 200);
+          // Use real progress tracking for large files (>10MB)
+          if (file.size > 10 * 1024 * 1024) {
+            await apiClient.uploadFileWithProgress(formData, auth, (progress) => {
+              setUploadProgress(prev =>
+                prev.map((p, idx) => idx === i ? { ...p, progress } : p)
+              );
+            });
+          } else {
+            // Simulated progress for small files
+            const progressInterval = setInterval(() => {
+              setUploadProgress(prev =>
+                prev.map((p, idx) =>
+                  idx === i && p.progress < 90
+                    ? { ...p, progress: p.progress + 10 }
+                    : p
+                )
+              );
+            }, 200);
 
-          await apiClient.uploadFile(formData, auth);
-          clearInterval(progressInterval);
+            await apiClient.uploadFile(formData, auth);
+            clearInterval(progressInterval);
+          }
 
           setUploadProgress(prev =>
             prev.map((p, idx) => idx === i ? { ...p, status: 'success', progress: 100 } : p)
@@ -158,10 +186,13 @@ export function UploadDialog({ folderId, onUploadComplete }: UploadDialogProps) 
           description: `${successCount} file(s)${errorCount > 0 ? `, ${errorCount} failed` : ''}`,
         });
 
+        // Refresh folder content immediately so uploaded items appear
+        onUploadComplete();
+
+        // Close dialog after showing success
         setTimeout(() => {
           resetForm();
           setOpen(false);
-          onUploadComplete();
         }, 1500);
       } else {
         toast({
@@ -256,15 +287,15 @@ export function UploadDialog({ folderId, onUploadComplete }: UploadDialogProps) 
         setOpen(isOpen);
         if (!isOpen) resetForm();
       }}>
-        <DialogContent className="sm:max-w-[600px] bg-slate-900 border-slate-700">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-[600px] max-h-[90vh] bg-slate-900 border-slate-700 flex flex-col overflow-hidden">
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle className="text-white text-xl">Add Content to Folder</DialogTitle>
             <DialogDescription className="text-gray-400">
               Upload files or create a text note
             </DialogDescription>
           </DialogHeader>
 
-          <Tabs defaultValue="upload" className="w-full">
+          <Tabs defaultValue="upload" className="w-full flex-1 flex flex-col min-h-0">
             <TabsList className="grid w-full grid-cols-2 bg-slate-800">
               <TabsTrigger value="upload" className="data-[state=active]:bg-blue-600">
                 <Upload className="h-4 w-4 mr-2" />
@@ -276,7 +307,7 @@ export function UploadDialog({ folderId, onUploadComplete }: UploadDialogProps) 
               </TabsTrigger>
             </TabsList>
 
-            <TabsContent value="upload" className="space-y-4 mt-4">
+            <TabsContent value="upload" className="space-y-4 mt-4 overflow-y-auto flex-1 min-h-0">
               {/* File Drop Zone */}
               <div
                 className={`border-2 border-dashed rounded-lg p-8 text-center transition-all cursor-pointer ${
@@ -309,8 +340,27 @@ export function UploadDialog({ folderId, onUploadComplete }: UploadDialogProps) 
 
               {/* Selected Files */}
               {files.length > 0 && (
-                <div className="space-y-2 max-h-48 overflow-y-auto">
-                  {files.map((file, index) => {
+                <div className="space-y-2">
+                  {/* File count header */}
+                  <div className="flex items-center justify-between px-1">
+                    <span className="text-sm text-gray-400">
+                      {files.length} file{files.length > 1 ? 's' : ''} selected
+                    </span>
+                    {!uploading && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setFiles([])}
+                        className="h-7 text-xs text-gray-400 hover:text-red-400"
+                      >
+                        Clear all
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* Scrollable file list */}
+                  <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
+                    {files.map((file, index) => {
                     const progress = uploadProgress[index];
                     return (
                       <div
@@ -320,8 +370,13 @@ export function UploadDialog({ folderId, onUploadComplete }: UploadDialogProps) 
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2 flex-1 min-w-0">
                             {getFileIcon(file)}
-                            <span className="text-sm truncate text-gray-200">{file.name}</span>
-                            <span className="text-xs text-gray-400">
+                            <span
+                              className="text-sm truncate text-gray-200"
+                              title={file.name}
+                            >
+                              {file.name}
+                            </span>
+                            <span className="text-xs text-gray-400 flex-shrink-0">
                               {formatFileSize(file.size)}
                             </span>
                           </div>
@@ -353,6 +408,14 @@ export function UploadDialog({ folderId, onUploadComplete }: UploadDialogProps) 
                       </div>
                     );
                   })}
+                  </div>
+
+                  {/* Scroll indicator */}
+                  {files.length > 4 && (
+                    <div className="text-xs text-center text-gray-500 py-1">
+                      ↕ Scroll to see all files
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -397,7 +460,7 @@ export function UploadDialog({ folderId, onUploadComplete }: UploadDialogProps) 
               </Button>
             </TabsContent>
 
-            <TabsContent value="text" className="space-y-4 mt-4">
+            <TabsContent value="text" className="space-y-4 mt-4 overflow-y-auto flex-1 min-h-0">
               <div>
                 <Label htmlFor="text-title" className="text-gray-300">Title *</Label>
                 <Input
