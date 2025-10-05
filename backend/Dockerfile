@@ -26,6 +26,5 @@ RUN mkdir -p /app/keys
 # Expose port
 EXPOSE 8000
 
-# Run with uvicorn with increased limits for Cloud Run (32MB max)
-# Note: Cloud Run has a 32MB request size limit
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--limit-max-requests", "0", "--timeout-keep-alive", "300"]
+# Run with uvicorn (can be overridden by docker-compose)
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
