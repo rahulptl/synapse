@@ -327,13 +327,52 @@ class GCSStorageBackend(StorageBackend):
             full_path = self._get_full_path(path)
             blob = self.bucket.blob(full_path)
 
-            # Generate signed URL for PUT operation
-            url = blob.generate_signed_url(
-                version="v4",
-                expiration=timedelta(seconds=expiration_seconds),
-                method="PUT",
-                content_type=content_type
-            )
+            # When running on Cloud Run (ADC without private key), use IAM signBlob
+            from google.auth import compute_engine
+            import google.auth
+            from google.cloud import iam_credentials_v1
+
+            # Get current credentials
+            credentials, project = google.auth.default()
+
+            # Check if we're using compute engine credentials (Cloud Run)
+            if isinstance(credentials, compute_engine.Credentials):
+                # Use IAM Credentials API for signing (no private key needed)
+                service_account_email = credentials.service_account_email
+
+                # Import signing helper
+                from google.cloud.storage._signing import generate_signed_url_v4
+
+                # Create custom signing function using IAM API
+                def sign_blob(message):
+                    """Sign using IAM signBlob API."""
+                    client = iam_credentials_v1.IAMCredentialsClient()
+                    name = f"projects/-/serviceAccounts/{service_account_email}"
+                    response = client.sign_blob(
+                        request={"name": name, "payload": message}
+                    )
+                    return response.signed_blob
+
+                # Generate signed URL with custom signing function
+                url = generate_signed_url_v4(
+                    credentials=credentials,
+                    resource=f"/{self.bucket.name}/{full_path}",
+                    expiration=timedelta(seconds=expiration_seconds),
+                    method="PUT",
+                    content_type=content_type,
+                    service_account_email=service_account_email,
+                    access_token=credentials.token,
+                    signing_fn=sign_blob
+                )
+            else:
+                # Standard signed URL generation (local dev with service account key)
+                url = blob.generate_signed_url(
+                    version="v4",
+                    expiration=timedelta(seconds=expiration_seconds),
+                    method="PUT",
+                    content_type=content_type
+                )
+
             return url
         except Exception as e:
             logger.error(f"GCS signed URL generation failed: {e}")
