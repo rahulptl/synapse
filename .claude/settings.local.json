@@ -74,7 +74,11 @@
       "WebFetch(domain:openai.com)",
       "Bash(docker exec:*)",
       "Bash(docker start:*)",
-      "Bash(brew install:*)"
+      "Bash(brew install:*)",
+      "Bash(gcloud projects add-iam-policy-binding:*)",
+      "Bash(gcloud projects get-iam-policy:*)",
+      "Bash(gh workflow:*)",
+      "Bash(gcloud iam service-accounts add-iam-policy-binding:*)"
     ],
     "deny": [],
     "ask": []
