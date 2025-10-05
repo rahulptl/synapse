@@ -59,21 +59,30 @@ export function UploadDialog({ folderId, onUploadComplete }: UploadDialogProps) 
     if (!selectedFiles) return;
     const newFiles = Array.from(selectedFiles);
 
-    // Validate file sizes (32MB Cloud Run limit)
-    const MAX_FILE_SIZE = 32 * 1024 * 1024; // 32MB (Cloud Run maximum)
+    // Validate file sizes (now supports up to 5GB via signed URLs)
+    const MAX_FILE_SIZE = 5 * 1024 * 1024 * 1024; // 5GB (GCS limit)
     const oversizedFiles = newFiles.filter(f => f.size > MAX_FILE_SIZE);
 
     if (oversizedFiles.length > 0) {
       const fileList = oversizedFiles.map(f =>
-        `${f.name} (${(f.size / (1024 * 1024)).toFixed(1)}MB)`
+        `${f.name} (${(f.size / (1024 * 1024 * 1024)).toFixed(2)}GB)`
       ).join(', ');
 
       toast({
         title: "File too large",
-        description: `${oversizedFiles.length} file(s) exceed 32MB limit: ${fileList}. Cloud Run has a 32MB request size limit.`,
+        description: `${oversizedFiles.length} file(s) exceed 5GB limit: ${fileList}`,
         variant: "destructive",
       });
       return;
+    }
+
+    // Info toast for large files (>32MB) that will use direct GCS upload
+    const largeFiles = newFiles.filter(f => f.size > 32 * 1024 * 1024);
+    if (largeFiles.length > 0) {
+      toast({
+        title: "Large file detected",
+        description: `${largeFiles.length} file(s) will upload directly to cloud storage (may take longer)`,
+      });
     }
 
     setFiles(prev => [...prev, ...newFiles]);
@@ -128,39 +137,80 @@ export function UploadDialog({ folderId, onUploadComplete }: UploadDialogProps) 
 
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
+        const itemTitle = files.length === 1 ? title : `${title} - ${file.name}`;
 
         setUploadProgress(prev =>
           prev.map((p, idx) => idx === i ? { ...p, status: 'uploading', progress: 0 } : p)
         );
 
         try {
-          const formData = new FormData();
-          formData.append('file', file);
-          formData.append('folder_id', folderId);
-          formData.append('title', files.length === 1 ? title : `${title} - ${file.name}`);
-          if (description) formData.append('description', description);
+          const LARGE_FILE_THRESHOLD = 32 * 1024 * 1024; // 32MB Cloud Run limit
 
-          // Use real progress tracking for large files (>10MB)
-          if (file.size > 10 * 1024 * 1024) {
-            await apiClient.uploadFileWithProgress(formData, auth, (progress) => {
+          // Large file: Use signed URL for direct GCS upload
+          if (file.size > LARGE_FILE_THRESHOLD) {
+            // Step 1: Get signed URL from backend
+            const { upload_url, storage_path } = await apiClient.getSignedUploadUrl(
+              {
+                filename: file.name,
+                content_type: file.type || 'application/octet-stream',
+                folder_id: folderId,
+                title: itemTitle,
+                description,
+                file_size: file.size,
+              },
+              auth
+            );
+
+            // Step 2: Upload directly to GCS with progress tracking
+            await apiClient.uploadToSignedUrl(upload_url, file, (progress) => {
               setUploadProgress(prev =>
                 prev.map((p, idx) => idx === i ? { ...p, progress } : p)
               );
             });
-          } else {
-            // Simulated progress for small files
-            const progressInterval = setInterval(() => {
-              setUploadProgress(prev =>
-                prev.map((p, idx) =>
-                  idx === i && p.progress < 90
-                    ? { ...p, progress: p.progress + 10 }
-                    : p
-                )
-              );
-            }, 200);
 
-            await apiClient.uploadFile(formData, auth);
-            clearInterval(progressInterval);
+            // Step 3: Notify backend that upload is complete
+            await apiClient.notifyUploadComplete(
+              {
+                storage_path,
+                folder_id: folderId,
+                title: itemTitle,
+                description,
+                file_size: file.size,
+                content_type: file.type || 'application/octet-stream',
+              },
+              auth
+            );
+          }
+          // Regular file: Use standard upload through Cloud Run
+          else {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('folder_id', folderId);
+            formData.append('title', itemTitle);
+            if (description) formData.append('description', description);
+
+            // Use real progress tracking for files >10MB
+            if (file.size > 10 * 1024 * 1024) {
+              await apiClient.uploadFileWithProgress(formData, auth, (progress) => {
+                setUploadProgress(prev =>
+                  prev.map((p, idx) => idx === i ? { ...p, progress } : p)
+                );
+              });
+            } else {
+              // Simulated progress for small files
+              const progressInterval = setInterval(() => {
+                setUploadProgress(prev =>
+                  prev.map((p, idx) =>
+                    idx === i && p.progress < 90
+                      ? { ...p, progress: p.progress + 10 }
+                      : p
+                  )
+                );
+              }, 200);
+
+              await apiClient.uploadFile(formData, auth);
+              clearInterval(progressInterval);
+            }
           }
 
           setUploadProgress(prev =>

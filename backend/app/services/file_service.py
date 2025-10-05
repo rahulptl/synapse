@@ -447,6 +447,179 @@ class FileService:
         # a temporary file, or pass it directly to the processing service
         pass
 
+    async def generate_signed_upload_url(
+        self,
+        db: AsyncSession,
+        user_id: UUID,
+        filename: str,
+        content_type: str,
+        folder_id: UUID,
+        file_size: int
+    ) -> Dict[str, Any]:
+        """
+        Generate a signed URL for direct upload to cloud storage.
+
+        This allows clients to upload large files (>32MB) directly to GCS,
+        bypassing the Cloud Run request size limit.
+
+        Args:
+            db: Database session
+            user_id: User ID
+            filename: Original filename
+            content_type: MIME type
+            folder_id: Target folder ID
+            file_size: File size in bytes
+
+        Returns:
+            Dict with upload_url, storage_path, and expires_in
+        """
+        # Verify folder exists and belongs to user
+        folder_stmt = select(Folder).where(
+            Folder.id == folder_id,
+            Folder.user_id == user_id
+        )
+        folder_result = await db.execute(folder_stmt)
+        folder = folder_result.scalar_one_or_none()
+
+        if not folder:
+            raise ValueError("Invalid folder or insufficient permissions")
+
+        # Generate storage path
+        import uuid
+        from datetime import datetime, timezone
+
+        timestamp = int(datetime.now(timezone.utc).timestamp() * 1000)
+        random_id = str(uuid.uuid4())[:8]
+        # Use clean filename for storage
+        clean_filename = self._generate_storage_filename("", filename)
+        storage_path = f"{user_id}/{folder_id}/{timestamp}-{random_id}-{clean_filename}"
+
+        # Generate signed URL (1 hour expiration)
+        expiration_seconds = 3600
+        try:
+            signed_url = await storage_service.generate_signed_upload_url(
+                storage_path,
+                content_type,
+                expiration_seconds
+            )
+
+            return {
+                "upload_url": signed_url,
+                "storage_path": storage_path,
+                "expires_in": expiration_seconds
+            }
+        except Exception as e:
+            logger.error(f"Failed to generate signed URL: {e}")
+            raise ValueError("Failed to generate signed upload URL")
+
+    async def create_knowledge_item_from_storage(
+        self,
+        db: AsyncSession,
+        user_id: UUID,
+        storage_path: str,
+        folder_id: UUID,
+        title: str,
+        description: Optional[str],
+        file_size: int,
+        content_type: str
+    ) -> Dict[str, Any]:
+        """
+        Create a knowledge item from a file already uploaded to storage.
+
+        This is called after a direct upload to GCS via signed URL.
+
+        Args:
+            db: Database session
+            user_id: User ID
+            storage_path: Path to file in storage
+            folder_id: Target folder ID
+            title: Title for the knowledge item
+            description: Optional description
+            file_size: File size in bytes
+            content_type: MIME type
+
+        Returns:
+            FileUploadResponse dict
+        """
+        # Verify folder exists and belongs to user
+        folder_stmt = select(Folder).where(
+            Folder.id == folder_id,
+            Folder.user_id == user_id
+        )
+        folder_result = await db.execute(folder_stmt)
+        folder = folder_result.scalar_one_or_none()
+
+        if not folder:
+            raise ValueError("Invalid folder or insufficient permissions")
+
+        # Get public URL for the uploaded file
+        # For GCS, construct the public URL
+        storage_url = f"gs://{settings.GCS_BUCKET_NAME}/{storage_path}"
+
+        # Create knowledge item with file reference
+        file_content_text = f"[FILE:{storage_path}]"
+
+        # Detect content type from filename
+        filename = storage_path.split('/')[-1]
+        detected_content_type = self._get_content_type_from_file(filename, content_type)
+
+        # Prepare metadata
+        metadata = {
+            "storage_path": storage_path,
+            "original_filename": filename,
+            "file_size": file_size,
+            "mime_type": content_type,
+            "stored_in_storage": True,
+            "description": description or None,
+            "upload_method": "signed_url"  # Track upload method
+        }
+
+        # Create knowledge item
+        from app.models.schemas import KnowledgeItemCreate
+        item_data = KnowledgeItemCreate(
+            folder_id=folder_id,
+            title=title,
+            content=file_content_text,
+            content_type=detected_content_type,
+            source_url=storage_url,
+            metadata=metadata
+        )
+
+        knowledge_item = await content_service.create_knowledge_item(
+            db=db,
+            user_id=user_id,
+            item_data=item_data
+        )
+
+        # Return response matching regular upload format
+        return {
+            "success": True,
+            "item": {
+                "id": knowledge_item.id,
+                "user_id": knowledge_item.user_id,
+                "folder_id": knowledge_item.folder_id,
+                "title": knowledge_item.title,
+                "content": knowledge_item.content,
+                "content_type": knowledge_item.content_type,
+                "source_url": knowledge_item.source_url,
+                "metadata": knowledge_item.item_metadata,
+                "created_at": knowledge_item.created_at.isoformat() if knowledge_item.created_at else None,
+                "updated_at": knowledge_item.updated_at.isoformat() if knowledge_item.updated_at else None,
+                "processing_status": knowledge_item.processing_status,
+                "is_chunked": knowledge_item.is_chunked,
+                "total_chunks": knowledge_item.total_chunks
+            },
+            "processing_status": "queued",
+            "file_info": {
+                "filename": filename,
+                "size": file_size,
+                "type": content_type,
+                "content_type": detected_content_type,
+                "storage_path": storage_path,
+                "upload_method": "signed_url"
+            }
+        }
+
 
 # Service instance
 file_service = FileService()

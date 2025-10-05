@@ -227,6 +227,86 @@ class ApiClient {
     return this.request(`/files/status/${itemId}`, { auth });
   }
 
+  // Large file upload with signed URLs (>32MB)
+  async getSignedUploadUrl(
+    data: {
+      filename: string;
+      content_type: string;
+      folder_id: string;
+      title: string;
+      description?: string;
+      file_size: number;
+    },
+    auth: { userId: string; accessToken: string }
+  ): Promise<{ upload_url: string; storage_path: string; expires_in: number }> {
+    return this.request('/files/upload/signed-url', {
+      method: 'POST',
+      body: JSON.stringify(data),
+      auth,
+    });
+  }
+
+  async uploadToSignedUrl(
+    signedUrl: string,
+    file: File,
+    onProgress?: (progress: number) => void
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+
+      // Track upload progress
+      if (onProgress) {
+        xhr.upload.addEventListener('progress', (event) => {
+          if (event.lengthComputable) {
+            const percentComplete = Math.round((event.loaded / event.total) * 100);
+            onProgress(percentComplete);
+          }
+        });
+      }
+
+      // Handle completion
+      xhr.addEventListener('load', () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve();
+        } else {
+          reject(new Error(`GCS upload failed: ${xhr.statusText}`));
+        }
+      });
+
+      // Handle errors
+      xhr.addEventListener('error', () => {
+        reject(new Error('GCS upload failed: Network error'));
+      });
+
+      xhr.addEventListener('abort', () => {
+        reject(new Error('GCS upload cancelled'));
+      });
+
+      // Upload to GCS with PUT method
+      xhr.open('PUT', signedUrl);
+      xhr.setRequestHeader('Content-Type', file.type);
+      xhr.send(file);
+    });
+  }
+
+  async notifyUploadComplete(
+    data: {
+      storage_path: string;
+      folder_id: string;
+      title: string;
+      description?: string;
+      file_size: number;
+      content_type: string;
+    },
+    auth: { userId: string; accessToken: string }
+  ) {
+    return this.request('/files/upload/complete', {
+      method: 'POST',
+      body: JSON.stringify(data),
+      auth,
+    });
+  }
+
   // Search operations
   async searchContent(
     searchData: {

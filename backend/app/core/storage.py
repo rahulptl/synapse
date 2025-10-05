@@ -4,6 +4,7 @@ Storage service for handling file uploads and downloads.
 import logging
 from typing import Optional
 from abc import ABC, abstractmethod
+from datetime import timedelta
 import boto3
 from supabase import create_client, Client
 from google.cloud import storage
@@ -32,6 +33,16 @@ class StorageBackend(ABC):
     @abstractmethod
     async def delete_content(self, path: str) -> bool:
         """Delete content from storage."""
+        pass
+
+    @abstractmethod
+    async def generate_signed_upload_url(
+        self,
+        path: str,
+        content_type: str,
+        expiration_seconds: int = 3600
+    ) -> str:
+        """Generate a signed URL for direct upload to storage."""
         pass
 
 
@@ -66,6 +77,17 @@ class LocalStorageBackend(StorageBackend):
             return True
         except FileNotFoundError:
             return False
+
+    async def generate_signed_upload_url(
+        self,
+        path: str,
+        content_type: str,
+        expiration_seconds: int = 3600
+    ) -> str:
+        """Local storage doesn't support signed URLs - return file path."""
+        file_path = os.path.join(self.base_path, path)
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        return f"file://{file_path}"
 
 
 class SupabaseStorageBackend(StorageBackend):
@@ -117,6 +139,21 @@ class SupabaseStorageBackend(StorageBackend):
         except Exception as e:
             logger.error(f"Supabase delete failed: {e}")
             return False
+
+    async def generate_signed_upload_url(
+        self,
+        path: str,
+        content_type: str,
+        expiration_seconds: int = 3600
+    ) -> str:
+        """Generate signed upload URL for Supabase storage."""
+        try:
+            # Supabase supports signed upload URLs
+            result = self.client.storage.from_(self.bucket).create_signed_upload_url(path)
+            return result['signedURL']
+        except Exception as e:
+            logger.error(f"Supabase signed URL generation failed: {e}")
+            raise
 
 
 class S3StorageBackend(StorageBackend):
@@ -181,6 +218,28 @@ class S3StorageBackend(StorageBackend):
         except Exception as e:
             logger.error(f"S3 delete failed: {e}")
             return False
+
+    async def generate_signed_upload_url(
+        self,
+        path: str,
+        content_type: str,
+        expiration_seconds: int = 3600
+    ) -> str:
+        """Generate presigned URL for S3 upload."""
+        try:
+            url = self.s3_client.generate_presigned_url(
+                'put_object',
+                Params={
+                    'Bucket': self.bucket,
+                    'Key': path,
+                    'ContentType': content_type
+                },
+                ExpiresIn=expiration_seconds
+            )
+            return url
+        except Exception as e:
+            logger.error(f"S3 presigned URL generation failed: {e}")
+            raise
 
 
 class GCSStorageBackend(StorageBackend):
@@ -257,6 +316,29 @@ class GCSStorageBackend(StorageBackend):
             logger.error(f"GCS delete failed: {e}")
             return False
 
+    async def generate_signed_upload_url(
+        self,
+        path: str,
+        content_type: str,
+        expiration_seconds: int = 3600
+    ) -> str:
+        """Generate signed URL for direct GCS upload."""
+        try:
+            full_path = self._get_full_path(path)
+            blob = self.bucket.blob(full_path)
+
+            # Generate signed URL for PUT operation
+            url = blob.generate_signed_url(
+                version="v4",
+                expiration=timedelta(seconds=expiration_seconds),
+                method="PUT",
+                content_type=content_type
+            )
+            return url
+        except Exception as e:
+            logger.error(f"GCS signed URL generation failed: {e}")
+            raise
+
 
 class StorageService:
     """Main storage service that delegates to the configured backend."""
@@ -291,6 +373,17 @@ class StorageService:
     async def delete_content(self, path: str) -> bool:
         """Delete content from the configured storage backend."""
         return await self.backend.delete_content(path)
+
+    async def generate_signed_upload_url(
+        self,
+        path: str,
+        content_type: str,
+        expiration_seconds: int = 3600
+    ) -> str:
+        """Generate a signed URL for direct upload to storage."""
+        return await self.backend.generate_signed_upload_url(
+            path, content_type, expiration_seconds
+        )
 
 
 # Service instance
