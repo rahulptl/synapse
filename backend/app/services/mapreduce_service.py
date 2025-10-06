@@ -23,6 +23,7 @@ class MapReduceService:
     MAX_CONCURRENT_MAP_CALLS = 10
     MAP_RETRY_ATTEMPTS = 2
     MAX_JOB_DURATION_SECONDS = 600  # 10 minutes
+    ITERATIVE_BATCH_THRESHOLD = 50  # Use iterative mode for datasets > 50 items
 
     async def process_query(
         self,
@@ -30,10 +31,14 @@ class MapReduceService:
         job: ProcessingJob,
         user_query: str,
         intent_data: Dict[str, Any],
-        folder_ids: List[UUID]
+        folder_ids: List[UUID],
+        processing_mode: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Main entry point for map-reduce processing.
+
+        Args:
+            processing_mode: "parallel" or "iterative" (auto-selected if None)
 
         Returns final result with aggregation details.
         """
@@ -63,6 +68,14 @@ class MapReduceService:
             job.total_items = len(items_with_chunks)
             await db.commit()
 
+            # Auto-select processing mode if not specified
+            if processing_mode is None:
+                processing_mode = self._select_processing_mode(
+                    items_with_chunks, intent_data
+                )
+
+            logger.info(f"Using {processing_mode} processing mode for {len(items_with_chunks)} items")
+
             # Step 2: Apply filtering if needed
             if intent_data.get("filter_criteria", {}).get("semantic_filter"):
                 items_with_chunks = await self._apply_semantic_filter(
@@ -78,10 +91,15 @@ class MapReduceService:
 
             logger.info(f"Processing {len(batches)} batches for job {job.id}")
 
-            # Step 4: Map phase (parallel processing)
-            map_results = await self._map_phase(
-                db, job, batches, user_query, intent_data
-            )
+            # Step 4: Map phase (parallel or iterative based on mode)
+            if processing_mode == "iterative":
+                map_results = await self._iterative_map_phase(
+                    db, job, batches, user_query, intent_data
+                )
+            else:  # parallel
+                map_results = await self._map_phase(
+                    db, job, batches, user_query, intent_data
+                )
 
             # Store intermediate results
             job.intermediate_results = {"map_results": map_results}
@@ -695,6 +713,261 @@ Format your response as a helpful summary.
             confidence *= 0.7
 
         return round(confidence, 2)
+
+    def _select_processing_mode(
+        self,
+        items_with_chunks: List[Dict[str, Any]],
+        intent_data: Dict[str, Any]
+    ) -> str:
+        """
+        Select optimal processing mode based on dataset characteristics.
+
+        Returns "parallel" or "iterative"
+        """
+        total_items = len(items_with_chunks)
+        intent_type = intent_data.get("intent_type")
+
+        # Use iterative for large datasets (>50 items)
+        if total_items > self.ITERATIVE_BATCH_THRESHOLD:
+            logger.info(f"Selecting iterative mode: {total_items} items > {self.ITERATIVE_BATCH_THRESHOLD} threshold")
+            return "iterative"
+
+        # Use iterative for aggregations to avoid duplicates
+        if intent_type in ["aggregation", "filtered_aggregation"]:
+            if total_items > 20:  # Lower threshold for aggregations
+                logger.info(f"Selecting iterative mode: aggregation query with {total_items} items")
+                return "iterative"
+
+        # Default to parallel for speed
+        logger.info(f"Selecting parallel mode: {total_items} items, intent: {intent_type}")
+        return "parallel"
+
+    async def _iterative_map_phase(
+        self,
+        db: AsyncSession,
+        job: ProcessingJob,
+        batches: List[List[Dict[str, Any]]],
+        user_query: str,
+        intent_data: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """
+        Process batches sequentially (iterative map phase).
+        Each batch receives context from previous batches.
+        """
+        map_results = []
+        accumulated_context = {
+            "extracted_data": [],
+            "themes": [],
+            "key_points": [],
+            "processed_items": 0
+        }
+
+        for batch_idx, batch in enumerate(batches):
+            try:
+                # Process batch with accumulated context
+                result = await self._process_map_batch_with_context(
+                    db=db,
+                    job=job,
+                    batch_idx=batch_idx,
+                    batch=batch,
+                    user_query=user_query,
+                    intent_data=intent_data,
+                    previous_context=accumulated_context
+                )
+
+                map_results.append(result)
+
+                # Accumulate context for next batch
+                if result.get("relevant"):
+                    if result.get("extracted_data"):
+                        accumulated_context["extracted_data"].extend(result["extracted_data"])
+                    if result.get("themes"):
+                        accumulated_context["themes"].extend(result["themes"])
+                    if result.get("key_points"):
+                        accumulated_context["key_points"].extend(result["key_points"])
+
+                accumulated_context["processed_items"] += result.get("item_count", 0)
+
+                # Update progress
+                job.processed_batches += 1
+                job.processed_items += len(batch)
+                job.progress = 0.1 + (0.75 * (job.processed_batches / job.total_batches))
+
+                # Commit every 5 batches
+                if job.processed_batches % 5 == 0:
+                    await db.commit()
+
+                logger.info(f"Iterative batch {batch_idx + 1}/{len(batches)} complete, "
+                          f"accumulated {len(accumulated_context['extracted_data'])} items")
+
+            except Exception as e:
+                logger.error(f"Iterative batch {batch_idx} failed: {e}")
+                job.failed_batches += 1
+                map_results.append({
+                    "relevant": False,
+                    "error": str(e),
+                    "batch_index": batch_idx
+                })
+
+        await db.commit()
+
+        # Check if all batches failed
+        if job.failed_batches == job.total_batches:
+            raise Exception("All batches failed to process")
+
+        logger.info(f"Iterative map phase complete: {len(map_results)} batches, "
+                   f"{len(accumulated_context['extracted_data'])} total items extracted")
+
+        return map_results
+
+    async def _process_map_batch_with_context(
+        self,
+        db: AsyncSession,
+        job: ProcessingJob,
+        batch_idx: int,
+        batch: List[Dict[str, Any]],
+        user_query: str,
+        intent_data: Dict[str, Any],
+        previous_context: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Process a single batch with context from previous batches."""
+
+        # Build context from chunks
+        context = self._build_batch_context(batch)
+
+        # Build map prompt with previous results
+        map_prompt = self._build_map_prompt_with_context(
+            user_query, intent_data, context, previous_context
+        )
+
+        # Call LLM with retry
+        for attempt in range(self.MAP_RETRY_ATTEMPTS):
+            try:
+                messages = [
+                    {"role": "system", "content": map_prompt},
+                    {"role": "user", "content": f"Process batch {batch_idx + 1} and extract relevant information for: {user_query}"}
+                ]
+
+                response = await ai_chat_service.generate_completion(
+                    messages=messages,
+                    max_tokens=1000,
+                    temperature=0.1
+                )
+
+                # Parse JSON response
+                import json
+                result = json.loads(response)
+
+                # Add batch metadata
+                result["batch_index"] = batch_idx
+                result["items_in_batch"] = len(batch)
+
+                return result
+
+            except Exception as e:
+                if attempt < self.MAP_RETRY_ATTEMPTS - 1:
+                    logger.warning(f"Map batch {batch_idx} attempt {attempt + 1} failed, retrying: {e}")
+                    await asyncio.sleep(1)
+                else:
+                    raise
+
+    def _build_map_prompt_with_context(
+        self,
+        user_query: str,
+        intent_data: Dict[str, Any],
+        context: str,
+        previous_context: Dict[str, Any]
+    ) -> str:
+        """Build prompt for map phase with previous batch context."""
+
+        extraction_schema = intent_data.get("extraction_schema", {})
+        intent_type = intent_data.get("intent_type")
+
+        # Base prompt
+        base_prompt = f"""You are processing a batch of knowledge items to answer: "{user_query}"
+
+Your task: Extract ONLY relevant information from the provided items.
+
+Context:
+{context}
+
+"""
+
+        # Add previous context if available
+        if previous_context["processed_items"] > 0:
+            base_prompt += f"""
+IMPORTANT - Previous Batches Context:
+- Already processed {previous_context["processed_items"]} items
+- Found {len(previous_context["extracted_data"])} data points so far
+"""
+            if previous_context["extracted_data"][:5]:  # Show first 5 for context
+                import json
+                sample = previous_context["extracted_data"][:5]
+                base_prompt += f"- Sample of previous data: {json.dumps(sample, indent=2)}\n"
+
+            base_prompt += "\nYour task: Extract NEW information from THIS batch, avoiding duplicates from previous batches.\n"
+
+        if intent_type == "aggregation":
+            base_prompt += """
+CRITICAL: This is an aggregation query. You MUST extract exact numeric values.
+
+Output JSON format:
+{
+  "relevant": true/false,
+  "extracted_data": [
+    {
+      "source": "item title or identifier",
+      "value": 123.45,  // EXACT number, not approximation
+      "unit": "USD" | "count" | etc,
+      "date": "YYYY-MM-DD" if available,
+      "category": "category if applicable"
+    }
+  ],
+  "summary": "Brief text summary of this batch",
+  "item_count": number_of_relevant_items
+}
+
+Rules:
+- Extract EXACT numbers, never round or approximate
+- AVOID extracting items already found in previous batches
+- If no NEW relevant items, return: {"relevant": false, "reason": "..."}
+- Include ALL new numeric values that match the query
+"""
+
+        elif intent_type == "full_folder_summary":
+            base_prompt += """
+Output JSON format:
+{
+  "relevant": true,
+  "themes": ["theme1", "theme2"],
+  "key_points": ["point1", "point2"],
+  "summary": "Comprehensive summary of items in this batch",
+  "item_count": number_of_items
+}
+
+Rules:
+- Focus on NEW themes and points not covered in previous batches
+- Build upon the overall summary progressively
+"""
+
+        else:  # filtered_aggregation
+            base_prompt += """
+Output JSON format:
+{
+  "relevant": true/false,
+  "extracted_data": [...],  // Same as aggregation
+  "summary": "Summary",
+  "item_count": number_of_relevant_items
+}
+
+Rules:
+- Only include items that match the query criteria
+- Avoid duplicates from previous batches
+"""
+
+        base_prompt += "\n\nOutput ONLY valid JSON, no markdown formatting."
+
+        return base_prompt
 
 
 # Service instance

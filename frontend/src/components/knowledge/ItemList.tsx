@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { FileText, ExternalLink, Calendar, Trash2, Loader2, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { KnowledgeItemContextMenu } from './KnowledgeItemContextMenu';
 
 interface KnowledgeItem {
   id: string;
@@ -18,19 +20,54 @@ interface KnowledgeItem {
   vector_count?: number;
   vectors_with_embeddings?: number;
   is_searchable?: boolean;
+  folder_id?: string;
+}
+
+interface Folder {
+  id: string;
+  name: string;
+  children?: Folder[];
 }
 
 interface ItemListProps {
   items: KnowledgeItem[];
   selectedItem: string | null;
+  currentFolderId: string;
+  folders: Folder[];
   onItemSelect: (itemId: string) => void;
   onDeleteItem: (itemId: string) => void;
   onReprocessItem?: (itemId: string) => void;
+  onRenameItem?: (itemId: string, newTitle: string) => Promise<void>;
+  onMoveItem?: (itemId: string, targetFolderId: string) => Promise<void>;
 }
 
-export function ItemList({ items, selectedItem, onItemSelect, onDeleteItem, onReprocessItem }: ItemListProps) {
+export function ItemList({
+  items,
+  selectedItem,
+  currentFolderId,
+  folders,
+  onItemSelect,
+  onDeleteItem,
+  onReprocessItem,
+  onRenameItem,
+  onMoveItem
+}: ItemListProps) {
+  const [draggedItem, setDraggedItem] = useState<string | null>(null);
+  const [dragOverFolder, setDragOverFolder] = useState<string | null>(null);
+
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString();
+  };
+
+  const handleDragStart = (e: React.DragEvent, itemId: string) => {
+    setDraggedItem(itemId);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', itemId);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedItem(null);
+    setDragOverFolder(null);
   };
 
   const getContentTypeIcon = (type: string) => {
@@ -124,14 +161,27 @@ export function ItemList({ items, selectedItem, onItemSelect, onDeleteItem, onRe
       <div className="flex-1 p-4 overflow-y-auto overflow-x-hidden">
         {items.map((item, index) => (
           <div key={item.id} className="w-full">
-            <Card
-              className={`group cursor-pointer transition-all duration-300 border-0 w-full overflow-hidden ${
-                selectedItem === item.id
-                  ? 'bg-gradient-to-r from-blue-500/25 to-purple-500/25 shadow-lg ring-2 ring-blue-400/40 scale-[1.02]'
-                  : 'bg-white/8 hover:bg-white/12 shadow-sm hover:shadow-lg hover:-translate-y-0.5'
-              }`}
-              onClick={() => onItemSelect(item.id)}
+            <KnowledgeItemContextMenu
+              itemId={item.id}
+              itemTitle={item.title}
+              currentFolderId={currentFolderId}
+              folders={folders}
+              onRename={onRenameItem || (async () => {})}
+              onMove={onMoveItem || (async () => {})}
+              onDelete={onDeleteItem}
+              onReprocess={onReprocessItem}
             >
+              <Card
+                className={`group cursor-pointer transition-all duration-300 border-0 w-full overflow-hidden ${
+                  selectedItem === item.id
+                    ? 'bg-gradient-to-r from-blue-500/25 to-purple-500/25 shadow-lg ring-2 ring-blue-400/40 scale-[1.02]'
+                    : 'bg-white/8 hover:bg-white/12 shadow-sm hover:shadow-lg hover:-translate-y-0.5'
+                } ${draggedItem === item.id ? 'opacity-50' : ''}`}
+                draggable={!!onMoveItem}
+                onDragStart={(e) => onMoveItem && handleDragStart(e, item.id)}
+                onDragEnd={handleDragEnd}
+                onClick={() => onItemSelect(item.id)}
+              >
             <CardContent className="p-4 w-full">
               <div className="flex items-start gap-3 mb-3 w-full min-w-0">
                 <div className={`p-2 rounded-lg transition-colors flex-shrink-0 ${
@@ -209,7 +259,8 @@ export function ItemList({ items, selectedItem, onItemSelect, onDeleteItem, onRe
                 </div>
               </div>
             </CardContent>
-            </Card>
+              </Card>
+            </KnowledgeItemContextMenu>
             {index < items.length - 1 && (
               <div className="mx-4 my-3 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
             )}

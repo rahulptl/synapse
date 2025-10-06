@@ -35,6 +35,7 @@ pdfplumber==0.11.0  # Fallback for tables/complex layouts
 python-docx==0.8.11
 beautifulsoup4==4.12.2
 python-magic==0.4.27
+chardet==5.2.0  # Encoding detection for text files
 # OCR for scanned PDFs and images (requires system tesseract: brew install tesseract)
 pytesseract==0.3.13
 pillow==11.3.0  # Required for image processing and OCR

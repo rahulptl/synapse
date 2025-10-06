@@ -66,19 +66,52 @@ class ChatService:
                 message_text=chat_request.message
             )
 
-            # Parse hashtags from the message
-            hashtag_info = search_service.parse_hashtags_from_message(chat_request.message)
-            hashtags = hashtag_info["hashtags"]
-            cleaned_message = hashtag_info["cleaned_message"]
+            # Parse both # (folders) and @ (files) from the message
+            ref_info = search_service.parse_all_references_from_message(chat_request.message)
+            hashtags = ref_info["hashtags"]
+            file_refs = ref_info["file_refs"]
+            cleaned_message = ref_info["cleaned_message"]
 
-            # Look up folder IDs for the hashtags
+            # Look up folder IDs for the # hashtags
             matched_folders = await search_service.get_folder_ids_by_names(db, hashtags, user_id)
             folder_ids = [folder["id"] for folder in matched_folders if folder.get("id")] if matched_folders else None
             recognized_folders = matched_folders if matched_folders else []
 
-            # Log hashtag processing
+            # Look up file IDs for @ references
+            matched_files = []
+            if file_refs:
+                matched_files = await search_service.match_filenames(
+                    db=db,
+                    file_references=file_refs,
+                    folder_ids=folder_ids,  # Search within specified folders if any
+                    user_id=user_id,
+                    min_similarity=70.0
+                )
+                if matched_files:
+                    logger.info(f"Matched {len(matched_files)} files for @ references: {file_refs}")
+
+            # Also check for unmatched hashtags - they might be filename references (backward compatibility)
+            recognized_folder_names = [f["name"] for f in matched_folders]
+            unmatched_hashtags = [tag for tag in hashtags if tag not in recognized_folder_names]
+
+            # Try to match unmatched hashtags as filenames (for backward compatibility with # as file refs)
+            if unmatched_hashtags:
+                additional_files = await search_service.match_filenames(
+                    db=db,
+                    file_references=unmatched_hashtags,
+                    folder_ids=folder_ids,  # Search within specified folders if any
+                    user_id=user_id,
+                    min_similarity=70.0
+                )
+                if additional_files:
+                    logger.info(f"Matched {len(additional_files)} files for unmatched hashtags: {unmatched_hashtags}")
+                    matched_files.extend(additional_files)
+
+            # Log reference processing
             if hashtags:
-                logger.info(f"Found {len(matched_folders)}/{len(hashtags)} matching folders for hashtags")
+                logger.info(f"Found {len(matched_folders)}/{len(hashtags)} matching folders for #hashtags")
+            if file_refs:
+                logger.info(f"Processing {len(file_refs)} @file references")
 
             # Count items in folders for estimation
             folder_item_counts = {}
@@ -119,7 +152,7 @@ class ChatService:
                     background_tasks=background_tasks
                 )
             else:
-                # Quick query - existing flow
+                # Quick query - existing flow (pass intent_data for retrieval strategy)
                 return await self._handle_quick_query(
                     db=db,
                     user_id=user_id,
@@ -128,7 +161,9 @@ class ChatService:
                     cleaned_message=cleaned_message,
                     folder_ids=folder_ids,
                     hashtags=hashtags,
-                    matched_folders=matched_folders
+                    matched_folders=matched_folders,
+                    matched_files=matched_files,
+                    intent_data=intent_data
                 )
 
         except Exception as e:
@@ -204,6 +239,58 @@ class ChatService:
             hashtag_info=enhanced_hashtag_info
         )
 
+    async def _check_items_processing_status(
+        self,
+        db: AsyncSession,
+        folder_ids: Optional[List[UUID]],
+        user_id: UUID
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Check if any items in the specified folders are still processing.
+
+        Args:
+            db: Database session
+            folder_ids: List of folder IDs to check
+            user_id: User ID
+
+        Returns:
+            Dict with processing items info if any are processing, None otherwise
+        """
+        if not folder_ids:
+            return None
+
+        # Get items in these folders that are still processing
+        stmt = select(KnowledgeItem).where(
+            KnowledgeItem.user_id == user_id,
+            KnowledgeItem.folder_id.in_(folder_ids),
+            KnowledgeItem.processing_status.in_(["queued", "processing"])
+        )
+        result = await db.execute(stmt)
+        processing_items = result.scalars().all()
+
+        if not processing_items:
+            return None
+
+        # Build status info
+        processing_details = []
+        for item in processing_items:
+            progress_pct = item.processing_progress if item.processing_progress else 0.0
+            chunks_info = f"{item.chunks_processed}/{item.total_chunks}" if item.total_chunks > 0 else "calculating..."
+
+            processing_details.append({
+                "title": item.title,
+                "status": item.processing_status,
+                "progress": progress_pct,
+                "chunks_info": chunks_info,
+                "estimated_completion": item.estimated_completion.isoformat() if item.estimated_completion else None
+            })
+
+        return {
+            "has_processing_items": True,
+            "processing_count": len(processing_items),
+            "items": processing_details
+        }
+
     async def _handle_quick_query(
         self,
         db: AsyncSession,
@@ -213,25 +300,53 @@ class ChatService:
         cleaned_message: str,
         folder_ids: Optional[List[UUID]],
         hashtags: List[str],
-        matched_folders: List[Dict[str, Any]]
+        matched_folders: List[Dict[str, Any]],
+        matched_files: List[Dict[str, Any]] = [],
+        intent_data: Optional[Dict[str, Any]] = None
     ) -> ChatResponse:
         """Handle quick query with existing RAG flow."""
 
-        # Use cleaned message for hybrid search (BM25 + semantic), with folder filtering if applicable
-        search_query = cleaned_message if cleaned_message.strip() else chat_request.message
-        context_results = await search_service.hybrid_search(
-            db=db,
-            user_id=user_id,
-            query_text=search_query,
-            folder_ids=folder_ids,
-            limit=10,
-            semantic_weight=0.7,
-            bm25_weight=0.3
-        )
+        # Check if any items are still processing
+        processing_status = await self._check_items_processing_status(db, folder_ids, user_id)
 
-        # Check if hashtags were used but no folders matched
-        unrecognized_hashtags = [tag for tag in hashtags
-                               if not any(folder["name"] == tag for folder in matched_folders)]
+        # If specific files were matched, filter search to those files
+        file_ids = None
+        if matched_files:
+            file_ids = [file["id"] for file in matched_files]
+            logger.info(f"Filtering search to {len(file_ids)} matched files")
+
+        # Get retrieval strategy from intent data if available
+        retrieval_strategy = "top_k"  # default
+        if intent_data and "retrieval_strategy" in intent_data:
+            retrieval_strategy = intent_data["retrieval_strategy"]
+            logger.info(f"Using retrieval strategy: {retrieval_strategy}")
+
+        # Skip search if intent is "no_search_needed" (greetings, chitchat, general knowledge)
+        context_results = []
+        if retrieval_strategy != "none":
+            # Use cleaned message for hybrid search (BM25 + semantic), with folder and/or file filtering
+            search_query = cleaned_message if cleaned_message.strip() else chat_request.message
+            context_results = await search_service.hybrid_search(
+                db=db,
+                user_id=user_id,
+                query_text=search_query,
+                folder_ids=folder_ids,
+                item_ids=file_ids,  # Filter to specific files if #filename references were matched
+                limit=10,
+                semantic_weight=0.7,
+                bm25_weight=0.3,
+                retrieval_strategy=retrieval_strategy
+            )
+        else:
+            logger.info(f"⚡ Skipping search - intent: {intent_data.get('intent_type', 'unknown')} (no knowledge base search needed)")
+
+        # Check if hashtags were used but no folders OR files matched
+        recognized_folder_names = [f["name"] for f in matched_folders]
+        recognized_file_refs = [f["reference"] for f in matched_files]
+        unrecognized_hashtags = [
+            tag for tag in hashtags
+            if tag not in recognized_folder_names and tag not in recognized_file_refs
+        ]
 
         # Build conversation history
         conversation_history = await self._get_conversation_history(
@@ -248,6 +363,22 @@ class ChatService:
             unrecognized_hashtags,
             folder_ids
         )
+
+        # Add processing warning if applicable
+        if processing_status:
+            warning_lines = ["\n\n⚠️ **Processing Status Alert:**"]
+            warning_lines.append(f"{processing_status['processing_count']} file(s) are still being processed:\n")
+
+            for item in processing_status['items']:
+                status_icon = "🔄" if item['status'] == 'processing' else "⏳"
+                warning_lines.append(
+                    f"{status_icon} **{item['title']}**: {item['progress']:.1f}% complete "
+                    f"({item['chunks_info']} chunks)"
+                )
+
+            warning_lines.append("\nResults may be incomplete until processing finishes.")
+            ai_response += "\n".join(warning_lines)
+            logger.info(f"Added processing warning for {processing_status['processing_count']} items")
 
         # Store assistant message with metadata
         sources_metadata = [
@@ -267,8 +398,10 @@ class ChatService:
         enhanced_hashtag_info = {
             "detected_hashtags": hashtags,
             "recognized_folders": matched_folders,
+            "matched_files": matched_files,
             "unrecognized_hashtags": unrecognized_hashtags,
-            "folder_filtered": folder_ids is not None and len(folder_ids) > 0
+            "folder_filtered": folder_ids is not None and len(folder_ids) > 0,
+            "file_filtered": file_ids is not None and len(file_ids) > 0
         }
 
         # Defensive conversion to ensure no numpy types in response
@@ -633,34 +766,86 @@ class ChatService:
 
         return self._create_title_from_message(first_user_message.content)
 
+    def _estimate_tokens(self, text: str) -> int:
+        """
+        Estimate token count for a given text.
+
+        Uses a simple heuristic: ~1.3 tokens per word for English text.
+        This is more conservative than the actual ~0.75 ratio to avoid exceeding limits.
+        """
+        if not text:
+            return 0
+        word_count = len(text.split())
+        return int(word_count * 1.3)
+
     async def _get_conversation_history(
         self,
         db: AsyncSession,
         conversation_id: UUID,
-        limit: int = 10
+        limit: int = 10,
+        max_tokens: int = 3000
     ) -> List[Dict[str, str]]:
-        """Get recent conversation history."""
+        """
+        Get recent conversation history with smart token management.
+
+        Args:
+            db: Database session
+            conversation_id: Conversation ID
+            limit: Maximum number of messages to retrieve
+            max_tokens: Maximum tokens for conversation history
+
+        Returns:
+            List of message dicts with role and content, limited by tokens
+        """
+        # Get more messages than limit to allow for token-based trimming
         stmt = (
             select(Message)
             .where(Message.conversation_id == conversation_id)
             .order_by(desc(Message.created_at))
-            .limit(limit)
+            .limit(limit * 2)  # Get extra messages for token trimming
         )
 
         result = await db.execute(stmt)
         messages = result.scalars().all()
 
-        # Reverse to get chronological order
+        # Reverse to get chronological order (oldest first)
         messages = list(reversed(messages))
 
-        # Convert to chat format
+        # Build context with token management
         history = []
+        total_tokens = 0
+
+        # Process messages in chronological order
         for message in messages:
+            msg_tokens = self._estimate_tokens(message.content)
+
+            # Check if adding this message would exceed token limit
+            if total_tokens + msg_tokens > max_tokens:
+                # If we have room for at least half the message, truncate it
+                if total_tokens < max_tokens * 0.8 and len(history) > 0:
+                    remaining_tokens = max_tokens - total_tokens
+                    # Rough truncation based on character count
+                    chars_per_token = len(message.content) / msg_tokens if msg_tokens > 0 else 1
+                    max_chars = int(remaining_tokens * chars_per_token)
+                    truncated_content = message.content[:max_chars] + "..."
+
+                    history.append({
+                        "role": message.role,
+                        "content": truncated_content
+                    })
+                break
+
             history.append({
                 "role": message.role,
                 "content": message.content
             })
+            total_tokens += msg_tokens
 
+            # Stop if we've reached the message limit
+            if len(history) >= limit:
+                break
+
+        logger.debug(f"Conversation history: {len(history)} messages, ~{total_tokens} tokens")
         return history
 
     async def _generate_ai_response_enhanced(
@@ -718,9 +903,8 @@ INSTRUCTIONS:
             # Build messages for chat completion
             messages = [{"role": "system", "content": system_message}]
 
-            # Add conversation history (limit to avoid token limits)
-            recent_history = conversation_history[-8:]  # Include recent conversation history
-            messages.extend(recent_history)
+            # Add conversation history (already token-managed by _get_conversation_history)
+            messages.extend(conversation_history)
 
             # Add current user message
             messages.append({"role": "user", "content": user_message})

@@ -28,33 +28,62 @@ def process_knowledge_item_background(knowledge_item_id: UUID):
     import asyncio
 
     async def _async_process():
-        try:
-            from app.services.processing_service import processing_service
+        from app.services.processing_service import processing_service
+        from app.core.database import AsyncSessionLocal
+        from app.models.schemas import ProcessingStatus
+        from app.models.database import KnowledgeItem
+        from sqlalchemy import update
 
-            logger.info(f"✓ Background processing started for knowledge item {knowledge_item_id}")
-            result = await processing_service.process_knowledge_item(knowledge_item_id)
-            logger.info(f"✓ Background processing completed for {knowledge_item_id}: {result}")
-            return result
-        except Exception as e:
-            logger.error(f"✗ Background processing failed for {knowledge_item_id}: {e}")
-            # Update item status to failed
+        max_retries = 3
+        retry_delays = [1, 2, 4]  # Exponential backoff: 1s, 2s, 4s
+
+        last_error = None
+        for attempt in range(max_retries):
             try:
-                from app.core.database import AsyncSessionLocal
-                from app.models.schemas import ProcessingStatus
-                from app.models.database import KnowledgeItem
-                from sqlalchemy import update
+                if attempt > 0:
+                    logger.info(f"🔄 Retry attempt {attempt + 1}/{max_retries} for {knowledge_item_id}")
+                else:
+                    logger.info(f"✓ Background processing started for knowledge item {knowledge_item_id}")
 
-                async with AsyncSessionLocal() as db:
-                    await db.execute(
-                        update(KnowledgeItem)
-                        .where(KnowledgeItem.id == knowledge_item_id)
-                        .values(processing_status=ProcessingStatus.FAILED)
-                    )
-                    await db.commit()
-                    logger.info(f"Updated status to FAILED for {knowledge_item_id}")
-            except Exception as status_error:
-                logger.error(f"Failed to update status for {knowledge_item_id}: {status_error}")
-            raise
+                result = await processing_service.process_knowledge_item(knowledge_item_id)
+                logger.info(f"✓ Background processing completed for {knowledge_item_id}: {result}")
+                return result
+
+            except Exception as e:
+                last_error = e
+                error_msg = str(e)
+
+                # Check if error is retryable (network, timeout, temporary API issues)
+                is_retryable = any(keyword in error_msg.lower() for keyword in [
+                    'timeout', 'connection', 'network', 'temporary', 'rate limit',
+                    'unavailable', 'overloaded', '429', '503', '504'
+                ])
+
+                if attempt < max_retries - 1 and is_retryable:
+                    delay = retry_delays[attempt]
+                    logger.warning(f"⚠️ Retryable error for {knowledge_item_id}: {error_msg}. Retrying in {delay}s...")
+                    await asyncio.sleep(delay)
+                    continue
+                else:
+                    # Final failure or non-retryable error
+                    logger.error(f"✗ Background processing failed for {knowledge_item_id} after {attempt + 1} attempt(s): {e}")
+                    break
+
+        # Update item status to failed
+        try:
+            async with AsyncSessionLocal() as db:
+                await db.execute(
+                    update(KnowledgeItem)
+                    .where(KnowledgeItem.id == knowledge_item_id)
+                    .values(processing_status=ProcessingStatus.FAILED)
+                )
+                await db.commit()
+                logger.info(f"Updated status to FAILED for {knowledge_item_id}")
+        except Exception as status_error:
+            logger.error(f"Failed to update status for {knowledge_item_id}: {status_error}")
+
+        if last_error:
+            raise last_error
 
     try:
         # Use asyncio.run() which is the proper way to run async code from sync context
@@ -303,3 +332,38 @@ async def notify_upload_complete(
     except Exception as e:
         logger.error(f"Failed to complete upload: {e}")
         raise HTTPException(status_code=500, detail="Failed to complete upload")
+
+
+@router.get("/supported-formats")
+async def get_supported_formats():
+    """
+    Get information about all supported file formats.
+
+    Returns format information grouped by category, useful for frontend display.
+
+    Returns:
+        Dictionary with:
+        - categories: Formats grouped by type (Documents, Spreadsheets, etc.)
+        - extensions: Flat list of all supported extensions
+        - accept_string: HTML accept attribute value
+        - total_formats: Number of format processors
+        - processors: Detailed processor information
+    """
+    from app.services.document_processors import DocumentProcessorFactory
+
+    try:
+        format_info = DocumentProcessorFactory.get_format_display_info()
+        processor_info = DocumentProcessorFactory.get_processor_info()
+        stats = DocumentProcessorFactory.get_statistics()
+
+        return {
+            **format_info,
+            "processors": processor_info,
+            "stats": stats
+        }
+    except Exception as e:
+        logger.error(f"Failed to get supported formats: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to retrieve supported formats"
+        )

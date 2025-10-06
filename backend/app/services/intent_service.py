@@ -92,10 +92,11 @@ Query: "{user_query}"{folder_info}
 Classify this query and output ONLY a JSON object with this exact structure:
 
 {{
-  "intent_type": "quick_qa" | "aggregation" | "full_folder_summary" | "filtered_aggregation",
+  "intent_type": "no_search_needed" | "quick_qa" | "aggregation" | "full_folder_summary" | "filtered_aggregation",
   "confidence": 0.0-1.0,
   "reasoning": "brief explanation",
   "requires_full_scan": true/false,
+  "retrieval_strategy": "none" | "top_k" | "full_folder" | "filtered_full",
   "extraction_schema": {{
     "extract_numbers": true/false,
     "extract_dates": true/false,
@@ -110,19 +111,29 @@ Classify this query and output ONLY a JSON object with this exact structure:
 }}
 
 Intent Types:
+- "no_search_needed": Greetings, chitchat, general knowledge not in knowledge base (e.g., "hello", "what is Python?", "how are you?")
 - "quick_qa": Simple question answerable with top-k retrieval (e.g., "What is X?", "Explain Y")
 - "aggregation": Requires counting/summing across items (e.g., "total transactions", "how many", "sum of")
 - "full_folder_summary": Needs to process all items (e.g., "summarize everything", "overview of folder")
 - "filtered_aggregation": Aggregation with semantic/temporal filter (e.g., "December transactions", "recent orders")
 
+Retrieval Strategies:
+- "none": No search needed - answer directly (for greetings, chitchat, general knowledge)
+- "top_k": Retrieve top 5-10 most relevant chunks (for quick_qa)
+- "full_folder": Retrieve ALL chunks from folder (for full summaries, aggregations without filters)
+- "filtered_full": Retrieve all chunks matching semantic/date filter (for filtered aggregations)
+
 Guidelines:
-1. Use "quick_qa" for: definitions, explanations, finding specific info
-2. Use "aggregation" for: totals, counts, averages, all items with math operations
-3. Use "full_folder_summary" for: broad summaries, overviews without specific filter
-4. Use "filtered_aggregation" for: "total X in December", "count Y from last month"
-5. Set requires_full_scan=true only if answer needs ALL items (aggregations, full summaries)
-6. Extract semantic filters naturally (e.g., "December orders" → filter: "December", date_range: Dec 2024)
-7. confidence < 0.5 means unclear, default to "quick_qa"
+1. Use "no_search_needed" for: greetings ("hello", "hi"), chitchat, general knowledge ("what is Python?"), meta questions about the system → retrieval_strategy: "none"
+2. Use "quick_qa" for: definitions, explanations, finding specific info in knowledge base → retrieval_strategy: "top_k"
+3. Use "aggregation" for: totals, counts, averages, all items with math operations → retrieval_strategy: "full_folder"
+4. Use "full_folder_summary" for: broad summaries, overviews without specific filter → retrieval_strategy: "full_folder"
+5. Use "filtered_aggregation" for: "total X in December", "count Y from last month" → retrieval_strategy: "filtered_full"
+6. Set requires_full_scan=true only if answer needs ALL items (aggregations, full summaries)
+7. Extract semantic filters naturally (e.g., "December orders" → filter: "December", date_range: Dec 2024)
+8. Folder-scoped queries (e.g., "summarize #foldername", "all files in folder") → retrieval_strategy: "full_folder"
+9. NO folders specified + general question (not about user's data) → likely "no_search_needed"
+10. confidence < 0.5 means unclear, default to "quick_qa" with "top_k" retrieval
 
 Output ONLY valid JSON, no markdown formatting."""
 
@@ -139,17 +150,31 @@ Output ONLY valid JSON, no markdown formatting."""
         intent_data.setdefault("extraction_schema", {})
         intent_data.setdefault("filter_criteria", {})
 
+        # Set retrieval strategy based on intent type if not provided
+        if "retrieval_strategy" not in intent_data:
+            if intent_data["intent_type"] == "no_search_needed":
+                intent_data["retrieval_strategy"] = "none"
+            elif intent_data["intent_type"] == "quick_qa":
+                intent_data["retrieval_strategy"] = "top_k"
+            elif intent_data["intent_type"] == "filtered_aggregation":
+                intent_data["retrieval_strategy"] = "filtered_full"
+            else:  # aggregation or full_folder_summary
+                intent_data["retrieval_strategy"] = "full_folder"
+
         # Calculate estimated items to process
         total_items = sum(folder_item_counts.values()) if folder_item_counts else 0
 
-        if intent_data["intent_type"] == "quick_qa":
-            estimated_items = 10  # Top-k retrieval
-        elif intent_data.get("filter_criteria", {}).get("semantic_filter"):
+        # Use retrieval_strategy to determine estimated items
+        if intent_data["retrieval_strategy"] == "none":
+            estimated_items = 0  # No search needed
+        elif intent_data["retrieval_strategy"] == "top_k":
+            estimated_items = 10  # Top-k retrieval (5-10 items)
+        elif intent_data["retrieval_strategy"] == "filtered_full":
             # Filtered aggregation: estimate 20-50% of items will be relevant
-            estimated_items = int(total_items * 0.35)
-        else:
-            # Full scan
-            estimated_items = total_items
+            estimated_items = int(total_items * 0.35) if total_items > 0 else 10
+        else:  # full_folder
+            # Full scan of all items
+            estimated_items = total_items if total_items > 0 else 10
 
         intent_data["estimated_items"] = estimated_items
 
@@ -175,30 +200,57 @@ Output ONLY valid JSON, no markdown formatting."""
         """Fallback intent when classification fails."""
 
         # Simple keyword detection as fallback
-        query_lower = user_query.lower()
+        query_lower = user_query.lower().strip()
 
-        aggregation_keywords = ["total", "sum", "count", "how many", "average", "all"]
-        summary_keywords = ["summarize", "overview", "summary", "tell me about"]
+        # Check for greetings and chitchat first
+        greeting_keywords = ["hello", "hi", "hey", "good morning", "good afternoon", "good evening",
+                            "how are you", "what's up", "sup", "greetings"]
+        general_knowledge = ["what is ", "who is ", "what are ", "define ", "explain "]
 
-        if any(kw in query_lower for kw in aggregation_keywords):
-            intent_type = "aggregation"
-            requires_full_scan = True
-        elif any(kw in query_lower for kw in summary_keywords):
-            intent_type = "full_folder_summary"
-            requires_full_scan = True
-        else:
-            intent_type = "quick_qa"
+        # No folders means likely not a knowledge base query
+        has_folders = folder_item_counts and sum(folder_item_counts.values()) > 0
+
+        if any(query_lower.startswith(kw) for kw in greeting_keywords):
+            intent_type = "no_search_needed"
             requires_full_scan = False
+        elif not has_folders and any(kw in query_lower for kw in general_knowledge):
+            # General knowledge question without folder context
+            intent_type = "no_search_needed"
+            requires_full_scan = False
+        else:
+            aggregation_keywords = ["total", "sum", "count", "how many", "average", "all"]
+            summary_keywords = ["summarize", "overview", "summary", "tell me about"]
+
+            if any(kw in query_lower for kw in aggregation_keywords):
+                intent_type = "aggregation"
+                requires_full_scan = True
+            elif any(kw in query_lower for kw in summary_keywords):
+                intent_type = "full_folder_summary"
+                requires_full_scan = True
+            else:
+                intent_type = "quick_qa"
+                requires_full_scan = False
 
         total_items = sum(folder_item_counts.values()) if folder_item_counts else 10
-        estimated_items = total_items if requires_full_scan else 10
+        estimated_items = total_items if requires_full_scan else (0 if intent_type == "no_search_needed" else 10)
         estimated_time = 1.0 + (estimated_items / self.ITEMS_PER_SECOND_ESTIMATE)
+
+        # Determine retrieval strategy based on intent
+        if intent_type == "no_search_needed":
+            retrieval_strategy = "none"
+        elif intent_type == "quick_qa":
+            retrieval_strategy = "top_k"
+        elif intent_type == "filtered_aggregation":
+            retrieval_strategy = "filtered_full"
+        else:
+            retrieval_strategy = "full_folder"
 
         return {
             "intent_type": intent_type,
             "confidence": 0.3,  # Low confidence for fallback
             "reasoning": "Fallback classification based on keywords",
             "requires_full_scan": requires_full_scan,
+            "retrieval_strategy": retrieval_strategy,
             "requires_async": estimated_time > self.QUICK_QUERY_THRESHOLD_SECONDS,
             "estimated_items": estimated_items,
             "estimated_time_seconds": estimated_time,

@@ -32,6 +32,35 @@ class ContentService:
         from app.services.processing_service import ProcessingService
         return ProcessingService.sanitize_text_for_postgres(text)
 
+    @staticmethod
+    def sanitize_metadata_for_response(item_id: UUID, metadata: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Sanitize metadata before sending to frontend.
+
+        Removes sensitive internal fields (storage_path, storage_url) and adds
+        a download_url that points to the proper API endpoint.
+
+        Args:
+            item_id: Knowledge item ID
+            metadata: Raw metadata from database
+
+        Returns:
+            Dict with sanitized metadata safe for frontend consumption
+        """
+        if not metadata:
+            return {}
+
+        # Remove sensitive fields that should not be exposed to frontend
+        sensitive_fields = ['storage_path', 'storage_url']
+        safe_metadata = {k: v for k, v in metadata.items() if k not in sensitive_fields}
+
+        # Add proper download URL if this item has a file
+        if metadata.get('storage_path'):
+            safe_metadata['download_url'] = f"/api/v1/files/download/{item_id}"
+            safe_metadata['has_file'] = True
+
+        return safe_metadata
+
     async def create_knowledge_item(
         self,
         db: AsyncSession,

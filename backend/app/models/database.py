@@ -100,6 +100,9 @@ class KnowledgeItem(Base):
     processing_status: Mapped[str] = mapped_column(Text, default="pending")
     is_chunked: Mapped[bool] = mapped_column(Boolean, default=False)
     total_chunks: Mapped[int] = mapped_column(Integer, default=1)
+    chunks_processed: Mapped[int] = mapped_column(Integer, default=0)
+    processing_progress: Mapped[float] = mapped_column(Float, default=0.0)
+    estimated_completion: Mapped[Optional[datetime]] = mapped_column(DateTime)
     item_metadata: Mapped[Optional[dict]] = mapped_column("metadata", JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -115,6 +118,7 @@ class KnowledgeItem(Base):
         Index("idx_knowledge_items_folder_id", "folder_id"),
         Index("idx_knowledge_items_processing_status", "processing_status"),
         Index("idx_knowledge_items_user_processing", "user_id", "processing_status"),
+        Index("idx_knowledge_items_progress", "processing_status", "chunks_processed", "total_chunks"),
     )
 
 

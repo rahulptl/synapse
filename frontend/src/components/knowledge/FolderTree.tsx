@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, Folder, FolderOpen, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Folder, FolderOpen, Plus, Trash2, Edit2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
@@ -19,6 +19,7 @@ interface FolderTreeProps {
   onFolderSelect: (folderId: string) => void;
   onCreateFolder: (parentId: string | null, name: string) => Promise<void>;
   onDeleteFolder: (folderId: string) => Promise<void>;
+  onRenameFolder?: (folderId: string, newName: string) => Promise<void>;
 }
 
 interface FolderNodeProps {
@@ -27,18 +28,22 @@ interface FolderNodeProps {
   onFolderSelect: (folderId: string) => void;
   onCreateFolder: (parentId: string | null, name: string) => Promise<void>;
   onDeleteFolder: (folderId: string) => Promise<void>;
+  onRenameFolder?: (folderId: string, newName: string) => Promise<void>;
 }
 
-function FolderNode({ 
-  folder, 
-  selectedFolder, 
-  onFolderSelect, 
-  onCreateFolder, 
-  onDeleteFolder 
+function FolderNode({
+  folder,
+  selectedFolder,
+  onFolderSelect,
+  onCreateFolder,
+  onDeleteFolder,
+  onRenameFolder
 }: FolderNodeProps) {
   const [isExpanded, setIsExpanded] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState(folder.name);
   const [isHovered, setIsHovered] = useState(false);
   const { toast } = useToast();
 
@@ -74,12 +79,44 @@ function FolderNode({
     }
   };
 
+  const handleRenameFolder = async () => {
+    if (!renameValue.trim() || renameValue === folder.name) {
+      setIsRenaming(false);
+      setRenameValue(folder.name);
+      return;
+    }
+
+    try {
+      if (onRenameFolder) {
+        await onRenameFolder(folder.id, renameValue.trim());
+        setIsRenaming(false);
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to rename folder",
+        variant: "destructive",
+      });
+      setRenameValue(folder.name);
+      setIsRenaming(false);
+    }
+  };
+
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       handleCreateFolder();
     } else if (e.key === 'Escape') {
       setIsCreating(false);
       setNewFolderName('');
+    }
+  };
+
+  const handleRenameKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleRenameFolder();
+    } else if (e.key === 'Escape') {
+      setIsRenaming(false);
+      setRenameValue(folder.name);
     }
   };
 
@@ -134,21 +171,52 @@ function FolderNode({
             )}
           </div>
 
-          <span
-            className={`text-sm cursor-pointer flex-1 min-w-0 font-medium transition-colors truncate ${
-              isSelected ? 'text-white' : 'text-gray-200 group-hover:text-white'
-            }`}
-            onClick={(e) => {
-              e.stopPropagation();
-              onFolderSelect(folder.id);
-            }}
-          >
-            {folder.name}
-          </span>
+          {isRenaming ? (
+            <Input
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onKeyDown={handleRenameKeyPress}
+              onBlur={handleRenameFolder}
+              className="h-7 text-sm bg-white/10 border-white/20 text-white flex-1 min-w-0"
+              autoFocus
+              onClick={(e) => e.stopPropagation()}
+            />
+          ) : (
+            <span
+              className={`text-sm cursor-pointer flex-1 min-w-0 font-medium transition-colors truncate ${
+                isSelected ? 'text-white' : 'text-gray-200 group-hover:text-white'
+              }`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onFolderSelect(folder.id);
+              }}
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                if (onRenameFolder) {
+                  setIsRenaming(true);
+                }
+              }}
+            >
+              {folder.name}
+            </span>
+          )}
         </div>
-        
-        {isHovered && (
+
+        {isHovered && !isRenaming && (
           <div className="flex items-center space-x-1 pr-3 opacity-0 group-hover:opacity-100 transition-opacity">
+            {onRenameFolder && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0 hover:bg-purple-500/20 hover:text-purple-400 transition-colors text-gray-400"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsRenaming(true);
+                }}
+              >
+                <Edit2 className="h-3.5 w-3.5" />
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="sm"
@@ -203,6 +271,7 @@ function FolderNode({
               onFolderSelect={onFolderSelect}
               onCreateFolder={onCreateFolder}
               onDeleteFolder={onDeleteFolder}
+              onRenameFolder={onRenameFolder}
             />
           ))}
         </div>
@@ -216,7 +285,8 @@ export function FolderTree({
   selectedFolder,
   onFolderSelect,
   onCreateFolder,
-  onDeleteFolder
+  onDeleteFolder,
+  onRenameFolder
 }: FolderTreeProps) {
   const [isCreating, setIsCreating] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
@@ -294,6 +364,7 @@ export function FolderTree({
               onFolderSelect={onFolderSelect}
               onCreateFolder={onCreateFolder}
               onDeleteFolder={onDeleteFolder}
+              onRenameFolder={onRenameFolder}
             />
           ))}
         </div>

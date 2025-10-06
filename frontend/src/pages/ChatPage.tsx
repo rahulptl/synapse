@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
-import { Send, MessageSquare, Plus, Folder, Bot, Search, Brain, Sparkles, ExternalLink, AlertTriangle, Trash2, Menu } from 'lucide-react';
+import { Send, MessageSquare, Plus, Folder, Bot, Search, Brain, Sparkles, ExternalLink, AlertTriangle, Trash2, Menu, FileText } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { apiClient } from '@/services/apiClient';
 
@@ -98,9 +98,11 @@ export default function ChatPage() {
   const [hashtagInfo, setHashtagInfo] = useState<HashtagInfo | null>(null);
   const [userFolders, setUserFolders] = useState<Array<{ id: string; name: string }>>([]);
   const [showAutocomplete, setShowAutocomplete] = useState(false);
+  const [autocompleteType, setAutocompleteType] = useState<'folder' | 'file' | null>(null);
   const [autocompleteQuery, setAutocompleteQuery] = useState('');
   const [selectedAutocompleteIndex, setSelectedAutocompleteIndex] = useState(0);
   const [cursorPosition, setCursorPosition] = useState(0);
+  const [fileAutocompleteSuggestions, setFileAutocompleteSuggestions] = useState<Array<{ id: string; title: string; folder_name: string; content_type: string }>>([]);
   const [searchPhase, setSearchPhase] = useState<string>('');
   const [selectedSource, setSelectedSource] = useState<any | null>(null);
   const [showSourceDialog, setShowSourceDialog] = useState(false);
@@ -134,6 +136,19 @@ export default function ChatPage() {
     }
 
     return hashtags;
+  };
+
+  // Parse @ file references from input message
+  const parseFileRefs = (message: string) => {
+    const fileRefRegex = /@([\w\-_\.]+)/g;
+    const fileRefs: string[] = [];
+    let match: RegExpExecArray | null;
+
+    while ((match = fileRefRegex.exec(message)) !== null) {
+      fileRefs.push(match[1]);
+    }
+
+    return fileRefs;
   };
 
   // Render message with highlighted hashtags
@@ -411,25 +426,63 @@ export default function ChatPage() {
     }
   };
 
-  // Handle input changes and detect hashtag autocomplete
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle input changes and detect hashtag/@ autocomplete
+  const handleInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     const cursorPos = e.target.selectionStart || 0;
 
     setInputMessage(value);
     setCursorPosition(cursorPos);
 
-    // Check if we're typing a hashtag
+    // Check if we're typing a hashtag (folder) or @ (file)
     const textBeforeCursor = value.substring(0, cursorPos);
     const hashtagMatch = textBeforeCursor.match(/#(\w*)$/);
+    const fileMatch = textBeforeCursor.match(/@([\w\-_]*)$/);
 
     if (hashtagMatch && userFolders.length > 0) {
+      // Folder autocomplete
       const query = hashtagMatch[1].toLowerCase();
       setAutocompleteQuery(query);
+      setAutocompleteType('folder');
       setShowAutocomplete(true);
       setSelectedAutocompleteIndex(0);
+    } else if (fileMatch && user && accessToken) {
+      // File autocomplete
+      const query = fileMatch[1];
+      setAutocompleteQuery(query);
+      setAutocompleteType('file');
+      setShowAutocomplete(true);
+      setSelectedAutocompleteIndex(0);
+
+      // Fetch file suggestions (only if query has at least 1 character)
+      if (query.length >= 1) {
+        try {
+          const auth = { userId: user.id, accessToken };
+          // Get folder IDs from current hashtags to narrow search
+          const hashtags = parseHashtags(value);
+          const folderIds = hashtags
+            .map(tag => userFolders.find(f => f.name.toLowerCase() === tag.toLowerCase())?.id)
+            .filter(Boolean) as string[];
+
+          const suggestions = await apiClient.searchContentTitles(
+            query,
+            folderIds.length > 0 ? folderIds : null,
+            10,
+            auth
+          );
+          setFileAutocompleteSuggestions(suggestions);
+        } catch (error) {
+          console.error('Failed to fetch file suggestions:', error);
+          // Set empty suggestions on error
+          setFileAutocompleteSuggestions([]);
+        }
+      } else {
+        // Clear suggestions when query is empty
+        setFileAutocompleteSuggestions([]);
+      }
     } else {
       setShowAutocomplete(false);
+      setAutocompleteType(null);
     }
   };
 
@@ -441,7 +494,7 @@ export default function ChatPage() {
     );
   };
 
-  // Handle autocomplete selection
+  // Handle autocomplete selection (both folders and files)
   const selectAutocompleteFolder = (folderName: string) => {
     const textBeforeCursor = inputMessage.substring(0, cursorPosition);
     const textAfterCursor = inputMessage.substring(cursorPosition);
@@ -464,24 +517,50 @@ export default function ChatPage() {
     }
   };
 
+  const selectAutocompleteFile = (fileName: string) => {
+    const textBeforeCursor = inputMessage.substring(0, cursorPosition);
+    const textAfterCursor = inputMessage.substring(cursorPosition);
+    const fileMatch = textBeforeCursor.match(/@([\w\-_]*)$/);
+
+    if (fileMatch) {
+      const beforeAt = textBeforeCursor.substring(0, fileMatch.index);
+      const newText = beforeAt + '@' + fileName + ' ' + textAfterCursor;
+      setInputMessage(newText);
+      setShowAutocomplete(false);
+
+      // Focus back to input and set cursor position
+      setTimeout(() => {
+        if (inputRef.current) {
+          const newCursorPos = beforeAt.length + fileName.length + 2; // +2 for @ and space
+          inputRef.current.focus();
+          inputRef.current.setSelectionRange(newCursorPos, newCursorPos);
+        }
+      }, 0);
+    }
+  };
+
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (showAutocomplete) {
-      const filteredFolders = getFilteredFolders();
+      const items = autocompleteType === 'folder' ? getFilteredFolders() : fileAutocompleteSuggestions;
 
       if (e.key === 'ArrowDown') {
         e.preventDefault();
         setSelectedAutocompleteIndex(prev =>
-          prev < filteredFolders.length - 1 ? prev + 1 : 0
+          prev < items.length - 1 ? prev + 1 : 0
         );
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         setSelectedAutocompleteIndex(prev =>
-          prev > 0 ? prev - 1 : filteredFolders.length - 1
+          prev > 0 ? prev - 1 : items.length - 1
         );
       } else if (e.key === 'Tab' || e.key === 'Enter') {
         e.preventDefault();
-        if (filteredFolders[selectedAutocompleteIndex]) {
-          selectAutocompleteFolder(filteredFolders[selectedAutocompleteIndex].name);
+        if (items[selectedAutocompleteIndex]) {
+          if (autocompleteType === 'folder') {
+            selectAutocompleteFolder((items[selectedAutocompleteIndex] as any).name);
+          } else if (autocompleteType === 'file') {
+            selectAutocompleteFile((items[selectedAutocompleteIndex] as any).title);
+          }
         }
       } else if (e.key === 'Escape') {
         setShowAutocomplete(false);
@@ -825,30 +904,69 @@ export default function ChatPage() {
                 {/* Autocomplete Dropdown - Above input */}
                 {showAutocomplete && (
                   <div className="bg-white/10 backdrop-blur-2xl border border-white/20 rounded-2xl shadow-2xl max-h-48 overflow-y-auto animate-fade-in">
-                    {getFilteredFolders().length > 0 ? (
-                      getFilteredFolders().map((folder, index) => (
-                        <div
-                          key={folder.id}
-                          className={`px-4 py-3 cursor-pointer flex items-center space-x-3 transition-all duration-200 ${
-                            index === selectedAutocompleteIndex
-                              ? 'bg-blue-500/30 text-blue-200 scale-[1.02]'
-                              : 'hover:bg-white/10 text-gray-300 hover:text-white'
-                          }`}
-                          onClick={() => selectAutocompleteFolder(folder.name)}
-                        >
-                          <Folder className="h-4 w-4 text-blue-400" />
-                          <span className="text-sm font-medium">{folder.name}</span>
+                    {autocompleteType === 'folder' ? (
+                      // Folder Autocomplete
+                      getFilteredFolders().length > 0 ? (
+                        getFilteredFolders().map((folder, index) => (
+                          <div
+                            key={folder.id}
+                            className={`px-4 py-3 cursor-pointer flex items-center space-x-3 transition-all duration-200 ${
+                              index === selectedAutocompleteIndex
+                                ? 'bg-blue-500/30 text-blue-200 scale-[1.02]'
+                                : 'hover:bg-white/10 text-gray-300 hover:text-white'
+                            }`}
+                            onClick={() => selectAutocompleteFolder(folder.name)}
+                          >
+                            <Folder className="h-4 w-4 text-blue-400" />
+                            <span className="text-sm font-medium">{folder.name}</span>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="px-4 py-3 text-sm text-gray-400">
+                          {autocompleteQuery
+                            ? `No folders found matching "${autocompleteQuery}"`
+                            : userFolders.length === 0
+                              ? "No folders available"
+                              : "Loading folders..."
+                          }
                         </div>
-                      ))
+                      )
                     ) : (
-                      <div className="px-4 py-3 text-sm text-gray-400">
-                        {autocompleteQuery
-                          ? `No folders found matching "${autocompleteQuery}"`
-                          : userFolders.length === 0
-                            ? "No folders available"
-                            : "Loading folders..."
-                        }
-                      </div>
+                      // File Autocomplete
+                      fileAutocompleteSuggestions.length > 0 ? (
+                        fileAutocompleteSuggestions.map((file, index) => (
+                          <div
+                            key={file.id}
+                            className={`px-4 py-3 cursor-pointer flex items-center justify-between space-x-3 transition-all duration-200 ${
+                              index === selectedAutocompleteIndex
+                                ? 'bg-purple-500/30 text-purple-200 scale-[1.02]'
+                                : 'hover:bg-white/10 text-gray-300 hover:text-white'
+                            }`}
+                            onClick={() => selectAutocompleteFile(file.title)}
+                          >
+                            <div className="flex items-center space-x-3 min-w-0 flex-1">
+                              <FileText className="h-4 w-4 text-purple-400 flex-shrink-0" />
+                              <div className="min-w-0 flex-1">
+                                <div className="text-sm font-medium truncate">{file.title}</div>
+                                <div className="text-xs text-gray-400 truncate">
+                                  <Folder className="h-3 w-3 inline mr-1" />
+                                  {file.folder_name}
+                                </div>
+                              </div>
+                            </div>
+                            <Badge variant="outline" className="text-xs flex-shrink-0">
+                              {file.content_type}
+                            </Badge>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="px-4 py-3 text-sm text-gray-400">
+                          {autocompleteQuery
+                            ? `No files found matching "${autocompleteQuery}"`
+                            : "Start typing to search files..."
+                          }
+                        </div>
+                      )
                     )}
 
                     {/* Instructions */}
@@ -880,6 +998,28 @@ export default function ChatPage() {
                   </div>
                 )}
 
+                {/* File References Preview */}
+                {inputMessage && parseFileRefs(inputMessage).length > 0 && (
+                  <div className="p-5 bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-400/40 rounded-2xl animate-fade-in backdrop-blur-xl">
+                    <div className="flex items-center space-x-3 text-sm text-gray-200 mb-3">
+                      <div className="p-1.5 bg-purple-500/30 rounded-lg">
+                        <FileText className="h-4 w-4 text-purple-300" />
+                      </div>
+                      <span className="font-semibold">Filtering by files:</span>
+                    </div>
+                    <div className="flex flex-wrap gap-3">
+                      {parseFileRefs(inputMessage).map((fileRef, index) => (
+                        <Badge
+                          key={index}
+                          className="bg-gradient-to-r from-purple-500/30 to-pink-500/30 text-purple-200 hover:from-purple-500/40 hover:to-pink-500/40 text-sm px-3 py-1 border border-purple-400/30 rounded-full font-semibold"
+                        >
+                          @{fileRef}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Input Bar */}
                 <div className="relative flex items-end space-x-4">
                   <div className="relative flex-1">
@@ -889,7 +1029,7 @@ export default function ChatPage() {
                         value={inputMessage}
                         onChange={handleInputChange}
                         onKeyDown={handleKeyPress}
-                        placeholder="Ask anything about your knowledge base... Use #folder to filter by folder"
+                        placeholder="Ask anything... Use #folder or @file to filter"
                         className="chat-input w-full h-14 px-6 py-4 text-sm bg-white/10 backdrop-blur-xl border-2 border-white/20 rounded-2xl shadow-xl hover:shadow-2xl focus:shadow-2xl transition-all duration-500 focus:border-blue-400/60 focus:outline-none focus:ring-0 placeholder:text-gray-400 text-white font-medium hover:bg-white/15 focus:bg-white/15"
                         disabled={isLoading}
                       />
@@ -939,7 +1079,7 @@ export default function ChatPage() {
                   Ready to explore your knowledge?
                 </h3>
                 <p className="text-gray-300 max-w-lg mx-auto text-lg leading-relaxed">
-                  Start a conversation with your AI assistant. Use <code className="bg-blue-900/50 text-blue-300 px-2 py-1 rounded-md font-mono text-sm">#folder</code> to search specific areas of your knowledge base.
+                  Start a conversation with your AI assistant. Use <code className="bg-blue-900/50 text-blue-300 px-2 py-1 rounded-md font-mono text-sm">#folder</code> or <code className="bg-purple-900/50 text-purple-300 px-2 py-1 rounded-md font-mono text-sm">@file</code> to filter your search.
                 </p>
               </div>
               <div className="flex flex-wrap justify-center gap-3">

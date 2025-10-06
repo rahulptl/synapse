@@ -5,6 +5,7 @@ from typing import Dict, Any
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Path
 from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import BaseModel
 
 from app.core.database import get_db
 from app.core.security import validate_any_auth
@@ -15,6 +16,11 @@ from app.models.schemas import (
 )
 
 router = APIRouter()
+
+
+class RenameFolderRequest(BaseModel):
+    """Request model for renaming a folder."""
+    new_name: str
 
 
 @router.get("")
@@ -182,6 +188,68 @@ async def delete_folder(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail="Failed to delete folder")
+
+
+@router.patch("/{folder_id}/rename")
+async def rename_folder(
+    rename_request: RenameFolderRequest,
+    folder_id: UUID = Path(...),
+    db: AsyncSession = Depends(get_db),
+    auth_data: dict = Depends(validate_any_auth)
+):
+    """
+    Rename a folder (convenience endpoint for updating just the name).
+
+    Args:
+        folder_id: ID of the folder to rename
+        rename_request: Request containing new_name
+
+    Returns:
+        Updated folder information
+    """
+    user_id = UUID(auth_data["user_id"])
+
+    # Validate new name
+    new_name = rename_request.new_name.strip()
+    if not new_name:
+        raise HTTPException(status_code=400, detail="Folder name cannot be empty")
+
+    if len(new_name) > 255:
+        raise HTTPException(status_code=400, detail="Folder name too long (max 255 characters)")
+
+    try:
+        # Use the existing update_folder method with just the name field
+        update_data = FolderUpdate(name=new_name)
+        folder = await folder_service.update_folder(
+            db=db,
+            user_id=user_id,
+            folder_id=folder_id,
+            update_data=update_data
+        )
+
+        if not folder:
+            raise HTTPException(status_code=404, detail="Folder not found or access denied")
+
+        # Return safe format
+        return {
+            "success": True,
+            "message": f"Folder renamed to '{new_name}'",
+            "folder": {
+                "id": str(folder.id),
+                "user_id": str(folder.user_id),
+                "name": folder.name,
+                "description": folder.description,
+                "parent_id": str(folder.parent_id) if folder.parent_id else None,
+                "path": folder.path,
+                "depth": folder.depth,
+                "created_at": folder.created_at.isoformat() if folder.created_at else None,
+                "updated_at": folder.updated_at.isoformat() if folder.updated_at else None
+            }
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Failed to rename folder")
 
 
 @router.get("/{folder_id}/content")

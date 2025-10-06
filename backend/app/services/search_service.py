@@ -19,6 +19,51 @@ from app.core.embeddings import embedding_service
 logger = logging.getLogger(__name__)
 
 
+def reciprocal_rank_fusion(
+    ranked_lists: List[List[Dict[str, Any]]],
+    k: int = 60
+) -> List[Dict[str, Any]]:
+    """
+    Merge multiple ranked lists using Reciprocal Rank Fusion (RRF).
+
+    RRF formula: score(d) = sum over all rankings r: 1 / (k + rank_r(d))
+    where k is a constant (default 60) and rank_r(d) is the rank of document d in ranking r.
+
+    Args:
+        ranked_lists: List of ranked result lists
+        k: Constant for RRF (default 60, commonly used value)
+
+    Returns:
+        Merged and re-ranked results
+    """
+    # Collect all unique documents with their RRF scores
+    doc_scores: Dict[str, Dict[str, Any]] = {}
+
+    for ranked_list in ranked_lists:
+        for rank, doc in enumerate(ranked_list, start=1):
+            doc_id = doc['id']
+            rrf_score = 1 / (k + rank)
+
+            if doc_id not in doc_scores:
+                doc_scores[doc_id] = {
+                    **doc,  # Keep original document data
+                    'rrf_score': 0.0,
+                    'appearances': 0
+                }
+
+            doc_scores[doc_id]['rrf_score'] += rrf_score
+            doc_scores[doc_id]['appearances'] += 1
+
+    # Sort by RRF score
+    merged_results = sorted(
+        doc_scores.values(),
+        key=lambda x: x['rrf_score'],
+        reverse=True
+    )
+
+    return merged_results
+
+
 def convert_numpy_types(obj: Any) -> Any:
     """
     Recursively convert numpy types to native Python types for JSON serialization.
@@ -117,10 +162,18 @@ class SearchService:
 
     def parse_hashtags_from_message(self, message: str) -> Dict[str, Any]:
         """
-        Parse hashtags from message and return cleaned query with folder info.
-        Matches the logic from the rag-chat edge function.
+        Parse hashtags/references from message.
+
+        Supports # for both folder and file references. The chat service
+        will determine whether each reference is a folder or filename.
+
+        Returns:
+            Dict with:
+            - hashtags: List of # references (could be folders or files)
+            - cleaned_message: Message with # references removed
+            - original_message: Original message
         """
-        hashtag_regex = re.compile(r'#([\w\-_]+)')
+        hashtag_regex = re.compile(r'#([\w\-_\.]+)')  # Added \. to support filenames with extensions
         hashtags = hashtag_regex.findall(message)
 
         cleaned_message = hashtag_regex.sub('', message).strip()
@@ -128,6 +181,59 @@ class SearchService:
 
         return {
             "hashtags": hashtags,
+            "cleaned_message": cleaned_message,
+            "original_message": message
+        }
+
+    def parse_file_references_from_message(self, message: str) -> Dict[str, Any]:
+        """
+        Parse @ file references from message.
+
+        Supports @ for explicit file references (e.g., @budget_2024.pdf).
+
+        Returns:
+            Dict with:
+            - file_refs: List of @ file references
+            - cleaned_message: Message with @ references removed
+            - original_message: Original message
+        """
+        file_ref_regex = re.compile(r'@([\w\-_\.]+)')  # Matches @filename patterns
+        file_refs = file_ref_regex.findall(message)
+
+        cleaned_message = file_ref_regex.sub('', message).strip()
+        cleaned_message = re.sub(r'\s+', ' ', cleaned_message)
+
+        return {
+            "file_refs": file_refs,
+            "cleaned_message": cleaned_message,
+            "original_message": message
+        }
+
+    def parse_all_references_from_message(self, message: str) -> Dict[str, Any]:
+        """
+        Parse both # (folders) and @ (files) references from message.
+
+        Returns:
+            Dict with:
+            - hashtags: List of # references (folders)
+            - file_refs: List of @ references (files)
+            - cleaned_message: Message with both types removed
+            - original_message: Original message
+        """
+        hashtag_regex = re.compile(r'#([\w\-_\.]+)')
+        file_ref_regex = re.compile(r'@([\w\-_\.]+)')
+
+        hashtags = hashtag_regex.findall(message)
+        file_refs = file_ref_regex.findall(message)
+
+        # Remove both types of references
+        cleaned_message = hashtag_regex.sub('', message)
+        cleaned_message = file_ref_regex.sub('', cleaned_message).strip()
+        cleaned_message = re.sub(r'\s+', ' ', cleaned_message)
+
+        return {
+            "hashtags": hashtags,
+            "file_refs": file_refs,
             "cleaned_message": cleaned_message,
             "original_message": message
         }
@@ -160,19 +266,154 @@ class SearchService:
 
         return folders
 
+    def _calculate_fuzzy_similarity(self, query: str, text: str) -> float:
+        """
+        Calculate fuzzy similarity score between query and text.
+
+        Uses multiple strategies:
+        1. Exact substring match (highest score)
+        2. Case-insensitive match
+        3. Word-level matching
+        4. Character-level similarity
+
+        Returns: Similarity score from 0.0 to 100.0
+        """
+        query_lower = query.lower()
+        text_lower = text.lower()
+
+        # Normalize by removing special characters
+        query_norm = re.sub(r'[^a-z0-9]+', '', query_lower)
+        text_norm = re.sub(r'[^a-z0-9]+', '', text_lower)
+
+        # Strategy 1: Exact substring match
+        if query_lower in text_lower:
+            return 95.0
+
+        # Strategy 2: Exact normalized match
+        if query_norm in text_norm:
+            return 90.0
+
+        # Strategy 3: All query words present
+        query_words = query_lower.split()
+        text_words = text_lower.split()
+        if all(any(qw in tw for tw in text_words) for qw in query_words):
+            return 85.0
+
+        # Strategy 4: Partial word matching
+        matched_words = sum(1 for qw in query_words if any(qw in tw for tw in text_words))
+        if matched_words > 0:
+            word_score = (matched_words / len(query_words)) * 80.0
+            return word_score
+
+        # Strategy 5: Character-level similarity (basic Levenshtein-like)
+        # Count common characters
+        query_chars = set(query_norm)
+        text_chars = set(text_norm)
+        common = query_chars & text_chars
+        if common:
+            char_score = (len(common) / max(len(query_chars), len(text_chars))) * 60.0
+            return char_score
+
+        return 0.0
+
+    async def match_filenames(
+        self,
+        db: AsyncSession,
+        file_references: List[str],
+        folder_ids: Optional[List[UUID]],
+        user_id: UUID,
+        min_similarity: float = 70.0
+    ) -> List[Dict[str, Any]]:
+        """
+        Fuzzy match file references to actual filenames.
+
+        Args:
+            db: Database session
+            file_references: List of #filename references from message
+            folder_ids: Optional list of folder IDs to search within
+            user_id: User ID
+            min_similarity: Minimum similarity score to include (0-100)
+
+        Returns:
+            List of matched items with similarity scores
+        """
+        if not file_references:
+            return []
+
+        matched_items = []
+
+        for file_ref in file_references:
+            # Build query for potential matches
+            stmt = select(KnowledgeItem).where(
+                KnowledgeItem.user_id == user_id
+            )
+
+            # Filter by folders if specified
+            if folder_ids:
+                stmt = stmt.where(KnowledgeItem.folder_id.in_(folder_ids))
+
+            # Use database LIKE for initial filtering (more efficient)
+            stmt = stmt.where(
+                or_(
+                    KnowledgeItem.title.ilike(f"%{file_ref}%"),
+                    func.jsonb_extract_path_text(
+                        KnowledgeItem.item_metadata, 'original_filename'
+                    ).ilike(f"%{file_ref}%")
+                )
+            ).limit(10)  # Limit to top candidates
+
+            result = await db.execute(stmt)
+            items = result.scalars().all()
+
+            # Calculate fuzzy similarity for each candidate
+            for item in items:
+                # Check similarity against title
+                title_score = self._calculate_fuzzy_similarity(file_ref, item.title)
+
+                # Check similarity against original filename if available
+                filename_score = 0.0
+                if item.item_metadata and 'original_filename' in item.item_metadata:
+                    filename_score = self._calculate_fuzzy_similarity(
+                        file_ref, item.item_metadata['original_filename']
+                    )
+
+                # Use the higher score
+                best_score = max(title_score, filename_score)
+
+                if best_score >= min_similarity:
+                    matched_items.append({
+                        "id": item.id,
+                        "title": item.title,
+                        "folder_id": item.folder_id,
+                        "reference": file_ref,
+                        "match_score": best_score,
+                        "matched_field": "title" if title_score >= filename_score else "filename"
+                    })
+
+        # Sort by match score (highest first)
+        matched_items.sort(key=lambda x: x["match_score"], reverse=True)
+
+        logger.debug(f"Matched {len(matched_items)} files for references: {file_references}")
+        return matched_items
+
     async def semantic_search(
         self,
         db: AsyncSession,
         user_id: UUID,
         query_text: str,
         folder_ids: Optional[List[UUID]] = None,
+        item_ids: Optional[List[UUID]] = None,
         limit: int = 10,
         use_hybrid_ranking: bool = True,
         semantic_weight: float = 0.7,
-        bm25_weight: float = 0.3
+        bm25_weight: float = 0.3,
+        retrieval_strategy: str = "top_k"
     ) -> List[Dict[str, Any]]:
         """
         Perform semantic search using vector embeddings with optional BM25 hybrid ranking.
+
+        Args:
+            item_ids: Optional list of specific knowledge item IDs to search within
         """
         try:
             # Generate embedding for the search query
@@ -193,7 +434,14 @@ class SearchService:
                 valid_folder_ids = [fid for fid in folder_ids if fid is not None]
                 if valid_folder_ids:
                     stmt = stmt.where(KnowledgeItem.folder_id.in_(valid_folder_ids))
-                    logger.debug(f'Filtering search to {len(valid_folder_ids)} specific folders')
+                    logger.info(f'🔍 Folder filter applied: searching within {len(valid_folder_ids)} folders: {[str(fid) for fid in valid_folder_ids]}')
+
+            # Apply item filter if specified (for #filename references)
+            if item_ids and len(item_ids) > 0:
+                valid_item_ids = [iid for iid in item_ids if iid is not None]
+                if valid_item_ids:
+                    stmt = stmt.where(KnowledgeItem.id.in_(valid_item_ids))
+                    logger.debug(f'Filtering search to {len(valid_item_ids)} specific items')
 
             # Execute the search query
             result = await db.execute(stmt)
@@ -253,14 +501,32 @@ class SearchService:
             # Convert any remaining numpy types to Python types
             results_with_scores = convert_numpy_types(results_with_scores)
 
-            # For hybrid search, always return top 5 results after ranking
-            final_results = results_with_scores[:5] if use_hybrid_ranking else results_with_scores[:limit]
+            # Determine result limit based on retrieval strategy
+            if retrieval_strategy == "top_k":
+                # Top-k retrieval: return top 5-10 results after ranking
+                result_limit = 5 if use_hybrid_ranking else min(limit, 10)
+            elif retrieval_strategy == "full_folder":
+                # Full folder: return ALL results, no limit
+                result_limit = len(results_with_scores)
+            elif retrieval_strategy == "filtered_full":
+                # Filtered full: return all matching results (could be large)
+                result_limit = len(results_with_scores)
+            else:
+                # Default to top_k behavior
+                result_limit = 5 if use_hybrid_ranking else limit
+
+            final_results = results_with_scores[:result_limit]
+
             if final_results:
-                logger.info(f"Retrieved {len(final_results)} documents for query: '{query_text[:50]}{'...' if len(query_text) > 50 else ''}'")
-                for i, result in enumerate(final_results, 1):
+                strategy_info = f" (strategy: {retrieval_strategy}, limit: {result_limit})"
+                logger.info(f"Retrieved {len(final_results)} documents for query: '{query_text[:50]}{'...' if len(query_text) > 50 else ''}'{strategy_info}")
+                # Log first 5 for brevity
+                for i, result in enumerate(final_results[:5], 1):
                     similarity_score = result.get('hybrid_score', result.get('similarity', 0))
                     logger.info(f"  [{i}] {result['title'][:60]}{'...' if len(result['title']) > 60 else ''} "
                               f"(similarity: {similarity_score:.3f}, folder: {result.get('folder_name', 'Unknown')})")
+                if len(final_results) > 5:
+                    logger.info(f"  ... and {len(final_results) - 5} more results")
             else:
                 logger.info(f"No documents found for query: '{query_text}'")
 
@@ -338,16 +604,21 @@ class SearchService:
         user_id: UUID,
         query_text: str,
         folder_ids: Optional[List[UUID]] = None,
+        item_ids: Optional[List[UUID]] = None,
         limit: int = 10,
         semantic_weight: float = 0.7,
-        bm25_weight: float = 0.3
+        bm25_weight: float = 0.3,
+        retrieval_strategy: str = "top_k"
     ) -> List[Dict[str, Any]]:
         """
         Perform hybrid search combining semantic similarity and BM25 ranking.
 
         Args:
+            folder_ids: Optional list of folder IDs to search within
+            item_ids: Optional list of specific knowledge item IDs to search within
             semantic_weight: Weight for semantic similarity (0.0-1.0)
             bm25_weight: Weight for BM25 score (0.0-1.0)
+            retrieval_strategy: "top_k", "full_folder", or "filtered_full"
 
         Note: Weights should sum to 1.0 for best results
         """
@@ -356,10 +627,12 @@ class SearchService:
             user_id=user_id,
             query_text=query_text,
             folder_ids=folder_ids,
+            item_ids=item_ids,
             limit=limit,
             use_hybrid_ranking=True,
             semantic_weight=semantic_weight,
-            bm25_weight=bm25_weight
+            bm25_weight=bm25_weight,
+            retrieval_strategy=retrieval_strategy
         )
 
     async def vector_search(
@@ -600,6 +873,116 @@ class SearchService:
         suggestions = [row[0] for row in result.all()]
 
         return suggestions
+
+    async def enhanced_search(
+        self,
+        db: AsyncSession,
+        user_id: UUID,
+        query_text: str,
+        folder_ids: Optional[List[UUID]] = None,
+        limit: int = 10,
+        use_enhancement: bool = True,
+        retrieval_strategy: str = "top_k"
+    ) -> List[Dict[str, Any]]:
+        """
+        Perform enhanced search using query variations and reciprocal rank fusion.
+
+        This method:
+        1. Enhances the query with semantic variations
+        2. Searches with original query + variations
+        3. Merges results using Reciprocal Rank Fusion
+
+        Args:
+            db: Database session
+            user_id: User ID
+            query_text: Original query text
+            folder_ids: Optional folder filter
+            limit: Maximum results
+            use_enhancement: Whether to use query enhancement
+            retrieval_strategy: Retrieval strategy to use
+
+        Returns:
+            Merged and re-ranked results
+        """
+        if not use_enhancement:
+            # Fall back to regular hybrid search
+            return await self.hybrid_search(
+                db=db,
+                user_id=user_id,
+                query_text=query_text,
+                folder_ids=folder_ids,
+                limit=limit,
+                retrieval_strategy=retrieval_strategy
+            )
+
+        try:
+            # Import here to avoid circular dependency
+            from app.services.query_enhancement_service import query_enhancement_service
+
+            # Enhance query
+            enhancement = await query_enhancement_service.enhance_query(
+                original_query=query_text,
+                user_id=str(user_id)
+            )
+
+            logger.info(f"Query enhancement: {enhancement['enhanced_query']}")
+            logger.debug(f"Variations: {enhancement['variations']}")
+
+            # Prepare queries to search (original + enhanced + variations)
+            queries_to_search = [
+                query_text,  # Original query (highest weight)
+                enhancement['enhanced_query']  # Enhanced query
+            ]
+
+            # Add up to 2 best variations
+            for variation in enhancement['variations'][:2]:
+                if variation not in queries_to_search:
+                    queries_to_search.append(variation)
+
+            # Search with each query
+            ranked_lists = []
+            for query in queries_to_search:
+                results = await self.hybrid_search(
+                    db=db,
+                    user_id=user_id,
+                    query_text=query,
+                    folder_ids=folder_ids,
+                    limit=limit * 2,  # Get more results for better fusion
+                    retrieval_strategy=retrieval_strategy
+                )
+                if results:
+                    ranked_lists.append(results)
+
+            if not ranked_lists:
+                logger.info("No results from any query variation")
+                return []
+
+            # Merge using Reciprocal Rank Fusion
+            merged_results = reciprocal_rank_fusion(ranked_lists)
+
+            # Apply final limit
+            final_results = merged_results[:limit]
+
+            logger.info(f"Enhanced search found {len(final_results)} results using {len(queries_to_search)} query variations")
+
+            # Add enhancement metadata to results
+            for result in final_results:
+                result['enhanced_search'] = True
+                result['query_variations_used'] = len(queries_to_search)
+
+            return final_results
+
+        except Exception as e:
+            logger.error(f"Enhanced search failed: {e}, falling back to regular search")
+            # Fallback to regular search
+            return await self.hybrid_search(
+                db=db,
+                user_id=user_id,
+                query_text=query_text,
+                folder_ids=folder_ids,
+                limit=limit,
+                retrieval_strategy=retrieval_strategy
+            )
 
 
 # Service instance

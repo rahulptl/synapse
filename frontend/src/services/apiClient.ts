@@ -106,6 +106,18 @@ class ApiClient {
     });
   }
 
+  async renameFolder(
+    folderId: string,
+    newName: string,
+    auth: { userId: string; accessToken: string }
+  ) {
+    return this.request(`/folders/${folderId}/rename`, {
+      method: 'PATCH',
+      body: JSON.stringify({ new_name: newName }),
+      auth,
+    });
+  }
+
   async getFolderContent(folderId: string, auth: { userId: string; accessToken: string }) {
     return this.request(`/folders/${folderId}/content`, { auth });
   }
@@ -145,6 +157,43 @@ class ApiClient {
       method: 'POST',
       auth,
     });
+  }
+
+  async renameContent(
+    contentId: string,
+    newTitle: string,
+    auth: { userId: string; accessToken: string }
+  ) {
+    return this.request(`/content/${contentId}/rename`, {
+      method: 'PATCH',
+      body: JSON.stringify({ new_title: newTitle }),
+      auth,
+    });
+  }
+
+  async moveContent(
+    contentId: string,
+    targetFolderId: string,
+    auth: { userId: string; accessToken: string }
+  ) {
+    return this.request(`/content/${contentId}/move`, {
+      method: 'PATCH',
+      body: JSON.stringify({ target_folder_id: targetFolderId }),
+      auth,
+    });
+  }
+
+  async searchContentTitles(
+    query: string,
+    folderIds: string[] | null,
+    limit: number = 10,
+    auth: { userId: string; accessToken: string }
+  ) {
+    const params = new URLSearchParams({ q: query, limit: limit.toString() });
+    if (folderIds && folderIds.length > 0) {
+      params.set('folder_ids', folderIds.join(','));
+    }
+    return this.request(`/content/search-titles?${params.toString()}`, { auth });
   }
 
   // File operations

@@ -78,7 +78,11 @@
       "Bash(gcloud projects add-iam-policy-binding:*)",
       "Bash(gcloud projects get-iam-policy:*)",
       "Bash(gh workflow:*)",
-      "Bash(gcloud iam service-accounts add-iam-policy-binding:*)"
+      "Bash(gcloud iam service-accounts add-iam-policy-binding:*)",
+      "Read(//Users/rahulpatil/**)",
+      "Bash(cat:*)",
+      "Bash(psql:*)",
+      "Bash(lsof:*)"
     ],
     "deny": [],
     "ask": []

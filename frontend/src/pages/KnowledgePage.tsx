@@ -146,6 +146,28 @@ export default function KnowledgePage() {
     }
   };
 
+  const renameFolder = async (folderId: string, newName: string) => {
+    try {
+      const auth = getAuthData();
+      await apiClient.renameFolder(folderId, newName, auth);
+
+      toast({
+        title: "Renamed",
+        description: `Folder renamed to "${newName}"`,
+      });
+
+      await loadFolders();
+    } catch (error) {
+      console.error('Failed to rename folder:', error);
+      toast({
+        title: "Error",
+        description: "Failed to rename folder",
+        variant: "destructive",
+      });
+      throw error;
+    }
+  };
+
   const deleteItem = async (itemId: string) => {
     try {
       const auth = getAuthData();
@@ -198,6 +220,62 @@ export default function KnowledgePage() {
     }
   };
 
+  const renameItem = async (itemId: string, newTitle: string) => {
+    try {
+      const auth = getAuthData();
+      await apiClient.renameContent(itemId, newTitle, auth);
+
+      toast({
+        title: "Renamed",
+        description: `Item renamed to "${newTitle}"`,
+      });
+
+      // Refresh items to show updated title
+      if (selectedFolder) {
+        await loadFolderItems(selectedFolder);
+      }
+    } catch (error) {
+      console.error('Failed to rename item:', error);
+      toast({
+        title: "Error",
+        description: "Failed to rename item",
+        variant: "destructive",
+      });
+      throw error;
+    }
+  };
+
+  const moveItem = async (itemId: string, targetFolderId: string) => {
+    try {
+      const auth = getAuthData();
+      await apiClient.moveContent(itemId, targetFolderId, auth);
+
+      toast({
+        title: "Moved",
+        description: "Item moved to new folder",
+      });
+
+      // Refresh items to remove moved item from current folder
+      if (selectedFolder) {
+        await loadFolderItems(selectedFolder);
+      }
+
+      // Clear selection if the moved item was selected
+      if (selectedItem === itemId) {
+        setSelectedItem(null);
+        setSelectedItemData(null);
+      }
+    } catch (error) {
+      console.error('Failed to move item:', error);
+      toast({
+        title: "Error",
+        description: "Failed to move item",
+        variant: "destructive",
+      });
+      throw error;
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -245,6 +323,7 @@ export default function KnowledgePage() {
           onFolderSelect={setSelectedFolder}
           onCreateFolder={createFolder}
           onDeleteFolder={deleteFolder}
+          onRenameFolder={renameFolder}
         />
       </div>
 
@@ -261,6 +340,7 @@ export default function KnowledgePage() {
               onFolderSelect={handleMobileFolderSelect}
               onCreateFolder={createFolder}
               onDeleteFolder={deleteFolder}
+              onRenameFolder={renameFolder}
             />
           </div>
         </SheetContent>
@@ -310,9 +390,13 @@ export default function KnowledgePage() {
                 <ItemList
                   items={folderItems}
                   selectedItem={selectedItem}
+                  currentFolderId={selectedFolder}
+                  folders={folders}
                   onItemSelect={setSelectedItem}
                   onDeleteItem={deleteItem}
                   onReprocessItem={reprocessItem}
+                  onRenameItem={renameItem}
+                  onMoveItem={moveItem}
                 />
               </div>
 

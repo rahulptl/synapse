@@ -144,7 +144,7 @@ class FileService:
                     "content": knowledge_item.content,
                     "content_type": knowledge_item.content_type,
                     "source_url": knowledge_item.source_url,
-                    "metadata": knowledge_item.item_metadata,
+                    "metadata": content_service.sanitize_metadata_for_response(knowledge_item.id, knowledge_item.item_metadata),
                     "created_at": knowledge_item.created_at.isoformat() if knowledge_item.created_at else None,
                     "updated_at": knowledge_item.updated_at.isoformat() if knowledge_item.updated_at else None,
                     "processing_status": knowledge_item.processing_status,
@@ -156,8 +156,7 @@ class FileService:
                     "filename": file.filename,
                     "size": file_size,
                     "type": file.content_type,
-                    "content_type": content_type,
-                    "storage_path": storage_path
+                    "content_type": content_type
                 }
             }
 
@@ -286,6 +285,9 @@ class FileService:
             - processing_status: Current status (pending, processing, completed, failed)
             - is_chunked: Whether item has been chunked
             - total_chunks: Number of chunks created
+            - chunks_processed: Number of chunks processed so far (for progress tracking)
+            - processing_progress: Processing progress as percentage (0.0-100.0)
+            - estimated_completion: Estimated completion timestamp (ISO format)
             - vector_count: Total number of vectors
             - vectors_with_embeddings: Number of vectors with actual embeddings
             - is_searchable: Whether item is ready for search
@@ -341,11 +343,20 @@ class FileService:
             if not updated_at_str.endswith('Z') and '+' not in updated_at_str:
                 updated_at_str += 'Z'
 
+        estimated_completion_str = None
+        if item.estimated_completion:
+            estimated_completion_str = item.estimated_completion.isoformat()
+            if not estimated_completion_str.endswith('Z') and '+' not in estimated_completion_str:
+                estimated_completion_str += 'Z'
+
         return {
             "knowledge_item_id": str(item.id),
             "processing_status": item.processing_status,
             "is_chunked": item.is_chunked,
             "total_chunks": item.total_chunks,
+            "chunks_processed": item.chunks_processed,
+            "processing_progress": item.processing_progress,
+            "estimated_completion": estimated_completion_str,
             "vector_count": vector_count,
             "vectors_with_embeddings": vectors_with_embeddings,
             "is_searchable": is_searchable,
