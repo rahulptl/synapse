@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str
 
     # Storage
-    STORAGE_BACKEND: str = "supabase"  # supabase, s3, gcs, local
+    STORAGE_BACKEND: str = "gcs"  # supabase, s3, gcs, local
     SUPABASE_URL: Optional[str] = None
     SUPABASE_SERVICE_ROLE_KEY: Optional[str] = None
     SUPABASE_ANON_KEY: Optional[str] = None
