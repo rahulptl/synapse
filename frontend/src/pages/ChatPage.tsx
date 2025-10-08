@@ -300,7 +300,7 @@ export default function ChatPage() {
     const interval = setInterval(() => {
       setSearchPhaseIndex((prevIndex) => {
         const nextIndex = prevIndex + 1;
-        return nextIndex >= searchPhaseMessages.length ? 0 : nextIndex;
+        return nextIndex >= searchPhaseMessages.length ? prevIndex : nextIndex;
       });
     }, 5700);
 

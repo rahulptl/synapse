@@ -9,7 +9,7 @@ from sqlalchemy.orm import defer
 import logging
 import re
 
-from app.models.database import Conversation, Message, KnowledgeItem, ProcessingJob, Profile
+from app.models.database import Conversation, Message, KnowledgeItem, ProcessingJob, Profile, Folder
 from app.models.auth import User
 from app.models.schemas import (
     ChatRequest, ChatResponse, MessageRole, ConversationCreate,
@@ -520,6 +520,89 @@ class ChatService:
             context_count=len(context_results),
             hashtag_info=enhanced_hashtag_info
         )
+
+    async def _try_full_file_context(
+        self,
+        db: AsyncSession,
+        file_ids: List[UUID],
+        user_id: UUID
+    ) -> List[Dict[str, Any]]:
+        """Attempt to load full content for a small set of specific files."""
+        if not file_ids:
+            return []
+
+        max_tokens = min(settings.MAX_CONTEXT_TOKENS // 2, 30000)
+        stmt = (
+            select(KnowledgeItem, Folder.name)
+            .join(Folder, KnowledgeItem.folder_id == Folder.id)
+            .where(
+                KnowledgeItem.user_id == user_id,
+                KnowledgeItem.id.in_(file_ids),
+                KnowledgeItem.processing_status == "completed"
+            )
+        )
+
+        result = await db.execute(stmt)
+        rows = result.all()
+        if not rows:
+            return []
+
+        from app.core.storage import storage_service
+
+        items_by_id: Dict[UUID, Dict[str, Any]] = {}
+        for item, folder_name in rows:
+            content = item.content or ""
+            if (
+                item.item_metadata
+                and item.item_metadata.get("stored_in_storage")
+                and content.startswith("[STORED_IN_STORAGE:")
+            ):
+                storage_path = content.replace("[STORED_IN_STORAGE:", "").replace("]", "")
+                try:
+                    content_bytes = await storage_service.download_content(storage_path)
+                    content = content_bytes.decode("utf-8")
+                except Exception as exc:  # pragma: no cover - log and fall back to regular search
+                    logger.warning(f"Failed to load stored content for {item.id}: {exc}")
+                    continue
+
+            if not content:
+                continue
+
+            token_count = estimate_tokens(content)
+            items_by_id[item.id] = {
+                "id": item.id,
+                "title": item.title,
+                "content": content,
+                "content_type": item.content_type,
+                "source_url": item.source_url,
+                "folder_name": folder_name,
+                "similarity": 1.0,
+                "token_count": token_count,
+            }
+
+        if not items_by_id:
+            return []
+
+        ordered_results: List[Dict[str, Any]] = []
+        total_tokens = 0
+        for file_id in file_ids:
+            item_info = items_by_id.get(file_id)
+            if not item_info:
+                continue
+
+            if total_tokens + item_info["token_count"] > max_tokens:
+                logger.info(
+                    "Skipping full file context due to token budget (current=%s, next=%s, limit=%s)",
+                    total_tokens,
+                    item_info["token_count"],
+                    max_tokens,
+                )
+                return []
+
+            total_tokens += item_info["token_count"]
+            ordered_results.append(item_info)
+
+        return ordered_results
 
     async def _process_job_in_background(
         self,
