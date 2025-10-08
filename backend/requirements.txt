@@ -46,6 +46,7 @@ docling>=2.55.0  # Unified document processing (PDF, DOCX, PPTX, XLSX, HTML)
 docling-core[chunking-openai]>=2.8.0  # Smart chunking with structure-awareness and token limits
 easyocr>=1.7.0  # Advanced OCR engine (80+ languages, GPU support)
 # torch>=2.0.0  # Installed separately with CPU-only version in Dockerfile
+transformers>=4.37.0  # HuggingFace models needed by Docling's AutoProcessor
 tiktoken>=0.5.0  # OpenAI tokenizer for token-aware chunking
 
 # Vector database
