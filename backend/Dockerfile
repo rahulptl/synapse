@@ -20,18 +20,18 @@ RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/wh
     pip install --no-cache-dir -r requirements.txt
 
 # Set environment variables for model paths
-# Models will be lazy-loaded on first use and cached in /app/.cache
-# This avoids downloading ~2.5GB during CI/CD builds
+# Models will be cached in /app/.cache and baked into the Docker image
 ENV DOCLING_SERVE_ARTIFACTS_PATH=/app/.cache/docling/models
 ENV EASYOCR_MODULE_PATH=/app/.cache/easyocr
 
 # Create model cache directories
-# Models will be automatically downloaded by Docling/EasyOCR on first request
 RUN mkdir -p /app/.cache/docling/models /app/.cache/easyocr
 
-# Note: Models are NOT downloaded during build to save disk space in CI/CD
-# They will be automatically downloaded on first use in the deployment environment
-# First request will take ~2-3 minutes, subsequent requests use cached models
+# Download models during build (before copying application code)
+# This ensures models are baked into the image for instant cold starts
+# Downloads ~2.5GB of models (one-time during build)
+COPY scripts/download_models.py /tmp/download_models.py
+RUN python /tmp/download_models.py --languages en && rm /tmp/download_models.py
 
 # Copy application code
 COPY . .

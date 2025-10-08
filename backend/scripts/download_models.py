@@ -1,29 +1,19 @@
 #!/usr/bin/env python3
 """
-Download all document processing models for local development and testing.
+Download all document processing models for offline deployment.
 
-⚠️  NOTE: This script is for LOCAL DEVELOPMENT ONLY
-    Production deployments use lazy loading - models are automatically
-    downloaded on first use to avoid CI/CD disk space issues.
-
-This script is useful for:
-1. Local development - pre-download models to avoid first-request delays
-2. Testing - ensure models work before deployment
-3. Offline development - download models once, work offline
+This script downloads models during Docker build to avoid:
+1. Runtime downloads on first request
+2. Network dependencies in production
+3. Slow cold starts
 
 Models downloaded:
 - Docling: Layout analysis, table extraction, OCR models (~2-3 GB)
-- EasyOCR: Configurable language packs (~500 MB per language)
+- EasyOCR: English language pack (~500 MB per language)
 
 Usage:
-    # Download all models with English OCR
     python download_models.py
-
-    # Download with multiple languages
     python download_models.py --languages en,es,fr
-
-    # Verify existing models without downloading
-    python download_models.py --verify-only
 """
 import os
 import sys
@@ -40,17 +30,17 @@ logger = logging.getLogger(__name__)
 
 def download_docling_models():
     """
-    Download Docling models (layout, tableformer, etc.).
+    Download Docling models by initializing DocumentConverter.
 
-    Models are cached in ~/.cache/docling/models or custom path
-    specified by DOCLING_SERVE_ARTIFACTS_PATH environment variable.
+    This triggers automatic model download and caching.
+    Models are cached in /app/.cache/docling/models in Docker.
     """
     logger.info("="*60)
     logger.info("Downloading Docling models...")
     logger.info("="*60)
 
     try:
-        from docling.utils.model_downloader import download_models
+        from docling.document_converter import DocumentConverter
 
         # Set custom path if specified
         models_path = os.getenv('DOCLING_SERVE_ARTIFACTS_PATH')
@@ -59,11 +49,14 @@ def download_docling_models():
             Path(models_path).mkdir(parents=True, exist_ok=True)
             logger.info(f"Using custom Docling models path: {models_path}")
 
-        # Download all required models
-        logger.info("Downloading Docling models (this may take several minutes)...")
-        download_models()
+        # Initialize converter (this downloads models automatically)
+        logger.info("Initializing Docling DocumentConverter...")
+        logger.info("This will download ~2-3 GB of models (one-time operation)...")
+
+        converter = DocumentConverter()
 
         logger.info("✅ Docling models downloaded successfully")
+        return True
 
     except ImportError as e:
         logger.error(f"❌ Docling not installed: {e}")
@@ -73,15 +66,12 @@ def download_docling_models():
         logger.error(f"❌ Failed to download Docling models: {e}", exc_info=True)
         return False
 
-    return True
-
 
 def download_easyocr_models(languages=['en']):
     """
     Download EasyOCR models for specified languages.
 
-    Models are cached in ~/.EasyOCR or custom path specified by
-    EASYOCR_MODULE_PATH environment variable.
+    Models are cached in /app/.cache/easyocr in Docker.
 
     Args:
         languages: List of language codes (e.g., ['en', 'es', 'fr'])
@@ -101,12 +91,12 @@ def download_easyocr_models(languages=['en']):
             Path(models_path).mkdir(parents=True, exist_ok=True)
             logger.info(f"Using custom EasyOCR models path: {models_path}")
 
-        # Check GPU availability
+        # Check GPU availability (will be CPU in Docker build)
         has_gpu = torch.cuda.is_available()
         if has_gpu:
             logger.info(f"🚀 GPU detected: {torch.cuda.get_device_name(0)}")
         else:
-            logger.info("⚡ No GPU detected, models will be CPU-only")
+            logger.info("⚡ No GPU detected, downloading CPU-compatible models")
 
         # Download models for each language
         for lang in languages:
@@ -125,6 +115,7 @@ def download_easyocr_models(languages=['en']):
                 return False
 
         logger.info("✅ All EasyOCR models downloaded successfully")
+        return True
 
     except ImportError as e:
         logger.error(f"❌ EasyOCR not installed: {e}")
@@ -134,17 +125,14 @@ def download_easyocr_models(languages=['en']):
         logger.error(f"❌ Failed to download EasyOCR models: {e}", exc_info=True)
         return False
 
-    return True
-
 
 def verify_downloads():
     """
     Verify that models were downloaded successfully.
 
     Checks:
-    - Docling models directory exists
-    - EasyOCR models directory exists
-    - Model files are present
+    - Docling models directory exists and has content
+    - EasyOCR models directory exists and has .pth files
     """
     logger.info("="*60)
     logger.info("Verifying model downloads...")
@@ -157,8 +145,14 @@ def verify_downloads():
     docling_path = os.path.expanduser(docling_path)
 
     if os.path.exists(docling_path):
-        model_count = len(list(Path(docling_path).rglob('*')))
-        logger.info(f"✅ Docling models found: {docling_path} ({model_count} files)")
+        model_files = list(Path(docling_path).rglob('*'))
+        model_count = len(model_files)
+
+        # Calculate total size
+        total_size_mb = sum(f.stat().st_size for f in model_files if f.is_file()) / (1024 * 1024)
+
+        logger.info(f"✅ Docling models found: {docling_path}")
+        logger.info(f"   Files: {model_count}, Total size: {total_size_mb:.1f} MB")
     else:
         logger.warning(f"⚠️ Docling models directory not found: {docling_path}")
         all_ok = False
@@ -168,8 +162,14 @@ def verify_downloads():
     easyocr_path = os.path.expanduser(easyocr_path)
 
     if os.path.exists(easyocr_path):
-        model_count = len(list(Path(easyocr_path).rglob('*.pth')))
-        logger.info(f"✅ EasyOCR models found: {easyocr_path} ({model_count} .pth files)")
+        model_files = list(Path(easyocr_path).rglob('*.pth'))
+        model_count = len(model_files)
+
+        # Calculate total size
+        total_size_mb = sum(f.stat().st_size for f in model_files) / (1024 * 1024)
+
+        logger.info(f"✅ EasyOCR models found: {easyocr_path}")
+        logger.info(f"   .pth files: {model_count}, Total size: {total_size_mb:.1f} MB")
     else:
         logger.warning(f"⚠️ EasyOCR models directory not found: {easyocr_path}")
         all_ok = False
@@ -241,6 +241,7 @@ def main():
     logger.info("="*60)
     if success:
         logger.info("✅ All models downloaded and verified successfully!")
+        logger.info("Models are now cached and ready for production use.")
     else:
         logger.error("❌ Some models failed to download. Check logs above.")
     logger.info("="*60)
