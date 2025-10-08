@@ -15,7 +15,9 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 
 # Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Use CPU-only PyTorch to save disk space (~400MB vs 2GB with CUDA)
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Set environment variables for model paths
 # Models will be lazy-loaded on first use and cached in /app/.cache
