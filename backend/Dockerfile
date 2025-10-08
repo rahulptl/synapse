@@ -43,4 +43,6 @@ RUN mkdir -p /app/keys
 EXPOSE 8000
 
 # Run with uvicorn (can be overridden by docker-compose)
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# --proxy-headers: Trust X-Forwarded-* headers from Cloud Run proxy
+# --forwarded-allow-ips='*': Allow forwarded headers from any Cloud Run instance
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*"]
