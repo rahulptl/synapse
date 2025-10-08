@@ -371,5 +371,31 @@ class ProcessingJobStatus(BaseSchema):
     completed_at: Optional[datetime]
 
 
+# Progressive Map-Reduce schemas
+class MapBatchResult(BaseSchema):
+    """Result from processing a single map batch with context tracking."""
+    findings: List[str] = Field(default_factory=list, description="Key findings from this batch")
+    data_points: List[Dict[str, Any]] = Field(default_factory=list, description="Extracted data points")
+    partial_answer: str = Field(default="", description="What we know so far from this batch")
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0, description="Confidence in findings (0-1)")
+    needs_more_info: bool = Field(default=True, description="Whether more batches needed")
+    processed_chunk_ids: List[int] = Field(default_factory=list, description="IDs of chunks processed")
+    batch_index: int = Field(default=0, description="Index of this batch")
+    items_in_batch: int = Field(default=0, description="Number of items in batch")
+    relevant: bool = Field(default=True, description="Whether batch contains relevant info")
+
+
+class ReduceState(BaseSchema):
+    """State carried through progressive reduce iterations."""
+    accumulated_findings: List[str] = Field(default_factory=list, description="All findings so far")
+    accumulated_data: List[Dict[str, Any]] = Field(default_factory=list, description="All data points")
+    current_answer: str = Field(default="", description="Current working answer")
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0, description="Overall confidence")
+    batches_processed: int = Field(default=0, description="Number of batches processed so far")
+    total_chunks_seen: int = Field(default=0, description="Total chunks processed")
+    next_focus_areas: List[str] = Field(default_factory=list, description="What to look for in next batches")
+    missing_info: List[str] = Field(default_factory=list, description="What information is still needed")
+
+
 # Update forward references
 Folder.model_rebuild()

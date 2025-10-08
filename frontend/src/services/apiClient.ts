@@ -272,10 +272,6 @@ class ApiClient {
     });
   }
 
-  async getProcessingStatus(itemId: string, auth: { userId: string; accessToken: string }) {
-    return this.request(`/files/status/${itemId}`, { auth });
-  }
-
   // Large file upload with signed URLs (>32MB)
   async getSignedUploadUrl(
     data: {
@@ -457,11 +453,6 @@ class ApiClient {
       method: 'DELETE',
       auth,
     });
-  }
-
-  // Alias for getProcessingStatus - for consistency with hooks
-  async getItemStatus(itemId: string, auth: { userId: string; accessToken: string }) {
-    return this.getProcessingStatus(itemId, auth);
   }
 
   // Save chat message to knowledge base

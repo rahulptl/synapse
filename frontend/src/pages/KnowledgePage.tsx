@@ -7,7 +7,6 @@ import { ItemList } from '@/components/knowledge/ItemList';
 import { ItemDetails } from '@/components/knowledge/ItemDetails';
 import { UploadDialog } from '@/components/knowledge/UploadDialog';
 import { useToast } from '@/hooks/use-toast';
-import { useStatusPolling } from '@/hooks/useStatusPolling';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Menu, FolderOpen, MessageSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -71,40 +70,6 @@ export default function KnowledgePage() {
       window.removeEventListener('knowledge-item-added', handleContentAdded as EventListener);
     };
   }, [selectedFolder]);
-
-  // Status polling for items being processed
-  const processingItemIds = folderItems
-    .filter(item => {
-      const metadata = item.metadata || {};
-      const status = metadata.processing_status || 'pending';
-      return status === 'pending' || status === 'processing';
-    })
-    .map(item => item.id);
-
-  const auth = user && accessToken ? { userId: user.id, accessToken } : null;
-
-  useStatusPolling(processingItemIds, auth, {
-    enabled: processingItemIds.length > 0,
-    interval: 3000,
-    onStatusChange: (itemId, status) => {
-      console.log(`[KnowledgePage] Status updated for ${itemId}:`, status);
-
-      // Refresh folder items when status changes to completed or failed
-      if ((status.processing_status === 'completed' || status.processing_status === 'failed')
-          && selectedFolder) {
-        loadFolderItems(selectedFolder);
-
-        // Show notification
-        if (status.processing_status === 'completed' && status.is_searchable) {
-          const item = folderItems.find(i => i.id === itemId);
-          toast({
-            title: "Processing Complete",
-            description: `"${item?.title || 'Item'}" is now searchable`,
-          });
-        }
-      }
-    }
-  });
 
   useEffect(() => {
     if (user && accessToken) {

@@ -15,6 +15,10 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()]
 )
 
+# Suppress verbose HTTP client debug logs
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 from app.api.v1.router import api_router
 from app.core.database import init_db
 from app.middleware.cors import setup_cors

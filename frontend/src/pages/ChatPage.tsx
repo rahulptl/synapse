@@ -106,7 +106,7 @@ export default function ChatPage() {
   const [selectedAutocompleteIndex, setSelectedAutocompleteIndex] = useState(0);
   const [cursorPosition, setCursorPosition] = useState(0);
   const [fileAutocompleteSuggestions, setFileAutocompleteSuggestions] = useState<Array<{ id: string; title: string; folder_name: string; content_type: string }>>([]);
-  const [searchPhase, setSearchPhase] = useState<string>('');
+  const [searchPhaseIndex, setSearchPhaseIndex] = useState<number>(0);
   const [selectedSource, setSelectedSource] = useState<any | null>(null);
   const [showSourceDialog, setShowSourceDialog] = useState(false);
   const [conversationToDelete, setConversationToDelete] = useState<string | null>(null);
@@ -118,6 +118,17 @@ export default function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+
+  // Dynamic search phase messages
+  const searchPhaseMessages = [
+    "Looking in your knowledge base...",
+    "Scanning documents...",
+    "Extracting relevant information...",
+    "Analyzing content...",
+    "Sanitizing data...",
+    "Synthesizing insights...",
+    "Preparing your answer..."
+  ];
 
   // Quirky AI placeholder texts
   const placeholderTexts = [
@@ -135,9 +146,6 @@ export default function ChatPage() {
   const [placeholder, setPlaceholder] = useState(
     placeholderTexts[Math.floor(Math.random() * placeholderTexts.length)]
   );
-
-  // Simple search message
-  const searchMessage = "Searching...";
 
   // Animated typing component
   const TypingIndicator = () => (
@@ -281,6 +289,24 @@ export default function ChatPage() {
     scrollToBottom();
   }, [messages]);
 
+  // Cycle through search phase messages when loading
+  useEffect(() => {
+    if (!isLoading) {
+      setSearchPhaseIndex(0);
+      return;
+    }
+
+    // Cycle through messages every 5-6 seconds (40 seconds / 7 messages ≈ 5.7 seconds each)
+    const interval = setInterval(() => {
+      setSearchPhaseIndex((prevIndex) => {
+        const nextIndex = prevIndex + 1;
+        return nextIndex >= searchPhaseMessages.length ? 0 : nextIndex;
+      });
+    }, 5700);
+
+    return () => clearInterval(interval);
+  }, [isLoading, searchPhaseMessages.length]);
+
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -420,7 +446,7 @@ export default function ChatPage() {
     setInputMessage('');
     setIsLoading(true);
     setHashtagInfo(null);
-    setSearchPhase(searchMessage);
+    setSearchPhaseIndex(0);
 
     // Add user message immediately to UI with temporary ID
     const tempUserMessage: Message = {
@@ -490,7 +516,7 @@ export default function ChatPage() {
       });
     } finally {
       setIsLoading(false);
-      setSearchPhase('');
+      setSearchPhaseIndex(0);
     }
   };
 
@@ -1044,7 +1070,7 @@ export default function ChatPage() {
                       <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-3xl rounded-tl-lg shadow-lg px-5 py-3">
                         <div className="flex items-center space-x-3">
                           <TypingIndicator />
-                          <span className="text-sm text-gray-300">{searchPhase}</span>
+                          <span className="text-sm text-gray-300">{searchPhaseMessages[searchPhaseIndex]}</span>
                         </div>
                       </div>
                     </div>

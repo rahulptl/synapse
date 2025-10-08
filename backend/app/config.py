@@ -83,6 +83,13 @@ class Settings(BaseSettings):
     RAG_MAX_CHUNKS_PER_DOC: int = 3  # Maximum chunks from same document
     RAG_MIN_SIMILARITY: float = 0.3  # Minimum similarity threshold for inclusion
 
+    # Adaptive RAG Tiers (3-tier system)
+    QUICK_RAG_CHUNK_LIMIT: int = 15  # Tier 1: Quick RAG with top 15 chunks
+    QUICK_RAG_RELEVANCE_THRESHOLD: float = 0.6  # Only include chunks above this similarity
+    PROGRESSIVE_MAPREDUCE_THRESHOLD: int = 20  # Tier 2: Use progressive map-reduce above this
+    FULL_MAPREDUCE_THRESHOLD: int = 100  # Tier 3: Use full map-reduce above this
+    PROGRESSIVE_REDUCE_BATCH_SIZE: int = 3  # Number of map batches per reduce step
+
     # Rate limiting
     RATE_LIMIT_PER_MINUTE: int = 60
 

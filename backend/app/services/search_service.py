@@ -93,6 +93,74 @@ def convert_numpy_types(obj: Any) -> Any:
         return obj
 
 
+async def estimate_relevant_chunks(
+    db: AsyncSession,
+    user_id: UUID,
+    query_text: str,
+    folder_ids: Optional[List[UUID]] = None,
+    item_ids: Optional[List[UUID]] = None
+) -> int:
+    """
+    Estimate the number of relevant chunks for a query without full similarity calculation.
+
+    Uses a fast approximation based on:
+    1. Total vector count in filtered scope
+    2. Folder/item filtering
+    3. BM25-style keyword matching as proxy
+
+    Returns estimated number of chunks that would pass relevance threshold.
+    """
+    try:
+        # Build count query
+        stmt = select(func.count(Vector.id)).join(
+            KnowledgeItem, Vector.knowledge_item_id == KnowledgeItem.id
+        ).where(
+            KnowledgeItem.user_id == user_id,
+            KnowledgeItem.processing_status == "completed"
+        )
+
+        # Apply filters
+        if folder_ids and len(folder_ids) > 0:
+            stmt = stmt.where(KnowledgeItem.folder_id.in_(folder_ids))
+
+        if item_ids and len(item_ids) > 0:
+            stmt = stmt.where(KnowledgeItem.id.in_(item_ids))
+
+        result = await db.execute(stmt)
+        total_vectors = result.scalar() or 0
+
+        # If very few vectors, return exact count
+        if total_vectors <= 20:
+            return total_vectors
+
+        # Estimate relevance ratio based on query specificity
+        # More specific queries (longer, more unique terms) = lower ratio
+        query_terms = query_text.lower().split()
+        unique_terms = len(set(query_terms))
+
+        # Heuristic: 30-60% of vectors are typically relevant
+        # Specific queries (many unique terms) → 30%
+        # General queries (few unique terms) → 60%
+        if unique_terms >= 5:
+            relevance_ratio = 0.3  # Specific query
+        elif unique_terms >= 3:
+            relevance_ratio = 0.45  # Moderate query
+        else:
+            relevance_ratio = 0.6  # General query
+
+        estimated = int(total_vectors * relevance_ratio)
+
+        logger.debug(f"Estimated {estimated} relevant chunks from {total_vectors} total "
+                    f"(query terms: {unique_terms}, ratio: {relevance_ratio})")
+
+        return estimated
+
+    except Exception as e:
+        logger.error(f"Chunk estimation failed: {e}")
+        # Fallback: assume moderate number
+        return 30
+
+
 class SearchService:
     """Service for text-based search functionality."""
 
@@ -501,19 +569,29 @@ class SearchService:
             # Convert any remaining numpy types to Python types
             results_with_scores = convert_numpy_types(results_with_scores)
 
+            # Apply relevance threshold filtering
+            from app.config import settings
+            min_relevance = settings.QUICK_RAG_RELEVANCE_THRESHOLD if retrieval_strategy == "top_k" else settings.RAG_MIN_SIMILARITY
+
+            # Filter by relevance threshold
+            results_with_scores = [
+                r for r in results_with_scores
+                if r.get('hybrid_score', r.get('similarity', 0)) >= min_relevance
+            ]
+
             # Determine result limit based on retrieval strategy
             if retrieval_strategy == "top_k":
-                # Top-k retrieval: return top 5-10 results after ranking
-                result_limit = 5 if use_hybrid_ranking else min(limit, 10)
+                # Top-k retrieval: return up to QUICK_RAG_CHUNK_LIMIT (15) with relevance threshold
+                result_limit = min(len(results_with_scores), settings.QUICK_RAG_CHUNK_LIMIT)
             elif retrieval_strategy == "full_folder":
-                # Full folder: return ALL results, no limit
+                # Full folder: return ALL results above threshold
                 result_limit = len(results_with_scores)
             elif retrieval_strategy == "filtered_full":
-                # Filtered full: return all matching results (could be large)
+                # Filtered full: return all matching results above threshold
                 result_limit = len(results_with_scores)
             else:
                 # Default to top_k behavior
-                result_limit = 5 if use_hybrid_ranking else limit
+                result_limit = min(len(results_with_scores), settings.QUICK_RAG_CHUNK_LIMIT)
 
             final_results = results_with_scores[:result_limit]
 

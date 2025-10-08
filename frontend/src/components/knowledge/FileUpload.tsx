@@ -116,20 +116,8 @@ export function FileUpload({ folderId, onUploadComplete }: FileUploadProps) {
           formData.append('title', files.length === 1 ? title : `${title} - ${file.name}`);
           if (description) formData.append('description', description);
 
-          // Simulate progress (since we don't have real upload progress from fetch)
-          const progressInterval = setInterval(() => {
-            setUploadProgress(prev =>
-              prev.map((p, idx) =>
-                idx === i && p.progress < 90
-                  ? { ...p, progress: p.progress + 10 }
-                  : p
-              )
-            );
-          }, 200);
-
+          // Upload file without progress tracking
           await apiClient.uploadFile(formData, auth);
-
-          clearInterval(progressInterval);
 
           // Mark as success
           setUploadProgress(prev =>

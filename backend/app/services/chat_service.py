@@ -170,31 +170,68 @@ class ChatService:
                     result = await db.execute(count_stmt)
                     folder_item_counts[folder_id] = result.scalar() or 0
 
-            # INTENT CLASSIFICATION
-            if settings.ENABLE_INTENT_CLASSIFICATION:
-                intent_data = await intent_classifier.classify_intent(
-                    user_query=chat_request.message,
-                    folder_ids=folder_ids,
-                    folder_item_counts=folder_item_counts
-                )
+            # Extract file IDs from matched files
+            file_ids = None
+            if matched_files:
+                file_ids = [file["id"] for file in matched_files]
+                logger.info(f"Filtering to {len(file_ids)} matched files")
 
-                logger.info(f"Intent: {intent_data['intent_type']}, "
-                           f"Async: {intent_data['requires_async']}, "
-                           f"Est. time: {intent_data['estimated_time_seconds']}s")
-            else:
-                # Skip intent classification for faster responses
+            # ADAPTIVE RAG ROUTING (3-Tier System)
+            # Estimate relevant chunks to determine processing tier
+            from app.services.search_service import estimate_relevant_chunks
+
+            estimated_chunks = await estimate_relevant_chunks(
+                db=db,
+                user_id=user_id,
+                query_text=cleaned_message if cleaned_message else chat_request.message,
+                folder_ids=folder_ids,
+                item_ids=file_ids
+            )
+
+            logger.info(f"📊 Estimated {estimated_chunks} relevant chunks for query")
+
+            # Determine tier and create intent_data
+            if estimated_chunks <= settings.PROGRESSIVE_MAPREDUCE_THRESHOLD:
+                # TIER 1: Quick RAG (0-20 chunks)
+                tier = 1
                 intent_data = {
                     "intent_type": "quick_qa",
                     "retrieval_strategy": "top_k",
                     "requires_async": False,
-                    "estimated_items": 10,
-                    "estimated_time_seconds": 1.0
+                    "estimated_items": estimated_chunks,
+                    "tier": 1
                 }
-                logger.info("Intent classification disabled - using default quick_qa strategy")
+                logger.info(f"🚀 Tier 1: Quick RAG with up to {settings.QUICK_RAG_CHUNK_LIMIT} chunks")
 
-            # ROUTING: Quick vs Long-running
-            if intent_data["requires_async"] and folder_ids and background_tasks:
-                # Long-running query - create job and process in background
+            elif estimated_chunks <= settings.FULL_MAPREDUCE_THRESHOLD:
+                # TIER 2: Progressive Map-Reduce (21-100 chunks)
+                tier = 2
+                intent_data = {
+                    "intent_type": "progressive_analysis",
+                    "retrieval_strategy": "filtered_full",
+                    "requires_async": True,
+                    "requires_progressive_reduce": True,
+                    "estimated_items": estimated_chunks,
+                    "tier": 2
+                }
+                logger.info(f"⚡ Tier 2: Progressive Map-Reduce for {estimated_chunks} chunks")
+
+            else:
+                # TIER 3: Full Map-Reduce (100+ chunks)
+                tier = 3
+                intent_data = {
+                    "intent_type": "comprehensive_analysis",
+                    "retrieval_strategy": "full_folder",
+                    "requires_async": True,
+                    "requires_progressive_reduce": True,
+                    "estimated_items": estimated_chunks,
+                    "tier": 3
+                }
+                logger.info(f"🔥 Tier 3: Full Map-Reduce for {estimated_chunks} chunks")
+
+            # ROUTING DECISION
+            if intent_data.get("requires_async") and folder_ids and background_tasks:
+                # Tier 2 or 3: Use async processing with map-reduce
                 return await self._handle_async_query(
                     db=db,
                     user_id=user_id,
@@ -208,7 +245,7 @@ class ChatService:
                     background_tasks=background_tasks
                 )
             else:
-                # Quick query - existing flow (pass intent_data for retrieval strategy)
+                # Tier 1: Quick query with enhanced context
                 return await self._handle_quick_query(
                     db=db,
                     user_id=user_id,
@@ -377,9 +414,21 @@ class ChatService:
             retrieval_strategy = intent_data["retrieval_strategy"]
             logger.info(f"Using retrieval strategy: {retrieval_strategy}")
 
-        # Skip search if intent is "no_search_needed" (greetings, chitchat, general knowledge)
+        # OPTIMIZATION: For @file references, try to use full file content if small enough
         context_results = []
-        if retrieval_strategy != "none":
+        used_full_files = False
+
+        if file_ids and len(file_ids) <= 3:  # Only for up to 3 files to avoid context explosion
+            full_file_results = await self._try_full_file_context(db, file_ids, user_id)
+
+            if full_file_results:
+                # Successfully using full file content
+                context_results = full_file_results
+                used_full_files = True
+                logger.info(f"📄 Using full content from {len(file_ids)} file(s) ({sum(r.get('token_count', 0) for r in full_file_results)} tokens)")
+
+        # Skip search if intent is "no_search_needed" (greetings, chitchat, general knowledge)
+        if not used_full_files and retrieval_strategy != "none":
             # Use cleaned message for hybrid search (BM25 + semantic), with folder and/or file filtering
             search_query = cleaned_message if cleaned_message.strip() else chat_request.message
             context_results = await search_service.hybrid_search(
@@ -393,7 +442,7 @@ class ChatService:
                 bm25_weight=0.3,
                 retrieval_strategy=retrieval_strategy
             )
-        else:
+        elif retrieval_strategy == "none":
             logger.info(f"⚡ Skipping search - intent: {intent_data.get('intent_type', 'unknown')} (no knowledge base search needed)")
 
         # Check if hashtags were used but no folders OR files matched
@@ -1068,7 +1117,7 @@ Be concise but comprehensive."""
 
             # Combine batch summaries
             combined_summaries = "\n\n".join([
-                f"Section {s['batch_idx'] + 1} ({s['doc_count']} documents):\n{s['summary']}"
+                f"Document Group {s['batch_idx'] + 1} ({s['doc_count']} documents):\n{s['summary']}"
                 for s in batch_summaries
             ])
 
@@ -1080,7 +1129,7 @@ EXTRACTED INFORMATION:
 
 {conversation_summary}
 
-Provide a well-organized, helpful response that synthesizes the information above."""
+Provide a well-organized, helpful response that synthesizes the information above. Do NOT mention document groups, sections, or the internal processing structure in your response - just provide a clear, direct answer to the user's question."""
 
             final_response = await ai_chat_service.generate_completion(
                 messages=[

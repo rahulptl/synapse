@@ -114,12 +114,22 @@ class MapReduceService:
 
             # Step 6: Reduce phase (LLM synthesis)
             job.current_phase = "synthesis"
-            job.progress = 0.95
+            job.progress = 0.85
             await db.commit()
 
-            final_response = await self._reduce_phase(
-                user_query, map_results, aggregation_summary, intent_data
-            )
+            # Choose reduce strategy based on intent
+            if intent_data.get("requires_progressive_reduce", False):
+                # Progressive reduce for Tier 2/3
+                logger.info("Using progressive reduce with iterative refinement")
+                final_response = await self._progressive_reduce_phase(
+                    db, job, user_query, map_results, aggregation_summary, intent_data
+                )
+            else:
+                # Single-shot reduce for simpler queries
+                logger.info("Using single-shot reduce")
+                final_response = await self._reduce_phase(
+                    user_query, map_results, aggregation_summary, intent_data
+                )
 
             # Step 7: Build detailed breakdown
             aggregation_details = self._build_aggregation_details(
@@ -615,6 +625,175 @@ Note: Only include items that match the query criteria.
         )
 
         return response
+
+    async def _progressive_reduce_phase(
+        self,
+        db: AsyncSession,
+        job: ProcessingJob,
+        user_query: str,
+        map_results: List[Dict[str, Any]],
+        aggregation_summary: Dict[str, Any],
+        intent_data: Dict[str, Any]
+    ) -> str:
+        """
+        Progressive reduce phase: Iteratively build answer by processing batches.
+
+        Instead of reducing all results at once, this:
+        1. Groups map results into mini-batches
+        2. Reduces each batch progressively
+        3. Passes previous reduce state to next iteration
+        4. GPT tracks what it has calculated
+        5. Builds up complete answer iteratively
+        """
+        from app.config import settings
+        from app.models.schemas import ReduceState
+        import json
+
+        batch_size = settings.PROGRESSIVE_REDUCE_BATCH_SIZE
+        total_batches = len(map_results)
+
+        # Initialize reduce state
+        reduce_state = ReduceState(
+            current_answer="",
+            confidence=0.0,
+            batches_processed=0,
+            total_chunks_seen=0
+        )
+
+        # Process in mini-batches
+        for batch_idx in range(0, len(map_results), batch_size):
+            batch = map_results[batch_idx:batch_idx + batch_size]
+            batch_num = (batch_idx // batch_size) + 1
+            total_reduce_batches = (len(map_results) + batch_size - 1) // batch_size
+
+            logger.info(f"Progressive reduce: batch {batch_num}/{total_reduce_batches} "
+                       f"({len(batch)} map results)")
+
+            # Build progressive reduce prompt
+            reduce_prompt = self._build_progressive_reduce_prompt(
+                user_query=user_query,
+                batch=batch,
+                previous_state=reduce_state,
+                batch_num=batch_num,
+                total_batches=total_reduce_batches,
+                aggregation_summary=aggregation_summary,
+                intent_data=intent_data
+            )
+
+            messages = [
+                {"role": "system", "content": reduce_prompt},
+                {"role": "user", "content": f"Process batch {batch_num}/{total_reduce_batches} and update your answer"}
+            ]
+
+            # Call LLM to get updated state
+            try:
+                response_text = await ai_chat_service.generate_completion(
+                    messages=messages,
+                    max_tokens=2000,
+                    temperature=0.3
+                )
+
+                # Parse JSON response
+                response_data = json.loads(response_text)
+
+                # Update reduce state
+                reduce_state = ReduceState(
+                    accumulated_findings=reduce_state.accumulated_findings + response_data.get("new_findings", []),
+                    accumulated_data=reduce_state.accumulated_data + response_data.get("new_data", []),
+                    current_answer=response_data.get("updated_answer", reduce_state.current_answer),
+                    confidence=response_data.get("confidence", reduce_state.confidence),
+                    batches_processed=reduce_state.batches_processed + len(batch),
+                    total_chunks_seen=reduce_state.total_chunks_seen + sum(r.get("items_in_batch", 0) for r in batch),
+                    next_focus_areas=response_data.get("next_focus_areas", []),
+                    missing_info=response_data.get("missing_info", [])
+                )
+
+                # Update job progress
+                job.progress = 0.85 + (0.10 * (batch_num / total_reduce_batches))
+                await db.commit()
+
+                logger.info(f"Progressive reduce batch {batch_num}: confidence={reduce_state.confidence:.2f}, "
+                           f"chunks_seen={reduce_state.total_chunks_seen}")
+
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse JSON from reduce batch {batch_num}: {e}")
+                # Fall back to using response as plain text
+                reduce_state.current_answer = response_text
+                reduce_state.batches_processed += len(batch)
+
+        # Final answer
+        logger.info(f"Progressive reduce complete: {reduce_state.batches_processed} batches, "
+                   f"{reduce_state.total_chunks_seen} chunks, confidence={reduce_state.confidence:.2f}")
+
+        return reduce_state.current_answer
+
+    def _build_progressive_reduce_prompt(
+        self,
+        user_query: str,
+        batch: List[Dict[str, Any]],
+        previous_state: "ReduceState",
+        batch_num: int,
+        total_batches: int,
+        aggregation_summary: Dict[str, Any],
+        intent_data: Dict[str, Any]
+    ) -> str:
+        """Build prompt for progressive reduce iteration."""
+        import json
+
+        prompt = f"""You are progressively building an answer by processing batches of information.
+
+USER QUERY: "{user_query}"
+
+PROGRESS:
+- Processing batch {batch_num} of {total_batches}
+- Chunks seen so far: {previous_state.total_chunks_seen}
+- Current confidence: {previous_state.confidence:.0%}
+
+"""
+
+        # Add previous state if this isn't the first batch
+        if previous_state.batches_processed > 0:
+            prompt += f"""WHAT YOU KNOW SO FAR:
+{previous_state.current_answer}
+
+KEY FINDINGS:
+{json.dumps(previous_state.accumulated_findings[-10:], indent=2)}  # Last 10 findings
+
+WHAT TO LOOK FOR:
+{json.dumps(previous_state.next_focus_areas, indent=2) if previous_state.next_focus_areas else "Continue comprehensive analysis"}
+
+"""
+
+        # Add current batch data
+        prompt += f"""NEW BATCH DATA:
+{json.dumps(batch, indent=2)}
+
+YOUR TASK:
+1. Review the NEW batch data
+2. Extract any NEW findings not in your current answer
+3. Update your answer with new information
+4. Increase confidence if you found confirmatory evidence
+5. Note what information is still missing
+6. Suggest what to look for in next batches
+
+RESPOND WITH JSON:
+{{
+  "new_findings": ["finding 1", "finding 2"],
+  "new_data": [{{"type": "...", "value": "..."}}],
+  "updated_answer": "Your progressively built answer incorporating ALL information so far",
+  "confidence": 0.0-1.0,
+  "next_focus_areas": ["what to look for next"],
+  "missing_info": ["what's still needed"]
+}}
+
+IMPORTANT:
+- Your updated_answer should be CUMULATIVE (include everything learned so far)
+- Don't repeat findings you already mentioned
+- Be comprehensive but concise
+- Maintain narrative flow across batches
+"""
+
+        return prompt
 
     def _build_reduce_prompt(
         self,

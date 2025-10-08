@@ -189,28 +189,8 @@ export function UploadDialog({ folderId, onUploadComplete }: UploadDialogProps) 
             formData.append('title', itemTitle);
             if (description) formData.append('description', description);
 
-            // Use real progress tracking for files >10MB
-            if (file.size > 10 * 1024 * 1024) {
-              await apiClient.uploadFileWithProgress(formData, auth, (progress) => {
-                setUploadProgress(prev =>
-                  prev.map((p, idx) => idx === i ? { ...p, progress } : p)
-                );
-              });
-            } else {
-              // Simulated progress for small files
-              const progressInterval = setInterval(() => {
-                setUploadProgress(prev =>
-                  prev.map((p, idx) =>
-                    idx === i && p.progress < 90
-                      ? { ...p, progress: p.progress + 10 }
-                      : p
-                  )
-                );
-              }, 200);
-
-              await apiClient.uploadFile(formData, auth);
-              clearInterval(progressInterval);
-            }
+            // Upload file without progress tracking
+            await apiClient.uploadFile(formData, auth);
           }
 
           setUploadProgress(prev =>

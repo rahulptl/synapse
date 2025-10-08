@@ -85,7 +85,12 @@
       "Bash(lsof:*)",
       "Bash(gcloud secrets versions access:*)",
       "Bash(gcloud secrets list:*)",
-      "WebFetch(domain:docling-project.github.io)"
+      "WebFetch(domain:docling-project.github.io)",
+      "Bash(git log:*)",
+      "Bash(gcloud run revisions list:*)",
+      "Read(//private/tmp/**)",
+      "Bash(rm:*)",
+      "Bash(npm run type-check:*)"
     ],
     "deny": [],
     "ask": []

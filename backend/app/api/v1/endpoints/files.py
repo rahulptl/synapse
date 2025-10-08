@@ -1,6 +1,7 @@
 """
 File upload and management endpoints.
 """
+import asyncio
 from uuid import UUID
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, BackgroundTasks
@@ -18,15 +19,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def process_knowledge_item_background(knowledge_item_id: UUID):
+async def process_knowledge_item_background(knowledge_item_id: UUID):
     """
     Background task to process a knowledge item.
 
-    This is a sync function that properly handles the async processing
-    using asyncio.run() which is the correct pattern for FastAPI BackgroundTasks.
+    This is an async function that runs in the existing event loop,
+    avoiding issues with asyncio.run() closing the event loop.
     """
-    import asyncio
-
     async def _async_process():
         from app.services.processing_service import processing_service
         from app.core.database import AsyncSessionLocal
@@ -86,8 +85,8 @@ def process_knowledge_item_background(knowledge_item_id: UUID):
             raise last_error
 
     try:
-        # Use asyncio.run() which is the proper way to run async code from sync context
-        result = asyncio.run(_async_process())
+        # Run in the existing event loop instead of creating a new one
+        result = await _async_process()
         logger.info(f"✓ Background task completed successfully for {knowledge_item_id}")
         return result
     except Exception as e:
@@ -198,30 +197,6 @@ async def download_file(
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail="File download failed")
-
-
-@router.get("/status/{item_id}")
-async def get_processing_status(
-    item_id: UUID,
-    db: AsyncSession = Depends(get_db),
-    auth_data: dict = Depends(validate_any_auth)
-):
-    """
-    Get processing status for a knowledge item.
-    """
-    user_id = UUID(auth_data["user_id"])
-
-    try:
-        status = await file_service.get_processing_status(
-            db=db,
-            user_id=user_id,
-            item_id=item_id
-        )
-        return status
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Failed to get processing status")
 
 
 # Pydantic models for signed URL upload
