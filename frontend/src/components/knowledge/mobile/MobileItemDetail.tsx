@@ -11,11 +11,14 @@ import {
   CheckCircle,
   Loader2,
   AlertCircle,
+  Download,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/useAuth';
+import { apiClient } from '@/services/apiClient';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -59,12 +62,39 @@ export function MobileItemDetail({
   onDelete,
 }: MobileItemDetailProps) {
   const { toast } = useToast();
+  const { user, accessToken } = useAuth();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [startY, setStartY] = useState(0);
   const [currentY, setCurrentY] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
+  const [isLoadingUrl, setIsLoadingUrl] = useState(false);
 
   if (!item) return null;
+
+  // Handle viewing source file stored in cloud storage
+  const handleViewSource = async () => {
+    if (!user || !accessToken) return;
+
+    setIsLoadingUrl(true);
+    try {
+      const result = await apiClient.getContentDownloadUrl(
+        item.id,
+        { userId: user.id, accessToken },
+        1 // 1 hour expiration
+      );
+
+      // Open the signed URL in a new tab
+      window.open(result.download_url, '_blank');
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to generate download link for this file",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingUrl(false);
+    }
+  };
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString('en-US', {
@@ -290,29 +320,37 @@ export function MobileItemDetail({
             </TabsContent>
 
             {/* Source Tab */}
-            {item.source_url && (
+            {item.source_url && item.metadata?.stored_in_storage && (
               <TabsContent
                 value="source"
                 className="flex-1 overflow-y-auto px-4 pb-4 mt-3"
               >
                 <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-4 space-y-4">
                   <div>
-                    <h4 className="text-sm font-semibold text-white mb-2">Source URL</h4>
-                    <a
-                      href={item.source_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-400 hover:text-blue-300 break-all text-sm underline"
-                    >
-                      {item.source_url}
-                    </a>
+                    <h4 className="text-sm font-semibold text-white mb-2">Source File</h4>
+                    <code className="text-sm text-gray-400 block mb-3 truncate">
+                      {item.metadata?.original_filename || 'Stored file'}
+                    </code>
+                    <p className="text-xs text-gray-500">
+                      File size: {item.metadata?.file_size ? `${(item.metadata.file_size / 1024 / 1024).toFixed(2)} MB` : 'Unknown'}
+                    </p>
                   </div>
                   <Button
-                    onClick={() => window.open(item.source_url, '_blank')}
-                    className="w-full bg-green-600 hover:bg-green-700"
+                    onClick={handleViewSource}
+                    disabled={isLoadingUrl}
+                    className="w-full bg-emerald-600 hover:bg-emerald-700"
                   >
-                    <ExternalLink className="h-4 w-4 mr-2" />
-                    Open in Browser
+                    {isLoadingUrl ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Loading...
+                      </>
+                    ) : (
+                      <>
+                        <Download className="h-4 w-4 mr-2" />
+                        View/Download File
+                      </>
+                    )}
                   </Button>
                 </div>
               </TabsContent>

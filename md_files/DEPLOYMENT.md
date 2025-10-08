@@ -239,7 +239,7 @@ Backend:
   Memory: 512 MiB
   Min Instances: 0  # Scales to zero
   Max Instances: 5
-  Model: gpt-4.1-mini (cost-optimized)
+  Model: gpt-5 (latest)
   Storage: GCS (dev folder)
 
 Frontend:
@@ -254,7 +254,7 @@ Frontend:
 
 - Min instances: 0 (scales to zero when idle)
 - Reduced memory and CPU
-- Cost-effective AI model (gpt-4.1-mini)
+- AI model: gpt-5 (premium quality)
 - Shared Cloud SQL instance
 
 ### Manual Deployment (Alternative)
@@ -350,7 +350,7 @@ Backend:
   Memory: 1 GiB
   Min Instances: 1  # Always warm
   Max Instances: 10
-  Model: gpt-4o-mini (production quality)
+  Model: gpt-5 (production quality)
   Storage: GCS (prod folder)
   Rate Limit: 120 req/min
 
@@ -384,7 +384,7 @@ Frontend:
 | **Max Instances** | N/A | 5 | 10 |
 | **Backend Memory** | Unlimited | 512 MiB | 1 GiB |
 | **Backend CPU** | Unlimited | 1 vCPU | 2 vCPU |
-| **AI Model** | gpt-4.1-mini | gpt-4.1-mini | gpt-4o-mini |
+| **AI Model** | gpt-5 | gpt-5 | gpt-5 |
 | **Storage** | Local filesystem | GCS (dev/) | GCS (prod/) |
 | **Database** | Local PostgreSQL | Cloud SQL | Cloud SQL |
 | **Logging** | DEBUG | INFO | WARNING |

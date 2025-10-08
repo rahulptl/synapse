@@ -1,5 +1,5 @@
 // Import modules
-importScripts('../common/utils.js', '../common/zyph-api.js', 'dialog-manager.js', 'content-saver.js');
+importScripts('../common/config.js', '../common/utils.js', '../common/zyph-api.js', 'dialog-manager.js', 'content-saver.js');
 
 class ZyphBackgroundManager {
     constructor() {
@@ -96,17 +96,36 @@ class ZyphBackgroundManager {
         console.log(`[Background] Creating context menus...`);
 
         const supportedContexts = ['page', 'selection'];
-        
+
         try {
             await chrome.contextMenus.removeAll();
             console.log(`[Background] Removed all existing context menus`);
-            
+
             // Add a small delay to ensure removal is complete
             await new Promise(resolve => setTimeout(resolve, 100));
         } catch (error) {
             console.error(`[Background] Error removing context menus:`, error);
         }
-        
+
+        // Check authentication status before fetching folders
+        const isAuthenticated = await Zyph.Api.isAuthenticated();
+
+        if (!isAuthenticated) {
+            console.warn('[Background] Not authenticated - showing connect prompt');
+            try {
+                chrome.contextMenus.create({
+                    id: 'zyph-not-authenticated',
+                    title: '⚠️ Connect your Zyph account in settings',
+                    contexts: supportedContexts,
+                    enabled: false
+                });
+                console.log('[Background] Created auth prompt context menu');
+            } catch (error) {
+                console.error('[Background] Error creating auth prompt menu:', error);
+            }
+            return;
+        }
+
         const folders = await this.contentSaver.getFolders({ forceRefresh: true });
         const normalizedFolders = folders.map(folder => ({
             ...folder,

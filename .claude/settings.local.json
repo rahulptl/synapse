@@ -82,7 +82,9 @@
       "Read(//Users/rahulpatil/**)",
       "Bash(cat:*)",
       "Bash(psql:*)",
-      "Bash(lsof:*)"
+      "Bash(lsof:*)",
+      "Bash(gcloud secrets versions access:*)",
+      "Bash(gcloud secrets list:*)"
     ],
     "deny": [],
     "ask": []

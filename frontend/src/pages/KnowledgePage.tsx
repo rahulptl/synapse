@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { apiClient } from '@/services/apiClient';
 import { FolderTree } from '@/components/knowledge/FolderTree';
@@ -7,8 +7,9 @@ import { ItemList } from '@/components/knowledge/ItemList';
 import { ItemDetails } from '@/components/knowledge/ItemDetails';
 import { UploadDialog } from '@/components/knowledge/UploadDialog';
 import { useToast } from '@/hooks/use-toast';
+import { useStatusPolling } from '@/hooks/useStatusPolling';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
-import { Menu, FolderOpen } from 'lucide-react';
+import { Menu, FolderOpen, MessageSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface Folder {
@@ -33,6 +34,7 @@ interface KnowledgeItem {
 
 export default function KnowledgePage() {
   const { user, accessToken, loading } = useAuth();
+  const navigate = useNavigate();
   const [folders, setFolders] = useState<Folder[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [folderItems, setFolderItems] = useState<KnowledgeItem[]>([]);
@@ -50,6 +52,59 @@ export default function KnowledgePage() {
       accessToken,
     };
   };
+
+  // Listen for real-time content additions
+  useEffect(() => {
+    const handleContentAdded = (event: CustomEvent) => {
+      console.log('[KnowledgePage] Content added event:', event.detail);
+
+      // If the added content is for the currently selected folder, refresh
+      if (selectedFolder && event.detail?.folderId === selectedFolder) {
+        console.log('[KnowledgePage] Refreshing folder content');
+        loadFolderItems(selectedFolder);
+      }
+    };
+
+    window.addEventListener('knowledge-item-added', handleContentAdded as EventListener);
+
+    return () => {
+      window.removeEventListener('knowledge-item-added', handleContentAdded as EventListener);
+    };
+  }, [selectedFolder]);
+
+  // Status polling for items being processed
+  const processingItemIds = folderItems
+    .filter(item => {
+      const metadata = item.metadata || {};
+      const status = metadata.processing_status || 'pending';
+      return status === 'pending' || status === 'processing';
+    })
+    .map(item => item.id);
+
+  const auth = user && accessToken ? { userId: user.id, accessToken } : null;
+
+  useStatusPolling(processingItemIds, auth, {
+    enabled: processingItemIds.length > 0,
+    interval: 3000,
+    onStatusChange: (itemId, status) => {
+      console.log(`[KnowledgePage] Status updated for ${itemId}:`, status);
+
+      // Refresh folder items when status changes to completed or failed
+      if ((status.processing_status === 'completed' || status.processing_status === 'failed')
+          && selectedFolder) {
+        loadFolderItems(selectedFolder);
+
+        // Show notification
+        if (status.processing_status === 'completed' && status.is_searchable) {
+          const item = folderItems.find(i => i.id === itemId);
+          toast({
+            title: "Processing Complete",
+            description: `"${item?.title || 'Item'}" is now searchable`,
+          });
+        }
+      }
+    }
+  });
 
   useEffect(() => {
     if (user && accessToken) {
@@ -123,6 +178,12 @@ export default function KnowledgePage() {
       };
 
       await apiClient.createFolder(folderData, auth);
+
+      // Emit event for real-time folder tree update
+      window.dispatchEvent(new CustomEvent('folder-created', {
+        detail: { parentId, name }
+      }));
+
       await loadFolders();
     } catch (error) {
       console.error('Failed to create folder:', error);
@@ -276,6 +337,29 @@ export default function KnowledgePage() {
     }
   };
 
+  // Function to start conversation with selected folder
+  const startConversation = () => {
+    if (!selectedFolder) return;
+
+    const folder = folders.find(f => f.id === selectedFolder);
+    if (!folder) return;
+
+    navigate('/chat', {
+      state: {
+        preSelectedFolder: {
+          id: folder.id,
+          name: folder.name,
+          type: 'folder'
+        }
+      }
+    });
+
+    toast({
+      title: "Opening Chat",
+      description: `Starting conversation about "${folder.name}"`,
+    });
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -364,10 +448,21 @@ export default function KnowledgePage() {
                   {getSelectedFolderName() || 'Folder'}
                 </span>
               </Button>
-              <UploadDialog
-                folderId={selectedFolder}
-                onUploadComplete={() => loadFolderItems(selectedFolder)}
-              />
+              <div className="flex items-center gap-2">
+                <Button
+                  onClick={startConversation}
+                  size="sm"
+                  variant="ghost"
+                  className="h-9 px-3 text-blue-400 hover:bg-blue-500/10 hover:text-blue-300"
+                  title="Start conversation with this folder"
+                >
+                  <MessageSquare className="h-4 w-4" />
+                </Button>
+                <UploadDialog
+                  folderId={selectedFolder}
+                  onUploadComplete={() => loadFolderItems(selectedFolder)}
+                />
+              </div>
             </div>
 
             {/* Item List and Details Container */}
@@ -377,15 +472,27 @@ export default function KnowledgePage() {
                 selectedItem ? 'hidden lg:flex lg:flex-col' : 'flex flex-col'
               }`}>
                 {/* Desktop Header */}
-                <div className="hidden md:block p-4 border-b border-white/10 flex items-center justify-between">
+                <div className="hidden md:flex p-4 border-b border-white/10 items-center justify-between">
                   <div>
                     <h3 className="text-lg font-semibold text-white">Items</h3>
                     <p className="text-sm text-gray-400">{folderItems.length} item{folderItems.length !== 1 ? 's' : ''}</p>
                   </div>
-                  <UploadDialog
-                    folderId={selectedFolder}
-                    onUploadComplete={() => loadFolderItems(selectedFolder)}
-                  />
+                  <div className="flex items-center gap-2">
+                    <Button
+                      onClick={startConversation}
+                      size="sm"
+                      variant="ghost"
+                      className="h-9 px-3 text-blue-400 hover:bg-blue-500/10 hover:text-blue-300"
+                      title="Start conversation with this folder"
+                    >
+                      <MessageSquare className="h-4 w-4 mr-2" />
+                      <span className="text-sm font-medium">Chat</span>
+                    </Button>
+                    <UploadDialog
+                      folderId={selectedFolder}
+                      onUploadComplete={() => loadFolderItems(selectedFolder)}
+                    />
+                  </div>
                 </div>
                 <ItemList
                   items={folderItems}

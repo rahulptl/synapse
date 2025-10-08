@@ -224,6 +224,120 @@ async def list_jobs(
     ]
 
 
+@router.post("/messages/{message_id}/save-to-knowledge-base")
+async def save_message_to_knowledge_base(
+    message_id: UUID,
+    folder_id: UUID,
+    title: Optional[str] = None,
+    add_context: bool = True,
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+    db: AsyncSession = Depends(get_db),
+    auth_data: dict = Depends(validate_any_auth)
+):
+    """
+    Save a chat response to the knowledge base.
+
+    Creates a new knowledge item from the message content.
+    Optionally includes the user query for better context.
+    """
+    user_id = UUID(auth_data["user_id"])
+
+    try:
+        # Import here to avoid circular dependencies
+        from app.models.database import Message as DBMessage, Conversation as DBConversation
+        from app.services.content_service import content_service
+        from app.models.schemas import KnowledgeItemCreate, ContentType
+
+        # Get the message
+        result = await db.execute(
+            select(DBMessage)
+            .join(DBConversation)
+            .where(
+                DBMessage.id == message_id,
+                DBConversation.user_id == user_id
+            )
+        )
+        message = result.scalar_one_or_none()
+
+        if not message:
+            raise HTTPException(status_code=404, detail="Message not found")
+
+        if message.role != 'assistant':
+            raise HTTPException(status_code=400, detail="Can only save assistant messages")
+
+        # Get conversation for context
+        conv_result = await db.execute(
+            select(DBConversation).where(DBConversation.id == message.conversation_id)
+        )
+        conversation = conv_result.scalar_one_or_none()
+
+        # Build content
+        content_parts = []
+
+        if add_context:
+            # Get the preceding user message for context
+            prev_result = await db.execute(
+                select(DBMessage)
+                .where(
+                    DBMessage.conversation_id == message.conversation_id,
+                    DBMessage.role == 'user',
+                    DBMessage.created_at < message.created_at
+                )
+                .order_by(desc(DBMessage.created_at))
+                .limit(1)
+            )
+            previous_message = prev_result.scalar_one_or_none()
+
+            if previous_message:
+                content_parts.append(f"**Query:** {previous_message.content}\n")
+
+        content_parts.append(f"**Response:**\n{message.content}")
+
+        # Generate title if not provided
+        if not title:
+            # Use first line or truncated content
+            first_line = message.content.split('\n')[0][:100]
+            title = f"Chat Response: {first_line}"
+
+        # Create knowledge item
+        item_data = KnowledgeItemCreate(
+            folder_id=folder_id,
+            title=title,
+            content='\n\n'.join(content_parts),
+            content_type=ContentType.TEXT,
+            source_url=None,
+            metadata={
+                "source": "chat_response",
+                "conversation_id": str(message.conversation_id),
+                "message_id": str(message_id),
+                "conversation_title": conversation.title if conversation else None,
+                "saved_at": datetime.now(timezone.utc).isoformat()
+            }
+        )
+
+        knowledge_item = await content_service.create_knowledge_item(
+            db=db,
+            user_id=user_id,
+            item_data=item_data
+        )
+
+        # Queue for processing
+        from app.api.v1.endpoints.files import process_knowledge_item_background
+        background_tasks.add_task(process_knowledge_item_background, knowledge_item.id)
+
+        return {
+            "success": True,
+            "knowledge_item_id": str(knowledge_item.id),
+            "title": knowledge_item.title,
+            "message": "Response added to knowledge base"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save message: {str(e)}")
+
+
 @router.delete("/jobs/{job_id}")
 async def cancel_job(
     job_id: UUID,

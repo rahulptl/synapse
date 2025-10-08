@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,9 +9,11 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
-import { Send, MessageSquare, Plus, Folder, Bot, Search, Brain, Sparkles, ExternalLink, AlertTriangle, Trash2, Menu, FileText } from 'lucide-react';
+import { Send, MessageSquare, Plus, Folder, Bot, Search, Brain, Sparkles, ExternalLink, AlertTriangle, Trash2, Menu, FileText, Bookmark, Upload } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { apiClient } from '@/services/apiClient';
+import { FolderSelectorDialog } from '@/components/chat/FolderSelectorDialog';
+import { UploadDialog } from '@/components/knowledge/UploadDialog';
 
 interface Message {
   id: string;
@@ -49,6 +51,7 @@ interface HashtagInfo {
 
 export default function ChatPage() {
   const { user, loading, accessToken } = useAuth();
+  const location = useLocation();
 
   // Add custom CSS animations
   useEffect(() => {
@@ -107,9 +110,31 @@ export default function ChatPage() {
   const [selectedSource, setSelectedSource] = useState<any | null>(null);
   const [showSourceDialog, setShowSourceDialog] = useState(false);
   const [conversationToDelete, setConversationToDelete] = useState<string | null>(null);
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [messageToSave, setMessageToSave] = useState<Message | null>(null);
+  const [showUploadDialog, setShowUploadDialog] = useState(false);
+  const [selectedUploadFolderId, setSelectedUploadFolderId] = useState<string>('');
+  const [showFolderSelectForUpload, setShowFolderSelectForUpload] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+
+  // Quirky AI placeholder texts
+  const placeholderTexts = [
+    "Ask me anything... I don't bite! 🤖",
+    "Scratch your brain, I'll scratch mine... 🧠✨",
+    "What's cooking in that brilliant mind? 💭",
+    "Ready to explore your knowledge galaxy? 🚀",
+    "Let's turn questions into answers! ⚡",
+    "Your thoughts + My processing = Magic! ✨",
+    "Curiosity called, I answered! 📞",
+    "Ask away, I'm all ears... well, all code! 👂",
+    "What mysteries shall we unravel today? 🔮",
+    "Feed me questions, I'll serve wisdom! 🍽️"
+  ];
+  const [placeholder, setPlaceholder] = useState(
+    placeholderTexts[Math.floor(Math.random() * placeholderTexts.length)]
+  );
 
   // Simple search message
   const searchMessage = "Searching...";
@@ -200,6 +225,49 @@ export default function ChatPage() {
       loadUserFolders();
     }
   }, [user]);
+
+  // Handle pre-selected context from navigation (Issue 4: Initiate Chat from KB)
+  useEffect(() => {
+    const state = location.state as any;
+
+    if (state?.preSelectedFolder) {
+      // Pre-populate with folder hashtag
+      const folderName = state.preSelectedFolder.name;
+      setInputMessage(`#${folderName} `);
+
+      // Focus input
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 100);
+
+      // Show helper toast
+      toast({
+        title: "Chat Context Set",
+        description: `Ask questions about "${folderName}"`,
+      });
+
+      // Clear the navigation state to prevent re-triggering
+      window.history.replaceState({}, document.title);
+    } else if (state?.preSelectedItem) {
+      // Pre-populate with item reference
+      const itemTitle = state.preSelectedItem.title;
+      setInputMessage(`@${itemTitle} `);
+
+      // Focus input
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 100);
+
+      // Show helper toast
+      toast({
+        title: "Chat Context Set",
+        description: `Ask questions about "${itemTitle}"`,
+      });
+
+      // Clear the navigation state to prevent re-triggering
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state]);
 
   useEffect(() => {
     if (selectedConversation) {
@@ -634,6 +702,84 @@ export default function ChatPage() {
     }
   };
 
+  // Function to initiate save message to knowledge base
+  const initiateSaveMessage = (message: Message) => {
+    setMessageToSave(message);
+    setShowSaveDialog(true);
+  };
+
+  // Function to save message to knowledge base
+  const handleSaveToKnowledgeBase = async (folderId: string, customTitle?: string) => {
+    if (!messageToSave || !user || !accessToken) return;
+
+    try {
+      // Generate title from message content if not provided
+      const title = customTitle || `Chat Response: ${messageToSave.content.split('\n')[0].slice(0, 100)}`;
+
+      await apiClient.saveMessageToKnowledgeBase(
+        messageToSave.id,
+        {
+          folder_id: folderId,
+          title,
+          add_context: true
+        },
+        {
+          userId: user.id,
+          accessToken
+        }
+      );
+
+      toast({
+        title: "Saved to Knowledge Base",
+        description: `"${title}" has been added to your knowledge base`,
+      });
+
+      // Emit event for real-time KB update
+      window.dispatchEvent(new CustomEvent('knowledge-item-added', {
+        detail: {
+          folderId,
+          title
+        }
+      }));
+    } catch (error) {
+      console.error('Failed to save message:', error);
+      toast({
+        title: "Error",
+        description: "Failed to save message to knowledge base",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Function to handle upload button click
+  const handleUploadClick = () => {
+    if (userFolders.length === 0) {
+      toast({
+        title: "No folders available",
+        description: "Please create a folder in Knowledge Base first",
+        variant: "destructive",
+      });
+      return;
+    }
+    setShowFolderSelectForUpload(true);
+  };
+
+  // Function to handle folder selection for upload
+  const handleFolderSelectedForUpload = (folderId: string) => {
+    setSelectedUploadFolderId(folderId);
+    setShowFolderSelectForUpload(false);
+    setShowUploadDialog(true);
+  };
+
+  // Function to handle upload complete
+  const handleUploadComplete = () => {
+    setShowUploadDialog(false);
+    toast({
+      title: "Upload Complete",
+      description: "Your files have been added to the knowledge base",
+    });
+  };
+
   // Function to start new chat (currently unused but kept for future use)
   // const startNewChat = async () => {
   //   setSelectedConversation(null);
@@ -811,12 +957,22 @@ export default function ChatPage() {
                                 {message.content}
                               </div>
                               <div className="flex items-center justify-between mt-4 pt-3 border-t border-white/10">
-                                <p className="text-xs text-gray-400 font-medium">
-                                  {new Date(message.created_at).toLocaleTimeString([], {
-                                    hour: '2-digit',
-                                    minute: '2-digit'
-                                  })}
-                                </p>
+                                <div className="flex items-center space-x-3">
+                                  <p className="text-xs text-gray-400 font-medium">
+                                    {new Date(message.created_at).toLocaleTimeString([], {
+                                      hour: '2-digit',
+                                      minute: '2-digit'
+                                    })}
+                                  </p>
+                                  <button
+                                    onClick={() => initiateSaveMessage(message)}
+                                    className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center space-x-1.5 text-xs text-blue-400 hover:text-blue-300 bg-blue-900/30 hover:bg-blue-900/50 px-2.5 py-1.5 rounded-lg"
+                                    title="Save to Knowledge Base"
+                                  >
+                                    <Bookmark className="h-3.5 w-3.5" />
+                                    <span className="font-medium">Save</span>
+                                  </button>
+                                </div>
                                 <div className="flex items-center space-x-2 text-xs text-emerald-300 bg-emerald-900/40 px-3 py-1.5 rounded-full backdrop-blur-sm">
                                   <Sparkles className="h-3.5 w-3.5" />
                                   <span className="font-semibold">Synapse AI</span>
@@ -1022,6 +1178,15 @@ export default function ChatPage() {
 
                 {/* Input Bar */}
                 <div className="relative flex items-end space-x-4">
+                  {/* Upload Button */}
+                  <Button
+                    onClick={handleUploadClick}
+                    className="h-14 w-14 rounded-2xl border-0 bg-white/10 text-gray-400 hover:bg-white/20 hover:text-white shadow-xl transition-all duration-300 hover:scale-110"
+                    title="Upload files to Knowledge Base"
+                  >
+                    <Upload className="h-5 w-5" />
+                  </Button>
+
                   <div className="relative flex-1">
                     <div className="relative">
                       <Input
@@ -1029,7 +1194,7 @@ export default function ChatPage() {
                         value={inputMessage}
                         onChange={handleInputChange}
                         onKeyDown={handleKeyPress}
-                        placeholder="Ask anything... Use #folder or @file to filter"
+                        placeholder={placeholder}
                         className="chat-input w-full h-14 px-6 py-4 text-sm bg-white/10 backdrop-blur-xl border-2 border-white/20 rounded-2xl shadow-xl hover:shadow-2xl focus:shadow-2xl transition-all duration-500 focus:border-blue-400/60 focus:outline-none focus:ring-0 placeholder:text-gray-400 text-white font-medium hover:bg-white/15 focus:bg-white/15"
                         disabled={isLoading}
                       />
@@ -1055,6 +1220,15 @@ export default function ChatPage() {
                       <Send className="h-5 w-5" />
                     )}
                   </Button>
+                </div>
+
+                {/* Filter Hint */}
+                <div className="flex items-center justify-center space-x-2 text-xs text-blue-200/70">
+                  <span>💡 Pro tip: Use</span>
+                  <code className="bg-blue-900/30 text-blue-300 px-2 py-0.5 rounded font-mono">#folder</code>
+                  <span>or</span>
+                  <code className="bg-purple-900/30 text-purple-300 px-2 py-0.5 rounded font-mono">@file</code>
+                  <span>to filter your search</span>
                 </div>
 
                 {/* AI Disclaimer */}
@@ -1187,6 +1361,34 @@ export default function ChatPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Save to Knowledge Base Dialog */}
+      <FolderSelectorDialog
+        open={showSaveDialog}
+        onOpenChange={setShowSaveDialog}
+        folders={userFolders}
+        onSelect={handleSaveToKnowledgeBase}
+        defaultTitle={messageToSave ? `Chat Response: ${messageToSave.content.split('\n')[0].slice(0, 100)}` : ''}
+        showTitleInput={true}
+      />
+
+      {/* Folder Selector for Upload */}
+      <FolderSelectorDialog
+        open={showFolderSelectForUpload}
+        onOpenChange={setShowFolderSelectForUpload}
+        folders={userFolders}
+        onSelect={handleFolderSelectedForUpload}
+        defaultTitle=""
+        showTitleInput={false}
+      />
+
+      {/* Upload Dialog */}
+      {selectedUploadFolderId && (
+        <UploadDialog
+          folderId={selectedUploadFolderId}
+          onUploadComplete={handleUploadComplete}
+        />
+      )}
     </div>
   );
 }

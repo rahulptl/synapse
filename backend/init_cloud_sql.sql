@@ -204,7 +204,7 @@ CREATE INDEX IF NOT EXISTS idx_vectors_embedding ON vectors
 
 -- Comments for vectors table
 COMMENT ON TABLE vectors IS 'Vector embeddings for semantic search';
-COMMENT ON COLUMN vectors.embedding IS 'OpenAI text-embedding-3-small embedding (1536 dimensions)';
+COMMENT ON COLUMN vectors.embedding IS 'OpenAI text-embedding-3-large embedding (1536 dimensions)';
 COMMENT ON COLUMN vectors.chunk_index IS 'Index of chunk within parent knowledge item';
 COMMENT ON COLUMN vectors.content_preview IS 'Text preview of the chunk for display';
 

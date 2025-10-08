@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -20,7 +21,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Edit2, FolderInput, Trash2, RefreshCw, Folder } from 'lucide-react';
+import { Edit2, FolderInput, Trash2, RefreshCw, Folder, MessageSquare } from 'lucide-react';
 
 interface Folder {
   id: string;
@@ -51,6 +52,7 @@ export function KnowledgeItemContextMenu({
   onReprocess,
   children,
 }: KnowledgeItemContextMenuProps) {
+  const navigate = useNavigate();
   const [showRenameDialog, setShowRenameDialog] = useState(false);
   const [showMoveDialog, setShowMoveDialog] = useState(false);
   const [newTitle, setNewTitle] = useState(itemTitle);
@@ -147,6 +149,26 @@ export function KnowledgeItemContextMenu({
           >
             <FolderInput className="h-4 w-4 mr-2" />
             Move to...
+          </ContextMenuItem>
+
+          <ContextMenuSeparator className="bg-white/10" />
+
+          <ContextMenuItem
+            onClick={() => {
+              navigate('/chat', {
+                state: {
+                  preSelectedItem: {
+                    id: itemId,
+                    title: itemTitle,
+                    type: 'item'
+                  }
+                }
+              });
+            }}
+            className="hover:bg-blue-500/20 focus:bg-blue-500/20 text-blue-400 cursor-pointer"
+          >
+            <MessageSquare className="h-4 w-4 mr-2" />
+            Chat with this
           </ContextMenuItem>
 
           <ContextMenuSeparator className="bg-white/10" />

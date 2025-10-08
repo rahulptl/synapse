@@ -25,6 +25,51 @@ from sqlalchemy import func
 
 logger = logging.getLogger(__name__)
 
+# Token counting (lazy import to avoid dependency issues)
+_tiktoken_encoder = None
+
+def _get_token_encoder():
+    """Get or initialize tiktoken encoder."""
+    global _tiktoken_encoder
+    if _tiktoken_encoder is None:
+        try:
+            import tiktoken
+            _tiktoken_encoder = tiktoken.get_encoding("cl100k_base")  # GPT-4 tokenizer
+        except ImportError:
+            logger.warning("tiktoken not available, using character-based estimation")
+            _tiktoken_encoder = False
+    return _tiktoken_encoder
+
+def estimate_tokens(text: str) -> int:
+    """
+    Estimate token count for text.
+
+    Uses tiktoken if available, otherwise falls back to character-based estimation.
+    """
+    encoder = _get_token_encoder()
+    if encoder and encoder is not False:
+        return len(encoder.encode(text))
+    else:
+        # Fallback: rough estimation (1 token ≈ 4 characters)
+        return len(text) // 4
+
+def count_message_tokens(messages: List[Dict[str, str]]) -> int:
+    """
+    Count total tokens in message list (for chat completion).
+
+    Includes overhead for message formatting.
+    """
+    total = 0
+    for message in messages:
+        # Each message has ~4 tokens overhead for role/formatting
+        total += 4
+        total += estimate_tokens(message.get("content", ""))
+
+    # Additional overhead for chat completion
+    total += 3  # for reply priming
+
+    return total
+
 
 class ChatService:
     """Service for managing conversations and chat interactions."""
@@ -909,7 +954,28 @@ INSTRUCTIONS:
             # Add current user message
             messages.append({"role": "user", "content": user_message})
 
-            # Generate response using AI service
+            # Count tokens to check if we exceed the model's context limit
+            total_tokens = count_message_tokens(messages)
+
+            logger.info(f"Chat context size: {total_tokens} tokens ({len(context_documents)} documents)")
+
+            # If context exceeds safe threshold, use map-reduce approach
+            if total_tokens > settings.AUTO_MAPREDUCE_THRESHOLD:
+                logger.warning(
+                    f"Context size ({total_tokens} tokens) exceeds threshold ({settings.AUTO_MAPREDUCE_THRESHOLD}). "
+                    f"Routing to map-reduce processing for summarization."
+                )
+
+                # Use map-reduce to process large context
+                response = await self._generate_mapreduce_response(
+                    user_message=user_message,
+                    context_documents=context_documents,
+                    conversation_summary=self._summarize_conversation_history(conversation_history)
+                )
+
+                return response
+
+            # Normal path: generate response directly
             response = await ai_chat_service.generate_completion(
                 messages=messages,
                 max_tokens=2000,
@@ -921,6 +987,119 @@ INSTRUCTIONS:
         except Exception as e:
             logger.error(f"Enhanced AI response generation failed: {e}")
             return "I apologize, but I'm having trouble generating a response right now. Please try again."
+
+    async def _generate_mapreduce_response(
+        self,
+        user_message: str,
+        context_documents: List[Dict[str, Any]],
+        conversation_summary: str
+    ) -> str:
+        """
+        Generate response using map-reduce when context is too large.
+
+        This breaks down the large context into batches, processes each batch,
+        and then aggregates the results into a final response.
+        """
+        try:
+            logger.info(f"Starting map-reduce processing for {len(context_documents)} documents")
+
+            # Create batches of documents (10 documents per batch)
+            batch_size = 10
+            batches = []
+            for i in range(0, len(context_documents), batch_size):
+                batch = context_documents[i:i + batch_size]
+                batches.append(batch)
+
+            logger.info(f"Created {len(batches)} batches for map-reduce processing")
+
+            # Map phase: Process each batch
+            batch_summaries = []
+            for batch_idx, batch in enumerate(batches):
+                try:
+                    # Build context for this batch
+                    batch_context = "DOCUMENTS:\n"
+                    for idx, doc in enumerate(batch, 1):
+                        batch_context += f"[{idx}] {doc['title']}: {doc['content'][:1000]}...\n\n"
+
+                    # Process batch with focused prompt
+                    batch_prompt = f"""Based on the following documents, extract information relevant to: "{user_message}"
+
+{batch_context}
+
+Extract only the most relevant information that helps answer the user's question.
+Be concise but comprehensive."""
+
+                    batch_response = await ai_chat_service.generate_completion(
+                        messages=[
+                            {"role": "system", "content": "You are a helpful assistant that extracts relevant information from documents."},
+                            {"role": "user", "content": batch_prompt}
+                        ],
+                        max_tokens=500,
+                        temperature=0.3
+                    )
+
+                    if batch_response and batch_response.strip():
+                        batch_summaries.append({
+                            "batch_idx": batch_idx,
+                            "summary": batch_response,
+                            "doc_count": len(batch)
+                        })
+
+                    logger.debug(f"Processed batch {batch_idx + 1}/{len(batches)}")
+
+                except Exception as batch_error:
+                    logger.error(f"Batch {batch_idx} processing failed: {batch_error}")
+                    continue
+
+            # Reduce phase: Aggregate batch summaries
+            if not batch_summaries:
+                return "I processed the documents but couldn't extract relevant information. Please try refining your question."
+
+            # Combine batch summaries
+            combined_summaries = "\n\n".join([
+                f"Section {s['batch_idx'] + 1} ({s['doc_count']} documents):\n{s['summary']}"
+                for s in batch_summaries
+            ])
+
+            # Generate final response
+            final_prompt = f"""Based on the following extracted information from multiple documents, provide a comprehensive answer to: "{user_message}"
+
+EXTRACTED INFORMATION:
+{combined_summaries}
+
+{conversation_summary}
+
+Provide a well-organized, helpful response that synthesizes the information above."""
+
+            final_response = await ai_chat_service.generate_completion(
+                messages=[
+                    {"role": "system", "content": "You are a knowledgeable assistant that synthesizes information from multiple sources."},
+                    {"role": "user", "content": final_prompt}
+                ],
+                max_tokens=2000,
+                temperature=0.7
+            )
+
+            logger.info(f"Map-reduce processing complete: {len(batches)} batches processed")
+
+            return final_response
+
+        except Exception as e:
+            logger.error(f"Map-reduce response generation failed: {e}", exc_info=True)
+            return "I encountered an issue processing the large amount of context. Please try narrowing your search or being more specific."
+
+    def _summarize_conversation_history(self, conversation_history: List[Dict[str, str]]) -> str:
+        """Create a brief summary of conversation history for context."""
+        if not conversation_history:
+            return ""
+
+        if len(conversation_history) <= 2:
+            return "\nPREVIOUS CONVERSATION:\n" + "\n".join([
+                f"{msg['role'].upper()}: {msg['content'][:200]}"
+                for msg in conversation_history
+            ])
+
+        return f"\nCONVERSATION CONTEXT: This is part of an ongoing conversation with {len(conversation_history)} previous messages."
 
     async def _generate_ai_response(
         self,

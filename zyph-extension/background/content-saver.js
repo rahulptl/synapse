@@ -1236,10 +1236,23 @@ class ContentSaver {
     async getFolders({ forceRefresh = false } = {}) {
         if (self?.Zyph?.Api) {
             try {
+                // Check authentication first
+                const isAuthenticated = await self.Zyph.Api.isAuthenticated();
+                if (!isAuthenticated) {
+                    console.warn('[ContentSaver] Not authenticated - returning empty folders');
+                    return [];
+                }
+
                 const remoteFolders = await self.Zyph.Api.fetchFolders({ forceRefresh });
                 this.cachedFolders = this.flattenRemoteFolders(remoteFolders);
                 return this.cachedFolders;
             } catch (error) {
+                // Check if this is an auth error
+                if (error.code === 'NO_AUTH' || error.code === 'AUTH_REJECTED') {
+                    console.warn('[ContentSaver] Authentication required:', error.message);
+                    return [];
+                }
+                // Log other errors but continue to fallback
                 console.warn('[ContentSaver] Failed to fetch folders from Zyph.com:', error);
             }
         }

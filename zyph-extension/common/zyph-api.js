@@ -6,8 +6,9 @@
     // Load API URL from config on initialization
     (async function initializeApiUrl() {
         try {
-            if (typeof window !== 'undefined' && window.ZyphConfig) {
-                API_BASE_URL = await window.ZyphConfig.getApiBaseUrl();
+            const configModule = global?.ZyphConfig;
+            if (configModule?.getApiBaseUrl) {
+                API_BASE_URL = await configModule.getApiBaseUrl();
                 console.log('[ZyphApi] Initialized with API URL:', API_BASE_URL);
             }
         } catch (error) {
@@ -37,9 +38,10 @@
 
         async getApiBaseUrl() {
             // Try to get from config first
-            if (typeof window !== 'undefined' && window.ZyphConfig) {
+            const configModule = global?.ZyphConfig;
+            if (configModule?.getApiBaseUrl) {
                 try {
-                    this.apiBaseUrl = await window.ZyphConfig.getApiBaseUrl();
+                    this.apiBaseUrl = await configModule.getApiBaseUrl();
                     return this.apiBaseUrl;
                 } catch (error) {
                     console.warn('[ZyphApi] Failed to load API URL from config:', error);
@@ -179,6 +181,21 @@
                 throw new ZyphApiError('Please connect your Zyph.com account in settings', { code: 'NO_AUTH' });
             }
             return auth;
+        }
+
+        async isAuthenticated() {
+            /**
+             * Check if user is authenticated without throwing errors.
+             *
+             * @returns {Promise<boolean>} True if authenticated, false otherwise
+             */
+            try {
+                const auth = await this.getAuth();
+                return !!(auth && auth.apiKey);
+            } catch (error) {
+                console.error('[ZyphApi] Error checking auth status:', error);
+                return false;
+            }
         }
 
         async authenticatedFetch(path, options = {}) {

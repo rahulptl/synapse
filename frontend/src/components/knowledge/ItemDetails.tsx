@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import { Clock, ExternalLink, FileText, User, Trash2, Download, ArrowLeft } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { useAuth } from '@/hooks/useAuth';
+import { apiClient } from '@/services/apiClient';
+import { useToast } from '@/hooks/use-toast';
 
 interface KnowledgeItem {
   id: string;
@@ -24,8 +27,34 @@ interface ItemDetailsProps {
 }
 
 export function ItemDetails({ item, onDeleteItem, onBack }: ItemDetailsProps) {
-  // File preview removed - would need backend API endpoint for file downloads
-  // For now, just display metadata
+  const { user, accessToken } = useAuth();
+  const { toast } = useToast();
+  const [isLoadingUrl, setIsLoadingUrl] = useState(false);
+
+  // Handle viewing source file stored in cloud storage
+  const handleViewSource = async () => {
+    if (!item || !user || !accessToken) return;
+
+    setIsLoadingUrl(true);
+    try {
+      const result = await apiClient.getContentDownloadUrl(
+        item.id,
+        { userId: user.id, accessToken },
+        1 // 1 hour expiration
+      );
+
+      // Open the signed URL in a new tab
+      window.open(result.download_url, '_blank');
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to generate download link for this file",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingUrl(false);
+    }
+  };
 
   if (!item) {
     return (
@@ -113,20 +142,38 @@ export function ItemDetails({ item, onDeleteItem, onBack }: ItemDetailsProps) {
       </div>
 
       <div className="flex-1 p-5 space-y-6 overflow-y-auto">
-        {item.source_url && (
+        {item.source_url && item.metadata?.stored_in_storage && (
           <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-xl p-4 shadow-lg">
             <h4 className="text-base font-semibold text-white mb-3 flex items-center">
               <ExternalLink className="h-4 w-4 mr-2 text-emerald-400" />
-              Source
+              Source File
             </h4>
-            <a
-              href={item.source_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-blue-400 hover:text-blue-300 hover:underline break-all transition-colors text-sm"
-            >
-              {item.source_url}
-            </a>
+            <div className="flex items-center space-x-3">
+              <code className="text-sm text-gray-400 flex-1 truncate">
+                {item.metadata?.original_filename || 'Stored file'}
+              </code>
+              <Button
+                onClick={handleViewSource}
+                disabled={isLoadingUrl}
+                size="sm"
+                className="bg-emerald-600 hover:bg-emerald-700"
+              >
+                {isLoadingUrl ? (
+                  <>
+                    <div className="h-4 w-4 mr-2 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Loading...
+                  </>
+                ) : (
+                  <>
+                    <Download className="h-4 w-4 mr-2" />
+                    View/Download
+                  </>
+                )}
+              </Button>
+            </div>
+            <p className="text-xs text-gray-500 mt-2">
+              File size: {item.metadata?.file_size ? `${(item.metadata.file_size / 1024 / 1024).toFixed(2)} MB` : 'Unknown'}
+            </p>
           </div>
         )}
 

@@ -17,6 +17,19 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Set environment variables for model paths
+# Models will be cached in /app/.cache to persist across container restarts
+ENV DOCLING_SERVE_ARTIFACTS_PATH=/app/.cache/docling/models
+ENV EASYOCR_MODULE_PATH=/app/.cache/easyocr
+
+# Create model cache directories
+RUN mkdir -p /app/.cache/docling/models /app/.cache/easyocr
+
+# Download models during build (before copying application code)
+# This ensures models are baked into the image and don't need runtime downloads
+COPY scripts/download_models.py /tmp/download_models.py
+RUN python /tmp/download_models.py --languages en && rm /tmp/download_models.py
+
 # Copy application code
 COPY . .
 

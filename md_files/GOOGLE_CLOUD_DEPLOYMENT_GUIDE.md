@@ -253,8 +253,8 @@ gcloud run services describe synapse-backend-prod \
   CHUNK_SIZE=500
   CHUNK_OVERLAP=50
   SIMILARITY_THRESHOLD=0.7
-  EMBEDDING_MODEL=text-embedding-ada-002
-  CHAT_MODEL=gpt-4o-mini
+  EMBEDDING_MODEL=text-embedding-3-large
+  CHAT_MODEL=gpt-5
   MAX_CHAT_HISTORY=10
   CHAT_TIMEOUT_SECONDS=60
   RATE_LIMIT_PER_MINUTE=${_RATE_LIMIT}

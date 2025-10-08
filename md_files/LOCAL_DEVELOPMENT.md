@@ -183,7 +183,7 @@ LOCAL_STORAGE_PATH=./storage
 OPENAI_API_KEY=sk-proj-...
 
 # Chat model (cost-optimized)
-CHAT_MODEL=gpt-4.1-mini
+CHAT_MODEL=gpt-5
 ```
 
 #### **`frontend/.env.local`** (For npm run dev)

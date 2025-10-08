@@ -458,6 +458,94 @@ class ApiClient {
       auth,
     });
   }
+
+  // Alias for getProcessingStatus - for consistency with hooks
+  async getItemStatus(itemId: string, auth: { userId: string; accessToken: string }) {
+    return this.getProcessingStatus(itemId, auth);
+  }
+
+  // Save chat message to knowledge base
+  async saveMessageToKnowledgeBase(
+    messageId: string,
+    data: {
+      folder_id: string;
+      title?: string;
+      add_context?: boolean;
+    },
+    auth: { userId: string; accessToken: string }
+  ) {
+    return this.request(`/chat/messages/${messageId}/save-to-knowledge-base?folder_id=${data.folder_id}&title=${encodeURIComponent(data.title || '')}&add_context=${data.add_context !== false}`, {
+      method: 'POST',
+      auth,
+    });
+  }
+
+  // Export folder as zip
+  async exportFolderAsZip(
+    folderId: string,
+    auth: { userId: string; accessToken: string }
+  ): Promise<Blob> {
+    const headers: Record<string, string> = {
+      ...this.getAuthHeaders(auth.userId, auth.accessToken),
+    };
+
+    const response = await fetch(this.buildUrl(`/content/export/folder/${folderId}`), {
+      method: 'GET',
+      headers,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || errorData.message || `Export failed: ${response.statusText}`);
+    }
+
+    return response.blob();
+  }
+
+  // Export item as zip
+  async exportItemAsZip(
+    itemId: string,
+    auth: { userId: string; accessToken: string }
+  ): Promise<Blob> {
+    const headers: Record<string, string> = {
+      ...this.getAuthHeaders(auth.userId, auth.accessToken),
+    };
+
+    const response = await fetch(this.buildUrl(`/content/export/item/${itemId}`), {
+      method: 'GET',
+      headers,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || errorData.message || `Export failed: ${response.statusText}`);
+    }
+
+    return response.blob();
+  }
+
+  // Helper to download blob as file
+  downloadBlob(blob: Blob, filename: string) {
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  }
+
+  // Get signed download URL for content stored in cloud storage
+  async getContentDownloadUrl(
+    contentId: string,
+    auth: { userId: string; accessToken: string },
+    expirationHours: number = 1
+  ): Promise<{ download_url: string; expires_in_seconds: number; storage_path: string }> {
+    return this.request(`/content/${contentId}/download-url?expiration_hours=${expirationHours}`, {
+      auth,
+    });
+  }
 }
 
 export const apiClient = new ApiClient();

@@ -1,8 +1,11 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, Folder, FolderOpen, Plus, Trash2, Edit2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { ChevronDown, ChevronRight, Folder, FolderOpen, Plus, Trash2, Edit2, MessageSquare, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/useAuth';
+import { apiClient } from '@/services/apiClient';
 
 interface Folder {
   id: string;
@@ -39,6 +42,8 @@ function FolderNode({
   onDeleteFolder,
   onRenameFolder
 }: FolderNodeProps) {
+  const navigate = useNavigate();
+  const { user, accessToken } = useAuth();
   const [isExpanded, setIsExpanded] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
@@ -204,6 +209,26 @@ function FolderNode({
 
         {isHovered && !isRenaming && (
           <div className="flex items-center space-x-1 pr-3 opacity-0 group-hover:opacity-100 transition-opacity">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 w-7 p-0 hover:bg-blue-500/20 hover:text-blue-400 transition-colors text-gray-400"
+              onClick={(e) => {
+                e.stopPropagation();
+                navigate('/chat', {
+                  state: {
+                    preSelectedFolder: {
+                      id: folder.id,
+                      name: folder.name,
+                      type: 'folder'
+                    }
+                  }
+                });
+              }}
+              title="Chat with this folder"
+            >
+              <MessageSquare className="h-3.5 w-3.5" />
+            </Button>
             {onRenameFolder && (
               <Button
                 variant="ghost"

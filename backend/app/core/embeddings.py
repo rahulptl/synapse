@@ -17,6 +17,7 @@ class EmbeddingService:
     def __init__(self):
         self.api_key = settings.OPENAI_API_KEY
         self.model = settings.EMBEDDING_MODEL
+        self.dimensions = settings.EMBEDDING_DIMENSIONS
         self.timeout = 30.0
 
     async def generate_embedding(self, text: str) -> List[float]:
@@ -42,16 +43,20 @@ class EmbeddingService:
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             try:
+                payload = {
+                    "model": self.model,
+                    "input": text,
+                }
+                if self.dimensions:
+                    payload["dimensions"] = self.dimensions
+
                 response = await client.post(
                     "https://api.openai.com/v1/embeddings",
                     headers={
                         "Authorization": f"Bearer {self.api_key}",
                         "Content-Type": "application/json",
                     },
-                    json={
-                        "model": self.model,
-                        "input": text,
-                    }
+                    json=payload
                 )
 
                 if response.status_code != 200:
@@ -124,7 +129,7 @@ class ChatService:
 
     def __init__(self):
         self.api_key = settings.OPENAI_API_KEY
-        self.model = "gpt-4o-mini"  # Use OpenAI's efficient model
+        self.model = settings.CHAT_MODEL
         self.timeout = settings.CHAT_TIMEOUT_SECONDS
 
     async def generate_completion(
@@ -161,8 +166,7 @@ class ChatService:
                     json={
                         "model": self.model,
                         "messages": messages,
-                        "max_tokens": max_tokens,
-                        "temperature": temperature,
+                        "reasoning_effort": "minimal",
                     }
                 )
 

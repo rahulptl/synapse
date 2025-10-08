@@ -2,38 +2,41 @@
 Image document processor.
 
 Handles image files with OCR (Optical Character Recognition) to extract text.
+Uses EasyOCR for advanced multi-language OCR with GPU acceleration support.
 Supports common image formats: JPG, PNG, GIF, BMP, TIFF, WebP.
 """
 from typing import List, Optional
 import io
 import logging
+import numpy as np
 
 from .base import DocumentProcessor, ProcessingError
 
 logger = logging.getLogger(__name__)
 
-# Silence noisy PIL logs
+# Silence noisy logs
 logging.getLogger('PIL').setLevel(logging.INFO)
-logging.getLogger('pytesseract').setLevel(logging.INFO)
+logging.getLogger('easyocr').setLevel(logging.INFO)
 
 # Optional dependencies
 try:
-    import pytesseract
     from PIL import Image
+    import easyocr
     OCR_AVAILABLE = True
 except ImportError:
-    pytesseract = None
     Image = None
+    easyocr = None
     OCR_AVAILABLE = False
-    logger.warning("OCR not available - image text extraction disabled")
+    logger.warning("EasyOCR not available - image text extraction disabled")
 
 
 class ImageProcessor(DocumentProcessor):
     """
     Processor for image files.
 
-    Uses Tesseract OCR to extract text from images.
-    Supports preprocessing for better OCR accuracy.
+    Uses EasyOCR for advanced multi-language text extraction.
+    Supports GPU acceleration for faster processing.
+    More accurate than Tesseract for most use cases.
     """
 
     @property
@@ -53,7 +56,7 @@ class ImageProcessor(DocumentProcessor):
     @property
     def format_name(self) -> str:
         """Display name."""
-        return "Image (OCR)"
+        return "Image (EasyOCR)"
 
     @property
     def format_category(self) -> str:
@@ -63,12 +66,12 @@ class ImageProcessor(DocumentProcessor):
     @property
     def requires_library(self) -> Optional[str]:
         """Required libraries."""
-        return "pytesseract>=0.3.0, Pillow>=10.0.0"
+        return "easyocr>=1.7.0, Pillow>=10.0.0, torch>=2.0.0"
 
     @property
     def requires_system_dependency(self) -> Optional[str]:
         """System dependency."""
-        return "tesseract"
+        return None  # EasyOCR has no system dependencies
 
     def _check_dependencies(self) -> bool:
         """Check if OCR dependencies are available."""
@@ -76,9 +79,15 @@ class ImageProcessor(DocumentProcessor):
 
     async def extract_text(self, file_bytes: bytes, filename: str) -> str:
         """
-        Extract text from image using OCR.
+        Extract text from image using EasyOCR.
 
         Supports: PNG, JPEG, JPG, GIF, BMP, TIFF, WebP
+
+        EasyOCR advantages:
+        - 80+ languages supported
+        - Better accuracy than Tesseract
+        - GPU acceleration
+        - No system dependencies
 
         Args:
             file_bytes: Raw image bytes
@@ -92,20 +101,23 @@ class ImageProcessor(DocumentProcessor):
         """
         if not OCR_AVAILABLE:
             raise ProcessingError(
-                "Image OCR requires pytesseract and Pillow. "
-                "Install with: pip install pytesseract Pillow\n"
-                "System dependency: brew install tesseract (macOS) or "
-                "apt-get install tesseract-ocr (Ubuntu)"
+                "Image OCR requires EasyOCR and Pillow. "
+                "Install with: pip install easyocr torch Pillow"
             )
 
         if not file_bytes:
             raise ProcessingError("Empty image file")
 
         try:
+            # Get preloaded EasyOCR reader from model loader
+            from app.services.model_loader import get_easyocr_reader
+
+            reader = get_easyocr_reader()
+
             # Open image with PIL
             img = Image.open(io.BytesIO(file_bytes))
 
-            # Convert to RGB if needed (for RGBA, grayscale, etc.)
+            # Convert to RGB if needed (EasyOCR works best with RGB)
             if img.mode not in ('RGB', 'L'):
                 logger.debug(f"Converting image from {img.mode} to RGB")
                 img = img.convert('RGB')
@@ -113,18 +125,33 @@ class ImageProcessor(DocumentProcessor):
             # Preprocess for better OCR accuracy
             img = await self._preprocess_image(img)
 
-            # Perform OCR
-            text = pytesseract.image_to_string(img)
+            # Convert to numpy array for EasyOCR
+            img_array = np.array(img)
 
-            if text.strip():
-                logger.info(f"✅ OCR extracted {len(text)} chars from image {filename}")
-                return text
-            else:
-                logger.warning(f"⚠️ No text found in image {filename}")
-                return "[IMAGE OCR: No text detected in image]"
+            # Perform OCR with EasyOCR
+            # Result format: list of (bbox, text, confidence)
+            results = reader.readtext(img_array)
+
+            # Extract text from results
+            if results:
+                # Sort by Y-coordinate (top to bottom reading order)
+                results_sorted = sorted(results, key=lambda x: x[0][0][1])
+
+                # Join text with newlines (preserve reading order)
+                text = '\n'.join([result[1] for result in results_sorted])
+
+                if text.strip():
+                    logger.info(
+                        f"✅ EasyOCR extracted {len(text)} chars from {filename} "
+                        f"({len(results)} text regions found)"
+                    )
+                    return text
+
+            logger.warning(f"⚠️ No text found in image {filename}")
+            return "[IMAGE OCR: No text detected in image]"
 
         except Exception as e:
-            logger.error(f"Image OCR failed for {filename}: {e}", exc_info=True)
+            logger.error(f"EasyOCR failed for {filename}: {e}", exc_info=True)
             raise ProcessingError(f"Failed to perform OCR on image: {e}")
 
     async def _preprocess_image(self, img: 'Image.Image') -> 'Image.Image':
@@ -267,9 +294,10 @@ class ImageProcessor(DocumentProcessor):
 
     def estimate_processing_time(self, file_size: int) -> float:
         """
-        Estimate image OCR processing time.
+        Estimate image OCR processing time with EasyOCR.
 
-        OCR is relatively slow (~1MB per 2-3 seconds).
+        EasyOCR is faster with GPU, slower on CPU.
+        Estimate: ~1-2 seconds per MB with GPU, ~3-5 seconds per MB with CPU.
 
         Args:
             file_size: File size in bytes
@@ -277,5 +305,15 @@ class ImageProcessor(DocumentProcessor):
         Returns:
             Estimated time in seconds
         """
-        # OCR is slow: ~500KB per second
-        return file_size / (500 * 1024)
+        from app.config import settings
+        import torch
+
+        mb = file_size / (1024 * 1024)
+
+        # Check if GPU is available
+        if settings.ENABLE_GPU_ACCELERATION and torch.cuda.is_available():
+            # GPU: ~1.5 seconds per MB
+            return mb * 1.5
+        else:
+            # CPU: ~4 seconds per MB
+            return mb * 4.0

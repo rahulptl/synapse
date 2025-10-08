@@ -110,18 +110,79 @@ class ProcessingService:
                 # Update status to processing
                 await self._update_processing_status(db, knowledge_item_id, ProcessingStatus.PROCESSING)
 
-                # Extract and sanitize text
-                extracted_text = await self._extract_text_content(item)
-                if extracted_text:
-                    extracted_text = self.sanitize_text_for_postgres(extracted_text)
+                # Try smart chunking with Docling for supported file types
+                chunks = None
+                use_smart_chunking = False
 
-                # Update item with extracted text for file types
-                if item.content_type in [ContentType.PDF, ContentType.DOC, ContentType.DOCX, ContentType.IMAGE] and extracted_text:
-                    await self._update_item_content(db, knowledge_item_id, extracted_text)
+                if settings.ENABLE_SMART_CHUNKING and item.item_metadata and 'original_filename' in item.item_metadata:
+                    from app.services.document_processors import DocumentProcessorFactory
+                    from app.services.document_processors.docling_processor import DoclingProcessor
 
-                # Chunk and process text
-                text_to_process = self.sanitize_text_for_postgres(extracted_text or item.content)
-                chunks = self._chunk_text(text_to_process)
+                    filename = item.item_metadata['original_filename']
+                    processor = DocumentProcessorFactory.get_processor(filename)
+
+                    # Check if this file can use Docling smart chunking
+                    if isinstance(processor, DoclingProcessor) and processor.is_available():
+                        from app.core.storage import storage_service
+
+                        try:
+                            # Get file bytes from storage
+                            file_bytes = await self._get_file_bytes(item, storage_service)
+
+                            if file_bytes:
+                                logger.info(f"Attempting Docling smart chunking for {filename}")
+
+                                # Use Docling's smart chunking (structure-aware + token-aware)
+                                chunks = await processor.extract_and_chunk(
+                                    file_bytes=file_bytes,
+                                    filename=filename,
+                                    max_tokens=settings.SMART_CHUNK_MAX_TOKENS
+                                )
+
+                                if chunks:
+                                    use_smart_chunking = True
+                                    logger.info(
+                                        f"✅ Smart chunking successful: {len(chunks)} chunks created for {filename}"
+                                    )
+
+                                    # Extract full text for storage (for search/display)
+                                    extracted_text = "\n\n".join(chunks)
+                                    text_to_process = self.sanitize_text_for_postgres(extracted_text)
+
+                                    # Update item with extracted text
+                                    if text_to_process:
+                                        await self._update_item_content(db, knowledge_item_id, text_to_process)
+
+                        except Exception as e:
+                            logger.warning(
+                                f"Docling smart chunking failed for {filename}, falling back to legacy: {e}"
+                            )
+                            chunks = None  # Will trigger fallback
+
+                # Fallback to legacy extraction and chunking
+                if not use_smart_chunking:
+                    logger.info(f"Using legacy chunking for item {knowledge_item_id}")
+
+                    # Extract and sanitize text
+                    extracted_text = await self._extract_text_content(item)
+                    if extracted_text:
+                        extracted_text = self.sanitize_text_for_postgres(extracted_text)
+
+                    # Update item with extracted text for file types
+                    file_types_to_update = [
+                        ContentType.PDF,
+                        ContentType.DOC,
+                        ContentType.DOCX,
+                        ContentType.IMAGE,
+                        ContentType.SPREADSHEET,  # XLSX, XLS, CSV
+                        ContentType.PRESENTATION,  # PPTX, PPT
+                    ]
+                    if item.content_type in file_types_to_update and extracted_text:
+                        await self._update_item_content(db, knowledge_item_id, extracted_text)
+
+                    # Chunk text using legacy method
+                    text_to_process = self.sanitize_text_for_postgres(extracted_text or item.content)
+                    chunks = self._chunk_text(text_to_process)
 
                 # Initialize progress tracking
                 item.total_chunks = len(chunks)

@@ -45,6 +45,15 @@ class StorageBackend(ABC):
         """Generate a signed URL for direct upload to storage."""
         pass
 
+    @abstractmethod
+    async def generate_signed_download_url(
+        self,
+        path: str,
+        expiration_seconds: int = 3600
+    ) -> str:
+        """Generate a signed URL for downloading content."""
+        pass
+
 
 class LocalStorageBackend(StorageBackend):
     """Local file system storage backend."""
@@ -87,6 +96,15 @@ class LocalStorageBackend(StorageBackend):
         """Local storage doesn't support signed URLs - return file path."""
         file_path = os.path.join(self.base_path, path)
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        return f"file://{file_path}"
+
+    async def generate_signed_download_url(
+        self,
+        path: str,
+        expiration_seconds: int = 3600
+    ) -> str:
+        """Local storage doesn't support signed URLs - return file path."""
+        file_path = os.path.join(self.base_path, path)
         return f"file://{file_path}"
 
 
@@ -153,6 +171,20 @@ class SupabaseStorageBackend(StorageBackend):
             return result['signedURL']
         except Exception as e:
             logger.error(f"Supabase signed URL generation failed: {e}")
+            raise
+
+    async def generate_signed_download_url(
+        self,
+        path: str,
+        expiration_seconds: int = 3600
+    ) -> str:
+        """Generate signed download URL for Supabase storage."""
+        try:
+            # Supabase supports signed download URLs
+            result = self.client.storage.from_(self.bucket).create_signed_url(path, expiration_seconds)
+            return result['signedURL']
+        except Exception as e:
+            logger.error(f"Supabase signed download URL generation failed: {e}")
             raise
 
 
@@ -239,6 +271,26 @@ class S3StorageBackend(StorageBackend):
             return url
         except Exception as e:
             logger.error(f"S3 presigned URL generation failed: {e}")
+            raise
+
+    async def generate_signed_download_url(
+        self,
+        path: str,
+        expiration_seconds: int = 3600
+    ) -> str:
+        """Generate presigned URL for S3 download."""
+        try:
+            url = self.s3_client.generate_presigned_url(
+                'get_object',
+                Params={
+                    'Bucket': self.bucket,
+                    'Key': path
+                },
+                ExpiresIn=expiration_seconds
+            )
+            return url
+        except Exception as e:
+            logger.error(f"S3 presigned download URL generation failed: {e}")
             raise
 
 
@@ -378,6 +430,65 @@ class GCSStorageBackend(StorageBackend):
             logger.error(f"GCS signed URL generation failed: {e}")
             raise
 
+    async def generate_signed_download_url(
+        self,
+        path: str,
+        expiration_seconds: int = 3600
+    ) -> str:
+        """Generate signed URL for downloading from GCS."""
+        try:
+            full_path = self._get_full_path(path)
+            blob = self.bucket.blob(full_path)
+
+            # When running on Cloud Run (ADC without private key), use IAM signBlob
+            from google.auth import compute_engine
+            import google.auth
+            from google.cloud import iam_credentials_v1
+
+            # Get current credentials
+            credentials, project = google.auth.default()
+
+            # Check if we're using compute engine credentials (Cloud Run)
+            if isinstance(credentials, compute_engine.Credentials):
+                # Use IAM Credentials API for signing (no private key needed)
+                service_account_email = credentials.service_account_email
+
+                # Import signing helper
+                from google.cloud.storage._signing import generate_signed_url_v4
+
+                # Create custom signing function using IAM API
+                def sign_blob(message):
+                    """Sign using IAM signBlob API."""
+                    client = iam_credentials_v1.IAMCredentialsClient()
+                    name = f"projects/-/serviceAccounts/{service_account_email}"
+                    response = client.sign_blob(
+                        request={"name": name, "payload": message}
+                    )
+                    return response.signed_blob
+
+                # Generate signed URL with custom signing function for GET
+                url = generate_signed_url_v4(
+                    credentials=credentials,
+                    resource=f"/{self.bucket.name}/{full_path}",
+                    expiration=timedelta(seconds=expiration_seconds),
+                    method="GET",
+                    service_account_email=service_account_email,
+                    access_token=credentials.token,
+                    signing_fn=sign_blob
+                )
+            else:
+                # Standard signed URL generation (local dev with service account key)
+                url = blob.generate_signed_url(
+                    version="v4",
+                    expiration=timedelta(seconds=expiration_seconds),
+                    method="GET"
+                )
+
+            return url
+        except Exception as e:
+            logger.error(f"GCS signed download URL generation failed: {e}")
+            raise
+
 
 class StorageService:
     """Main storage service that delegates to the configured backend."""
@@ -422,6 +533,16 @@ class StorageService:
         """Generate a signed URL for direct upload to storage."""
         return await self.backend.generate_signed_upload_url(
             path, content_type, expiration_seconds
+        )
+
+    async def generate_signed_download_url(
+        self,
+        path: str,
+        expiration_seconds: int = 3600
+    ) -> str:
+        """Generate a signed URL for downloading content from storage."""
+        return await self.backend.generate_signed_download_url(
+            path, expiration_seconds
         )
 
 

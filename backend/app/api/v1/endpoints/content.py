@@ -4,8 +4,13 @@ Content management endpoints.
 from typing import List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Header, Path, BackgroundTasks, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
+import zipfile
+import io
+import json
+from datetime import datetime
 
 from app.core.database import get_db
 from app.core.security import validate_any_auth
@@ -548,3 +553,244 @@ async def list_content(
         }
         for item in knowledge_items
     ]
+
+
+@router.get("/export/folder/{folder_id}")
+async def export_folder_as_zip(
+    folder_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    auth_data: dict = Depends(validate_any_auth)
+):
+    """
+    Export all items in a folder as a ZIP file.
+    Includes content, metadata, and folder structure.
+    """
+    user_id = UUID(auth_data["user_id"])
+
+    try:
+        # Get folder information
+        from app.models.database import Folder as DBFolder
+        from sqlalchemy import select
+
+        folder_stmt = select(DBFolder).where(
+            DBFolder.id == folder_id,
+            DBFolder.user_id == user_id
+        )
+        folder_result = await db.execute(folder_stmt)
+        folder = folder_result.scalar_one_or_none()
+
+        if not folder:
+            raise HTTPException(status_code=404, detail="Folder not found")
+
+        # Get all items in folder
+        items = await content_service.get_folder_contents(
+            db=db,
+            user_id=user_id,
+            folder_id=folder_id
+        )
+
+        # Create ZIP file in memory
+        zip_buffer = io.BytesIO()
+
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            # Add folder metadata
+            folder_info = {
+                "folder_name": folder.name,
+                "folder_path": folder.path,
+                "export_date": datetime.utcnow().isoformat(),
+                "total_items": len(items)
+            }
+            zip_file.writestr("folder_info.json", json.dumps(folder_info, indent=2))
+
+            # Add each item
+            for item in items:
+                # Create safe filename
+                safe_title = "".join(c if c.isalnum() or c in (' ', '.', '_', '-') else '_' for c in item.title)
+
+                # Add item content as text file
+                content_filename = f"items/{safe_title}.txt"
+                zip_file.writestr(content_filename, item.content or "")
+
+                # Add item metadata
+                metadata = {
+                    "id": str(item.id),
+                    "title": item.title,
+                    "content_type": item.content_type,
+                    "source_url": item.source_url,
+                    "created_at": item.created_at.isoformat() if item.created_at else None,
+                    "updated_at": item.updated_at.isoformat() if item.updated_at else None,
+                    "processing_status": item.processing_status,
+                    "total_chunks": item.total_chunks
+                }
+                metadata_filename = f"metadata/{safe_title}_metadata.json"
+                zip_file.writestr(metadata_filename, json.dumps(metadata, indent=2))
+
+        # Prepare response
+        zip_buffer.seek(0)
+
+        return StreamingResponse(
+            zip_buffer,
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f"attachment; filename={folder.name.replace(' ', '_')}_export.zip"
+            }
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Export failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
+
+
+@router.get("/export/item/{item_id}")
+async def export_item_as_zip(
+    item_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    auth_data: dict = Depends(validate_any_auth)
+):
+    """
+    Export a single item as a ZIP file.
+    Includes content and metadata.
+    """
+    user_id = UUID(auth_data["user_id"])
+
+    try:
+        # Get the item
+        item = await content_service.get_knowledge_item(
+            db=db,
+            user_id=user_id,
+            item_id=item_id
+        )
+
+        if not item:
+            raise HTTPException(status_code=404, detail="Item not found")
+
+        # Create ZIP file in memory
+        zip_buffer = io.BytesIO()
+
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            # Create safe filename
+            safe_title = "".join(c if c.isalnum() or c in (' ', '.', '_', '-') else '_' for c in item.title)
+
+            # Add item content
+            content_filename = f"{safe_title}.txt"
+            zip_file.writestr(content_filename, item.content or "")
+
+            # Add item metadata
+            metadata = {
+                "id": str(item.id),
+                "title": item.title,
+                "content_type": item.content_type,
+                "source_url": item.source_url,
+                "created_at": item.created_at.isoformat() if item.created_at else None,
+                "updated_at": item.updated_at.isoformat() if item.updated_at else None,
+                "processing_status": item.processing_status,
+                "total_chunks": item.total_chunks,
+                "export_date": datetime.utcnow().isoformat()
+            }
+            metadata_filename = f"{safe_title}_metadata.json"
+            zip_file.writestr(metadata_filename, json.dumps(metadata, indent=2))
+
+        # Prepare response
+        zip_buffer.seek(0)
+
+        return StreamingResponse(
+            zip_buffer,
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f"attachment; filename={safe_title}_export.zip"
+            }
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Export failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
+
+@router.get("/{item_id}/download-url")
+async def get_content_download_url(
+    item_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    auth_data: dict = Depends(validate_any_auth),
+    expiration_hours: int = 1
+):
+    """
+    Generate a signed download URL for content stored in cloud storage.
+
+    This endpoint is used when content is stored in GCS/S3/Supabase and users
+    need a temporary authenticated URL to access the file.
+
+    Args:
+        item_id: UUID of the knowledge item
+        expiration_hours: Hours until the signed URL expires (default: 1, max: 24)
+
+    Returns:
+        JSON with signed download URL and expiration time
+    """
+    try:
+        user_id = UUID(auth_data["user_id"])
+
+        # Limit expiration to 24 hours
+        expiration_hours = min(expiration_hours, 24)
+        expiration_seconds = expiration_hours * 3600
+
+        # Get the content item and verify ownership
+        item_stmt = select(KnowledgeItem).where(
+            KnowledgeItem.id == item_id,
+            KnowledgeItem.user_id == user_id
+        )
+        item_result = await db.execute(item_stmt)
+        item = item_result.scalar_one_or_none()
+
+        if not item:
+            raise HTTPException(status_code=404, detail="Content not found")
+
+        # Extract storage_path from metadata
+        storage_path = None
+        if item.item_metadata and isinstance(item.item_metadata, dict):
+            storage_path = item.item_metadata.get("storage_path")
+
+        # If no storage_path in metadata, try extracting from source_url
+        if not storage_path and item.source_url:
+            # Handle gs://bucket/path format
+            if item.source_url.startswith("gs://"):
+                # Extract path after bucket name
+                parts = item.source_url[5:].split("/", 1)
+                if len(parts) > 1:
+                    storage_path = parts[1]
+            # Handle http://storage.googleapis.com/bucket/path format
+            elif "storage.googleapis.com" in item.source_url:
+                parts = item.source_url.split("/")
+                bucket_index = parts.index("storage.googleapis.com") + 1
+                if len(parts) > bucket_index + 1:
+                    storage_path = "/".join(parts[bucket_index + 1:])
+
+        if not storage_path:
+            raise HTTPException(
+                status_code=400,
+                detail="This content is not stored in cloud storage or storage path not found"
+            )
+
+        # Generate signed download URL
+        from app.core.storage import storage_service
+        signed_url = await storage_service.generate_signed_download_url(
+            storage_path,
+            expiration_seconds
+        )
+
+        return {
+            "download_url": signed_url,
+            "expires_in_seconds": expiration_seconds,
+            "storage_path": storage_path
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to generate download URL: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate download URL: {str(e)}"
+        )

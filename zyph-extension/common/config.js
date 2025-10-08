@@ -93,24 +93,26 @@ function getAllEnvironments() {
     return ENVIRONMENTS;
 }
 
+const ZyphConfigApi = {
+    getEnvironmentConfig,
+    getApiBaseUrl,
+    setEnvironment,
+    getAllEnvironments,
+    ENVIRONMENTS
+};
+
 // Export for use in other scripts
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = {
-        getEnvironmentConfig,
-        getApiBaseUrl,
-        setEnvironment,
-        getAllEnvironments,
-        ENVIRONMENTS
-    };
+    module.exports = ZyphConfigApi;
 }
 
-// Make available globally for extension scripts
-if (typeof window !== 'undefined') {
-    window.ZyphConfig = {
-        getEnvironmentConfig,
-        getApiBaseUrl,
-        setEnvironment,
-        getAllEnvironments,
-        ENVIRONMENTS
-    };
+// Make available globally for extension scripts (window, service worker, etc.)
+const globalScope = (typeof globalThis !== 'undefined')
+    ? globalThis
+    : (typeof self !== 'undefined')
+        ? self
+        : (typeof window !== 'undefined' ? window : undefined);
+
+if (globalScope) {
+    globalScope.ZyphConfig = ZyphConfigApi;
 }

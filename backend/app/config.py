@@ -51,15 +51,29 @@ class Settings(BaseSettings):
 
     # Processing
     MAX_CONTENT_SIZE_MB: int = 50
-    CHUNK_SIZE: int = 500
-    CHUNK_OVERLAP: int = 50
+    CHUNK_SIZE: int = 500  # Legacy chunking (characters)
+    CHUNK_OVERLAP: int = 50  # Legacy chunking overlap
     SIMILARITY_THRESHOLD: float = 0.7
-    EMBEDDING_MODEL: str = "text-embedding-ada-002"
+    EMBEDDING_MODEL: str = "text-embedding-3-large"
+    EMBEDDING_DIMENSIONS: int = 1536
+
+    # Smart Chunking (Docling)
+    ENABLE_SMART_CHUNKING: bool = True  # Use Docling's structure-aware chunking when available
+    SMART_CHUNK_MAX_TOKENS: int = 512  # Max tokens per chunk (~500-600 chars with metadata)
+
+    # Document Processing Models
+    PRELOAD_MODELS_ON_STARTUP: bool = True  # Preload Docling and EasyOCR models at startup
+    DOCLING_MODELS_PATH: Optional[str] = None  # Path to Docling models (default: ~/.cache/docling/models)
+    EASYOCR_MODELS_PATH: Optional[str] = None  # Path to EasyOCR models (default: ~/.EasyOCR)
+    OCR_LANGUAGES: str = "en"  # Comma-separated list of languages for OCR (e.g., "en,es,fr")
+    ENABLE_GPU_ACCELERATION: bool = True  # Auto-detect and use GPU if available
 
     # Chat
-    CHAT_MODEL: str = "gpt-4o-mini"  # OpenAI chat model
+    CHAT_MODEL: str = "gpt-5"  # OpenAI chat model
     MAX_CHAT_HISTORY: int = 10
     CHAT_TIMEOUT_SECONDS: int = 60  # Increased for complex RAG responses
+    MAX_CONTEXT_TOKENS: int = 120000  # Max tokens for context (leave 8k for response buffer)
+    AUTO_MAPREDUCE_THRESHOLD: int = 100000  # Auto-route to map-reduce above this token count
 
     # RAG (Retrieval-Augmented Generation)
     RAG_DEFAULT_LIMIT: int = 15  # Default maximum chunks to retrieve

@@ -253,9 +253,8 @@ WITH (m = 16, ef_construction = 64);
 | `content_preview` | TEXT | Chunk text | **RAG context** |
 
 **Vector Dimensions:**
-- OpenAI text-embedding-ada-002: **1536 dimensions**
+- OpenAI text-embedding-3-large (current default): 1536 dimensions requested (supports 3072 with schema update)
 - OpenAI text-embedding-3-small: 1536 (default) or 512
-- OpenAI text-embedding-3-large: 3072 or 1536
 
 **HNSW Index Parameters:**
 - `m = 16`: Max connections per layer (higher = more accurate, slower builds)

@@ -218,6 +218,15 @@ export function UploadDialog({ folderId, onUploadComplete }: UploadDialogProps) 
           );
           successCount++;
 
+          // Emit event for real-time UI update
+          window.dispatchEvent(new CustomEvent('knowledge-item-added', {
+            detail: {
+              folderId,
+              fileName: file.name,
+              title: itemTitle
+            }
+          }));
+
         } catch (error) {
           setUploadProgress(prev =>
             prev.map((p, idx) =>
@@ -290,6 +299,15 @@ export function UploadDialog({ folderId, onUploadComplete }: UploadDialogProps) 
         title: "Created",
         description: "Text note created",
       });
+
+      // Emit event for real-time UI update
+      window.dispatchEvent(new CustomEvent('knowledge-item-added', {
+        detail: {
+          folderId,
+          title: title.trim(),
+          contentType: 'text'
+        }
+      }));
 
       resetForm();
       setOpen(false);

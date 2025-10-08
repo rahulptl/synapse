@@ -3,7 +3,7 @@ fastapi==0.104.1
 uvicorn[standard]==0.24.0
 pydantic>=2.5.0
 pydantic-core>=2.14.5
-pydantic-settings==2.1.0
+pydantic-settings>=2.3.0  # Updated for docling compatibility (was 2.1.0)
 email-validator==2.1.0
 
 # Database
@@ -32,13 +32,21 @@ redis==5.0.1
 # Text processing
 PyMuPDF==1.26.4  # Best PDF library - fast & accurate (fitz)
 pdfplumber==0.11.0  # Fallback for tables/complex layouts
-python-docx==0.8.11
-beautifulsoup4==4.12.2
+python-docx>=1.1.2  # Updated for docling compatibility (was 0.8.11)
+openpyxl>=3.1.0  # Excel preprocessing to extract values instead of formulas
+beautifulsoup4>=4.12.3  # Updated for docling compatibility (was 4.12.2)
 python-magic==0.4.27
 chardet==5.2.0  # Encoding detection for text files
 # OCR for scanned PDFs and images (requires system tesseract: brew install tesseract)
-pytesseract==0.3.13
-pillow==11.3.0  # Required for image processing and OCR
+pytesseract==0.3.13  # Fallback OCR engine
+pillow>=10.0.0  # Required for image processing, OCR, and docling (flexible for compatibility)
+
+# AI-powered document processing
+docling>=2.55.0  # Unified document processing (PDF, DOCX, PPTX, XLSX, HTML)
+docling-core[chunking-openai]>=2.8.0  # Smart chunking with structure-awareness and token limits
+easyocr>=1.7.0  # Advanced OCR engine (80+ languages, GPU support)
+torch>=2.0.0  # Required by EasyOCR for model inference
+tiktoken>=0.5.0  # OpenAI tokenizer for token-aware chunking
 
 # Vector database
 pgvector==0.2.4

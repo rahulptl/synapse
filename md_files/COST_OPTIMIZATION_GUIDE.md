@@ -240,22 +240,18 @@ options:
 ```
 
 ### 4. **Monitor OpenAI API Usage** ✅
-Switched to GPT-4.1-mini for 83% cost savings:
+Currently configured to use GPT-5 for best-in-class quality—remember to monitor spend because this model is premium compared to the GPT-4 family:
 
 ```bash
 # Track usage in OpenAI dashboard:
 # https://platform.openai.com/usage
 
 # Current optimized settings:
-CHAT_MODEL=gpt-4.1-mini  # 83% cheaper than gpt-4o-mini! ✅
+CHAT_MODEL=gpt-5
 MAX_CHAT_HISTORY=10      # Keep for good context
 RATE_LIMIT_PER_MINUTE=60 # Current setting
 
-# GPT-4.1-mini benefits:
-# - Input:  $0.025/1M tokens (vs $0.15 for gpt-4o-mini)
-# - Output: $0.10/1M tokens (vs $0.60 for gpt-4o-mini)
-# - 75% prompt caching discount for repeated context
-# - Nearly half the latency of gpt-4o-mini
+# Tip: If costs grow too quickly, trial lower-cost models such as GPT-4.1-mini or GPT-4o-mini for less demanding flows.
 ```
 
 ---
@@ -274,8 +270,8 @@ RATE_LIMIT_PER_MINUTE=60 # Current setting
 | **TOTAL** | | **~$15.36/month** |
 
 ### **With Typical Usage** (100-500 requests/day):
-- OpenAI API (GPT-4.1-mini): $2-5/month (83% cheaper than gpt-4o-mini!)
-- **Grand Total**: $17-20/month
+- OpenAI API (GPT-5): monitor usage dashboard for up-to-date pricing
+- **Grand Total**: depends on GPT-5 usage volume
 
 ---
 

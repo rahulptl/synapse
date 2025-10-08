@@ -91,7 +91,7 @@ window.Zyph.ContextGenerator = class ContextGenerator {
         const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
         
         const requestBody = {
-            model: 'gpt-4.1',
+            model: 'gpt-5',
             messages: messages,
             max_tokens: 1000,
             temperature: 0.3

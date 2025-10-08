@@ -57,17 +57,24 @@ export default function LandingPage() {
             
             <div className="flex flex-col sm:flex-row gap-6 justify-center">
               {user ? (
-                <Button asChild size="lg" className="text-lg px-10 py-6 bg-gradient-primary hover:shadow-glow transition-all duration-300">
-                  <Link to="/knowledge">Go to Knowledge Base</Link>
-                </Button>
+                <>
+                  <Button asChild size="lg" className="text-lg px-10 py-6 bg-gradient-primary hover:shadow-glow transition-all duration-300">
+                    <Link to="/knowledge">Go to Knowledge Base</Link>
+                  </Button>
+                  <Button asChild size="lg" variant="outline" className="text-lg px-10 py-6 border-primary/30 hover:bg-primary/10 transition-all duration-300">
+                    <Link to="/chat">Go to Chat</Link>
+                  </Button>
+                </>
               ) : (
-                <Button asChild size="lg" className="text-lg px-10 py-6 bg-gradient-primary hover:shadow-glow transition-all duration-300">
-                  <Link to="/auth">Get Started</Link>
-                </Button>
+                <>
+                  <Button asChild size="lg" className="text-lg px-10 py-6 bg-gradient-primary hover:shadow-glow transition-all duration-300">
+                    <Link to="/auth">Get Started</Link>
+                  </Button>
+                  <Button variant="outline" size="lg" className="text-lg px-10 py-6 border-primary/30 hover:bg-primary/10 transition-all duration-300">
+                    Learn More
+                  </Button>
+                </>
               )}
-              <Button variant="outline" size="lg" className="text-lg px-10 py-6 border-primary/30 hover:bg-primary/10 transition-all duration-300">
-                Learn More
-              </Button>
             </div>
           </div>
         </div>
@@ -154,15 +161,22 @@ export default function LandingPage() {
               Start organizing your knowledge today with Zyph's powerful AI-driven platform and unlock your potential
             </p>
             
-            {user ? (
-              <Button asChild size="lg" className="text-xl px-12 py-6 bg-gradient-primary hover:shadow-glow transition-all duration-300">
-                <Link to="/knowledge">Open Knowledge Base</Link>
-              </Button>
-            ) : (
-              <Button asChild size="lg" className="text-xl px-12 py-6 bg-gradient-primary hover:shadow-glow transition-all duration-300">
-                <Link to="/auth">Sign Up Now</Link>
-              </Button>
-            )}
+            <div className="flex flex-col sm:flex-row gap-6 justify-center">
+              {user ? (
+                <>
+                  <Button asChild size="lg" className="text-xl px-12 py-6 bg-gradient-primary hover:shadow-glow transition-all duration-300">
+                    <Link to="/knowledge">Open Knowledge Base</Link>
+                  </Button>
+                  <Button asChild size="lg" variant="outline" className="text-xl px-12 py-6 border-primary/30 hover:bg-primary/10 transition-all duration-300">
+                    <Link to="/chat">Start Chatting</Link>
+                  </Button>
+                </>
+              ) : (
+                <Button asChild size="lg" className="text-xl px-12 py-6 bg-gradient-primary hover:shadow-glow transition-all duration-300">
+                  <Link to="/auth">Sign Up Now</Link>
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </section>

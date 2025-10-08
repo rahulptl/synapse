@@ -32,6 +32,7 @@ from .base import (
 from .factory import DocumentProcessorFactory, factory
 
 # Import all processors (this triggers registration)
+from .docling_processor import DoclingProcessor  # Unified AI-powered processor
 from .text_processor import TextProcessor
 from .html_processor import HTMLProcessor
 from .pdf_processor import PDFProcessor
@@ -48,15 +49,27 @@ def _register_processors():
 
     This function is called automatically when the module is imported.
     Processors are registered in order of preference (more specific first).
+
+    Registration order:
+    1. DoclingProcessor - Unified AI-powered processor (HIGHEST PRIORITY)
+       Handles: PDF, DOCX, PPTX, XLSX, HTML, Markdown (modern formats only)
+    2. ImageProcessor - EasyOCR for images
+    3. Fallback processors - For legacy formats (DOC, PPT, XLS) and edge cases
     """
     processors_to_register = [
-        # Specific formats first
-        PDFProcessor,
-        WordProcessor,
-        ImageProcessor,
-        HTMLProcessor,
+        # AI-powered unified processor (HIGHEST PRIORITY)
+        # This will override old processors for documents
+        DoclingProcessor,
 
-        # Generic text last (fallback)
+        # Image processor with EasyOCR
+        ImageProcessor,
+
+        # Fallback processors (for formats Docling doesn't handle well)
+        PDFProcessor,      # Fallback for simple PDFs
+        WordProcessor,     # Fallback for DOCX
+        HTMLProcessor,     # Fallback for HTML
+
+        # Generic text last (fallback for plain text)
         TextProcessor,
     ]
 
@@ -110,9 +123,10 @@ __all__ = [
     'factory',
 
     # Processors (for direct use if needed)
+    'DoclingProcessor',  # Unified AI-powered processor
+    'ImageProcessor',    # EasyOCR image processor
     'TextProcessor',
     'HTMLProcessor',
     'PDFProcessor',
     'WordProcessor',
-    'ImageProcessor',
 ]
