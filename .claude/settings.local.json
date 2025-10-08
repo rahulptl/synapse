@@ -84,7 +84,8 @@
       "Bash(psql:*)",
       "Bash(lsof:*)",
       "Bash(gcloud secrets versions access:*)",
-      "Bash(gcloud secrets list:*)"
+      "Bash(gcloud secrets list:*)",
+      "WebFetch(domain:docling-project.github.io)"
     ],
     "deny": [],
     "ask": []

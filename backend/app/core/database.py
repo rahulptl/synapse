@@ -69,11 +69,15 @@ engine = create_async_engine(
 
 # Create session maker
 logger.info(f"Database engine created with standard SQLAlchemy pooling (pool_size={settings.DATABASE_POOL_SIZE}, max_overflow={settings.DATABASE_MAX_OVERFLOW})")
-AsyncSessionLocal = async_sessionmaker(
+
+async_session_maker = async_sessionmaker(
     engine,
     class_=AsyncSession,
     expire_on_commit=False
 )
+
+# Legacy alias for backward compatibility
+AsyncSessionLocal = async_session_maker
 
 
 async def init_db() -> None:
@@ -84,15 +88,12 @@ async def init_db() -> None:
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """Dependency to get database session."""
-    async with AsyncSessionLocal() as session:
+    async with async_session_maker() as session:
         try:
             yield session
-        except Exception as e:
-            logger.error(f"Database session error: {e}")
+        except Exception:
             await session.rollback()
             raise
-        finally:
-            await session.close()
 
 
 async def close_db():

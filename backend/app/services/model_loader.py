@@ -2,10 +2,18 @@
 Model loader service for preloading and caching document processing models.
 
 This service handles initialization of:
-- Docling (unified document processing)
-- EasyOCR (image OCR)
+- Docling (unified document processing) - ~2-3 GB models
+- EasyOCR (image OCR) - ~500 MB per language
 
-Models are preloaded at startup to avoid first-request delays.
+LAZY LOADING APPROACH:
+- Models are NOT included in the Docker image (saves ~2.5GB in CI/CD)
+- Models are automatically downloaded on first use
+- First request after deployment takes ~2-3 minutes (one-time download)
+- Subsequent requests use cached models from /app/.cache
+- Models persist in Cloud Run instances (warm starts reuse cache)
+
+For local development, pre-download models using:
+    python backend/scripts/download_models.py --languages en
 """
 import os
 import logging

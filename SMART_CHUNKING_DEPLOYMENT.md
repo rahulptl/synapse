@@ -160,13 +160,15 @@ grep "docling-core" backend/requirements.txt
 | Step | Time | Notes |
 |------|------|-------|
 | Install dependencies | +30-60s | First time only |
-| Download models | +120s | Already in Dockerfile |
+| Download models | 0s | **LAZY LOADING** - models NOT downloaded during build |
 | **Total Additional** | +30-60s | Cached on subsequent builds |
 
-**Model Downloads (already in Dockerfile):**
-- Docling models: Downloaded at build time (line 31)
-- EasyOCR models: Downloaded at build time (line 31)
-- Smart chunking: No additional downloads needed
+**Model Downloads (LAZY LOADING APPROACH):**
+- ✅ Models are NOT downloaded during Docker build (saves ~2.5GB in CI/CD)
+- ✅ Models are automatically downloaded on first use in deployment environment
+- ✅ First document processing request takes ~2-3 minutes (one-time)
+- ✅ Subsequent requests use cached models from `/app/.cache`
+- See `backend/MODELS_README.md` for detailed documentation
 
 ---
 

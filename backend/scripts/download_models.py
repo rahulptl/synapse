@@ -1,19 +1,29 @@
 #!/usr/bin/env python3
 """
-Download all document processing models for offline deployment.
+Download all document processing models for local development and testing.
 
-This script downloads models during Docker build to avoid:
-1. Runtime downloads on first request
-2. Network dependencies in production
-3. Slow cold starts
+⚠️  NOTE: This script is for LOCAL DEVELOPMENT ONLY
+    Production deployments use lazy loading - models are automatically
+    downloaded on first use to avoid CI/CD disk space issues.
+
+This script is useful for:
+1. Local development - pre-download models to avoid first-request delays
+2. Testing - ensure models work before deployment
+3. Offline development - download models once, work offline
 
 Models downloaded:
-- Docling: Layout analysis, table extraction, OCR models
-- EasyOCR: English language pack (configurable)
+- Docling: Layout analysis, table extraction, OCR models (~2-3 GB)
+- EasyOCR: Configurable language packs (~500 MB per language)
 
 Usage:
+    # Download all models with English OCR
     python download_models.py
+
+    # Download with multiple languages
     python download_models.py --languages en,es,fr
+
+    # Verify existing models without downloading
+    python download_models.py --verify-only
 """
 import os
 import sys
