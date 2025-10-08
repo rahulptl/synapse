@@ -70,7 +70,7 @@ steps:
 substitutions:
   _ENV: 'dev'
   _REGION: 'asia-south1'
-  _BACKEND_URL: 'https://synapse-backend-dev-11007620517.asia-south1.run.app'
+  _BACKEND_URL: 'https://synapse-backend-dev-7e75zz4oja-el.a.run.app'
 
 options:
   logging: CLOUD_LOGGING_ONLY

@@ -371,7 +371,7 @@ export function UploadDialog({ folderId, onUploadComplete }: UploadDialogProps) 
               </TabsTrigger>
               <TabsTrigger value="text" className="data-[state=active]:bg-purple-600">
                 <FileEdit className="h-4 w-4 mr-2" />
-                Create Text
+                Write Note
               </TabsTrigger>
             </TabsList>
 

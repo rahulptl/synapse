@@ -16,8 +16,8 @@ class Settings(BaseSettings):
 
     # Database
     DATABASE_URL: str  # Changed from PostgresDsn to support Cloud SQL Unix socket format
-    DATABASE_POOL_SIZE: int = 5
-    DATABASE_MAX_OVERFLOW: int = 10
+    DATABASE_POOL_SIZE: int = 10  # Standard SQLAlchemy connection pool size
+    DATABASE_MAX_OVERFLOW: int = 20  # Allow up to 30 connections total (pool_size + max_overflow)
 
     # Security
     SECRET_KEY: str
@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     # Processing
     MAX_CONTENT_SIZE_MB: int = 50
     CHUNK_SIZE: int = 500  # Legacy chunking (characters)
-    CHUNK_OVERLAP: int = 50  # Legacy chunking overlap
+    CHUNK_OVERLAP: int = 0  # Legacy chunking overlap - disabled since hybrid search handles boundaries
     SIMILARITY_THRESHOLD: float = 0.7
     EMBEDDING_MODEL: str = "text-embedding-3-large"
     EMBEDDING_DIMENSIONS: int = 1536
@@ -74,6 +74,7 @@ class Settings(BaseSettings):
     CHAT_TIMEOUT_SECONDS: int = 60  # Increased for complex RAG responses
     MAX_CONTEXT_TOKENS: int = 120000  # Max tokens for context (leave 8k for response buffer)
     AUTO_MAPREDUCE_THRESHOLD: int = 100000  # Auto-route to map-reduce above this token count
+    ENABLE_INTENT_CLASSIFICATION: bool = False  # Disable for faster responses (skip extra LLM call)
 
     # RAG (Retrieval-Augmented Generation)
     RAG_DEFAULT_LIMIT: int = 15  # Default maximum chunks to retrieve

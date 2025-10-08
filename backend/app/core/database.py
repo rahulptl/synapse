@@ -8,7 +8,6 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy.pool import NullPool
 import logging
 import re
 
@@ -51,37 +50,25 @@ def get_database_url() -> str:
     return base_url
 
 
-# Create async engine with pgbouncer compatibility
-# Use NullPool to disable connection pooling since pgbouncer handles pooling
+# Create async engine with standard SQLAlchemy connection pooling
 engine = create_async_engine(
     get_database_url(),
-    poolclass=NullPool,  # Disable SQLAlchemy pooling, let pgbouncer handle it
+    pool_size=settings.DATABASE_POOL_SIZE,  # Default: 5
+    max_overflow=settings.DATABASE_MAX_OVERFLOW,  # Default: 10
+    pool_pre_ping=True,  # Verify connections before using them
+    pool_recycle=3600,  # Recycle connections after 1 hour
     echo=False,  # Disable detailed SQL logging
     future=True,
-    # Disable compiled cache to avoid prepared statement issues
-    execution_options={
-        "compiled_cache": {},
-        # Force simple queries, no prepared statements
-        "no_parameters": True,
-        "render_postcompile": True,
-    },
-    # Critical: asyncpg connection parameters for pgbouncer compatibility
     connect_args={
         "server_settings": {
             "application_name": "synapse_backend",
         },
         "command_timeout": 60,
-        # Disable prepared statements completely
-        "statement_cache_size": 0,
-        "prepared_statement_cache_size": 0,
-        # Force asyncpg to use simple query protocol
-        "prepared_statement_name_func": lambda: None,
     }
 )
 
 # Create session maker
-
-logger.info("Database engine created with pgbouncer compatibility settings")
+logger.info(f"Database engine created with standard SQLAlchemy pooling (pool_size={settings.DATABASE_POOL_SIZE}, max_overflow={settings.DATABASE_MAX_OVERFLOW})")
 AsyncSessionLocal = async_sessionmaker(
     engine,
     class_=AsyncSession,
@@ -91,29 +78,21 @@ AsyncSessionLocal = async_sessionmaker(
 
 async def init_db() -> None:
     """Initialize database tables."""
-    # Skip database initialization during startup to avoid pgbouncer issues
-    # The database connection will be tested when the first request is made
-    logger.info("Skipping database initialization during startup")
-    logger.info("Database connection will be tested on first request")
+    logger.info("Database initialization complete")
+    logger.info("Using standard SQLAlchemy connection pooling")
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """Dependency to get database session."""
-    try:
-        async with AsyncSessionLocal() as session:
-            try:
-                yield session
-            except Exception as e:
-                logger.error(f"Database session error: {e}")
-                await session.rollback()
-                raise
-            finally:
-                await session.close()
-    except Exception as e:
-        logger.error(f"Database connection error: {e}")
-        if "DuplicatePreparedStatementError" in str(e):
-            logger.error("pgbouncer prepared statement issue detected - check connection pool configuration")
-        raise
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+        except Exception as e:
+            logger.error(f"Database session error: {e}")
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
 
 
 async def close_db():

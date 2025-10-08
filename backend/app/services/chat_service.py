@@ -171,15 +171,26 @@ class ChatService:
                     folder_item_counts[folder_id] = result.scalar() or 0
 
             # INTENT CLASSIFICATION
-            intent_data = await intent_classifier.classify_intent(
-                user_query=chat_request.message,
-                folder_ids=folder_ids,
-                folder_item_counts=folder_item_counts
-            )
+            if settings.ENABLE_INTENT_CLASSIFICATION:
+                intent_data = await intent_classifier.classify_intent(
+                    user_query=chat_request.message,
+                    folder_ids=folder_ids,
+                    folder_item_counts=folder_item_counts
+                )
 
-            logger.info(f"Intent: {intent_data['intent_type']}, "
-                       f"Async: {intent_data['requires_async']}, "
-                       f"Est. time: {intent_data['estimated_time_seconds']}s")
+                logger.info(f"Intent: {intent_data['intent_type']}, "
+                           f"Async: {intent_data['requires_async']}, "
+                           f"Est. time: {intent_data['estimated_time_seconds']}s")
+            else:
+                # Skip intent classification for faster responses
+                intent_data = {
+                    "intent_type": "quick_qa",
+                    "retrieval_strategy": "top_k",
+                    "requires_async": False,
+                    "estimated_items": 10,
+                    "estimated_time_seconds": 1.0
+                }
+                logger.info("Intent classification disabled - using default quick_qa strategy")
 
             # ROUTING: Quick vs Long-running
             if intent_data["requires_async"] and folder_ids and background_tasks:
