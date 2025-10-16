@@ -104,7 +104,9 @@
       "Bash(gcloud sql databases:*)",
       "Bash(gcloud sql export sql:*)",
       "Bash(gcloud sql users list:*)",
-      "Bash(gcloud builds log:*)"
+      "Bash(gcloud builds log:*)",
+      "Bash(/dev/null)",
+      "Bash(sips:*)"
     ],
     "deny": [],
     "ask": []

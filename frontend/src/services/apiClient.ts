@@ -99,8 +99,9 @@ class ApiClient {
     });
   }
 
-  async deleteFolder(folderId: string, auth: { userId: string; accessToken: string }) {
-    return this.request(`/folders/${folderId}`, {
+  async deleteFolder(folderId: string, auth: { userId: string; accessToken: string }, force: boolean = false) {
+    const url = force ? `/folders/${folderId}?force=true` : `/folders/${folderId}`;
+    return this.request(url, {
       method: 'DELETE',
       auth,
     });
@@ -212,6 +213,16 @@ class ApiClient {
       params.set('folder_ids', folderIds.join(','));
     }
     return this.request(`/content/search-titles?${params.toString()}`, { auth });
+  }
+
+  // Get unified suggestions for both folders and files
+  async getUnifiedSuggestions(
+    query: string,
+    auth: { userId: string; accessToken: string },
+    limit: number = 20
+  ) {
+    const params = new URLSearchParams({ q: query, limit: limit.toString() });
+    return this.request(`/content/unified-suggestions?${params.toString()}`, { auth });
   }
 
   // File operations

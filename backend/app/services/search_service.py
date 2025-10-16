@@ -409,30 +409,50 @@ class SearchService:
         matched_items = []
 
         for file_ref in file_references:
-            # Build query for potential matches
-            stmt = select(KnowledgeItem).where(
+            normalized_ref = file_ref.strip().lower()
+
+            # Base query scoped to user
+            base_stmt = select(KnowledgeItem).where(
                 KnowledgeItem.user_id == user_id
             )
 
-            # Filter by folders if specified
             if folder_ids:
-                stmt = stmt.where(KnowledgeItem.folder_id.in_(folder_ids))
+                base_stmt = base_stmt.where(KnowledgeItem.folder_id.in_(folder_ids))
 
-            # Use database LIKE for initial filtering (more efficient)
-            stmt = stmt.where(
+            # First try exact title or filename matches
+            exact_stmt = base_stmt.where(
                 or_(
-                    KnowledgeItem.title.ilike(f"%{file_ref}%"),
-                    func.jsonb_extract_path_text(
-                        KnowledgeItem.item_metadata, 'original_filename'
-                    ).ilike(f"%{file_ref}%")
+                    func.lower(KnowledgeItem.title) == normalized_ref,
+                    func.lower(
+                        func.jsonb_extract_path_text(
+                            KnowledgeItem.item_metadata, 'original_filename'
+                        )
+                    ) == normalized_ref
                 )
-            ).limit(10)  # Limit to top candidates
+            )
 
-            result = await db.execute(stmt)
-            items = result.scalars().all()
+            exact_result = await db.execute(exact_stmt)
+            exact_items = exact_result.scalars().all()
+
+            if exact_items:
+                candidate_items = exact_items
+            else:
+                # Fallback to partial match search
+                like_pattern = f"%{file_ref}%"
+                fuzzy_stmt = base_stmt.where(
+                    or_(
+                        KnowledgeItem.title.ilike(like_pattern),
+                        func.jsonb_extract_path_text(
+                            KnowledgeItem.item_metadata, 'original_filename'
+                        ).ilike(like_pattern)
+                    )
+                ).limit(10)
+
+                fuzzy_result = await db.execute(fuzzy_stmt)
+                candidate_items = fuzzy_result.scalars().all()
 
             # Calculate fuzzy similarity for each candidate
-            for item in items:
+            for item in candidate_items:
                 # Check similarity against title
                 title_score = self._calculate_fuzzy_similarity(file_ref, item.title)
 

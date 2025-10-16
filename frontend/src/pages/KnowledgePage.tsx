@@ -139,19 +139,43 @@ export default function KnowledgePage() {
     }
   };
 
-  const deleteFolder = async (folderId: string) => {
+  const deleteFolder = async (folderId: string, force: boolean = false) => {
     try {
       const auth = getAuthData();
-      await apiClient.deleteFolder(folderId, auth);
 
+      // Optimistic update: remove folder from UI immediately
+      const originalFolders = [...folders];
+      const removeFolderFromTree = (folderList: any[], targetId: string): any[] => {
+        return folderList.filter(folder => {
+          if (folder.id === targetId) return false;
+          if (folder.children) {
+            folder.children = removeFolderFromTree(folder.children, targetId);
+          }
+          return true;
+        });
+      };
+
+      setFolders(prevFolders => removeFolderFromTree(prevFolders, folderId));
+
+      // Clear selection if deleted folder was selected
       if (selectedFolder === folderId) {
         setSelectedFolder(null);
       }
 
+      try {
+        await apiClient.deleteFolder(folderId, auth, force);
+      } catch (apiError: any) {
+        // Revert optimistic update on failure
+        setFolders(originalFolders);
+        throw apiError;
+      }
+
+      // Refresh folders to get updated state
       await loadFolders();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to delete folder:', error);
-      throw new Error('Failed to delete folder');
+      // Re-throw the error so the FolderTree component can handle it
+      throw error;
     }
   };
 

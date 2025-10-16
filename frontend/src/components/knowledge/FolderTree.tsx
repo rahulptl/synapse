@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronDown, ChevronRight, Folder, FolderOpen, Plus, Trash2, Edit2, MessageSquare, Download } from 'lucide-react';
+import { ChevronDown, ChevronRight, Folder, FolderOpen, Plus, Trash2, Edit2, MessageSquare, Download, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { apiClient } from '@/services/apiClient';
@@ -21,7 +22,7 @@ interface FolderTreeProps {
   selectedFolder: string | null;
   onFolderSelect: (folderId: string) => void;
   onCreateFolder: (parentId: string | null, name: string) => Promise<void>;
-  onDeleteFolder: (folderId: string) => Promise<void>;
+  onDeleteFolder: (folderId: string, force?: boolean) => Promise<void>;
   onRenameFolder?: (folderId: string, newName: string) => Promise<void>;
 }
 
@@ -30,7 +31,7 @@ interface FolderNodeProps {
   selectedFolder: string | null;
   onFolderSelect: (folderId: string) => void;
   onCreateFolder: (parentId: string | null, name: string) => Promise<void>;
-  onDeleteFolder: (folderId: string) => Promise<void>;
+  onDeleteFolder: (folderId: string, force?: boolean) => Promise<void>;
   onRenameFolder?: (folderId: string, newName: string) => Promise<void>;
 }
 
@@ -50,6 +51,8 @@ function FolderNode({
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(folder.name);
   const [isHovered, setIsHovered] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const { toast } = useToast();
 
   const hasChildren = folder.children && folder.children.length > 0;
@@ -72,15 +75,40 @@ function FolderNode({
     }
   };
 
-  const handleDeleteFolder = async () => {
+  const handleDeleteFolder = async (force: boolean = false) => {
+    setShowDeleteDialog(false);
+    setIsDeleting(true);
+
     try {
-      await onDeleteFolder(folder.id);
-    } catch (error) {
+      await onDeleteFolder(folder.id, force);
       toast({
-        title: "Error",
-        description: "Failed to delete folder",
-        variant: "destructive",
+        title: "Success",
+        description: "Folder deleted successfully",
       });
+    } catch (error: any) {
+      console.error('Delete folder error:', error);
+
+      // Check if it's a "folder has content" error
+      if (error.message && (
+        error.message.includes('contains subfolders') ||
+        error.message.includes('contains content')
+      )) {
+        // Show force delete confirmation
+        setShowDeleteDialog(true);
+        toast({
+          title: "Folder not empty",
+          description: "Folder contains subfolders or content. Choose to force delete.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Error",
+          description: error.message || "Failed to delete folder",
+          variant: "destructive",
+        });
+      }
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -259,10 +287,17 @@ function FolderNode({
               className="h-7 w-7 p-0 hover:bg-red-500/20 hover:text-red-400 transition-colors text-gray-400"
               onClick={(e) => {
                 e.stopPropagation();
-                handleDeleteFolder();
+                setShowDeleteDialog(true);
               }}
+              disabled={isDeleting}
             >
-              <Trash2 className="h-3.5 w-3.5" />
+              {isDeleting ? (
+                <div className="animate-spin">
+                  <Trash2 className="h-3.5 w-3.5" />
+                </div>
+              ) : (
+                <Trash2 className="h-3.5 w-3.5" />
+              )}
             </Button>
           </div>
         )}
@@ -301,6 +336,40 @@ function FolderNode({
           ))}
         </div>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent className="bg-slate-900 border border-red-500/30">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-white flex items-center space-x-2">
+              <AlertTriangle className="h-5 w-5 text-red-500" />
+              <span>Delete Folder</span>
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-gray-300">
+              Are you sure you want to delete the folder "{folder.name}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="bg-white/10 text-white hover:bg-white/20 border-white/20">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => handleDeleteFolder(false)}
+              className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white"
+            >
+              Delete
+            </AlertDialogAction>
+            {hasChildren && (
+              <AlertDialogAction
+                onClick={() => handleDeleteFolder(true)}
+                className="bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white"
+              >
+                Force Delete
+              </AlertDialogAction>
+            )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

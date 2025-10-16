@@ -65,30 +65,117 @@ class ChatService:
                 db, conversation, chat_request.message
             )
 
-            # Parse references from message
+            # Extract folder and file IDs from context_items if provided
+            folder_ids: List[UUID] = []
+            matched_file_ids: List[UUID] = []
+            matched_folders = []
+            recognized_files = []
+
+            if chat_request.context_items:
+                # Process context items from frontend
+                for item in chat_request.context_items:
+                    try:
+                        item_uuid = UUID(item.id)
+                        if item.type == 'folder':
+                            folder_ids.append(item_uuid)
+                            # Get folder info for response
+                            folder_stmt = select(Folder).where(Folder.id == item_uuid, Folder.user_id == user_id)
+                            folder_result = await db.execute(folder_stmt)
+                            folder = folder_result.scalar_one_or_none()
+                            if folder:
+                                matched_folders.append({"id": folder.id, "name": folder.name})
+                        elif item.type == 'file':
+                            matched_file_ids.append(item_uuid)
+                            # Get file info for response
+                            item_stmt = select(KnowledgeItem).where(KnowledgeItem.id == item_uuid, KnowledgeItem.user_id == user_id)
+                            item_result = await db.execute(item_stmt)
+                            knowledge_item = item_result.scalar_one_or_none()
+                            if knowledge_item:
+                                recognized_files.append({
+                                    "id": str(knowledge_item.id),
+                                    "title": knowledge_item.title,
+                                    "folder_id": str(knowledge_item.folder_id) if knowledge_item.folder_id else None,
+                                })
+                    except (ValueError, Exception) as e:
+                        logger.warning(f"Failed to process context item {item.id}: {e}")
+                        continue
+
+            # Also parse references from message text for backwards compatibility
             ref_info = search_service.parse_all_references_from_message(chat_request.message)
             hashtags = ref_info["hashtags"]
             file_refs = ref_info["file_refs"]
             cleaned_message = ref_info["cleaned_message"]
 
-            # Get folder mappings
-            matched_folders = await search_service.get_folder_ids_by_names(db, hashtags, user_id)
-            folder_ids = [folder["id"] for folder in matched_folders if folder.get("id")]
+            # If no context_items provided, fall back to parsing from message
+            if not chat_request.context_items:
+                # Get folder mappings from hashtags
+                matched_folders_from_text = await search_service.get_folder_ids_by_names(db, hashtags, user_id)
+                folder_ids.extend([folder["id"] for folder in matched_folders_from_text if folder.get("id")])
+                matched_folders.extend(matched_folders_from_text)
 
-            # Calculate unrecognized hashtags
+                # Match file references
+                matched_files = await search_service.match_filenames(
+                    db=db,
+                    file_references=file_refs,
+                    folder_ids=folder_ids or None,
+                    user_id=user_id
+                )
+
+                matched_references_lower = set()
+                recognized_files_map: Dict[str, Dict[str, Any]] = {}
+                seen_file_ids = set()
+
+                for match in matched_files:
+                    file_id = match["id"]
+                    reference = match["reference"]
+
+                    if file_id not in seen_file_ids:
+                        matched_file_ids.append(file_id)
+                        seen_file_ids.add(file_id)
+
+                    matched_references_lower.add(reference.lower())
+
+                    file_id_str = str(file_id)
+                    existing_entry = recognized_files_map.get(file_id_str)
+                    if not existing_entry or match["match_score"] > existing_entry["match_score"]:
+                        recognized_files_map[file_id_str] = {
+                            "id": file_id_str,
+                            "title": match["title"],
+                            "folder_id": str(match["folder_id"]) if match.get("folder_id") else None,
+                            "reference": reference,
+                            "match_score": match["match_score"],
+                            "matched_field": match["matched_field"]
+                        }
+
+                recognized_files.extend(list(recognized_files_map.values()))
+
+            # Remove duplicates from folder_ids and matched_file_ids
+            folder_ids = list(set(folder_ids))
+            matched_file_ids = list(set(matched_file_ids))
+
+            # Calculate unrecognized items for backwards compatibility
             recognized_folder_names = {f["name"].lower() for f in matched_folders}
             unrecognized_hashtags = [tag for tag in hashtags if tag.lower() not in recognized_folder_names]
+            unrecognized_file_refs = []  # Not applicable when using context_items
 
             # Get user's vector store
             vector_store_id = await self._get_user_vector_store(db, user_id)
             if not vector_store_id:
                 return self._create_simple_response(conversation.id, "No vector store found. Please upload some content first.")
 
-            # Build OpenAI attribute filter for folder filtering
-            attribute_filter = self._build_attribute_filter(folder_ids) if folder_ids else None
+            # Build OpenAI attribute filter for folder and file filtering
+            search_filters = self._build_search_filters(
+                folder_ids=folder_ids,
+                item_ids=matched_file_ids
+            )
 
             # Build system instructions
-            instructions = self._build_instructions(hashtags, matched_folders)
+            instructions = self._build_instructions(
+                hashtags=hashtags,
+                matched_folders=matched_folders,
+                recognized_files=recognized_files,
+                unrecognized_file_refs=unrecognized_file_refs
+            )
 
             # Get previous response ID for conversation continuity
             previous_response_id = conversation.last_response_id if conversation else None
@@ -101,7 +188,7 @@ class ChatService:
                 previous_response_id=previous_response_id,  # Enable conversation continuity
                 max_num_results=20,
                 temperature=0.7,
-                attribute_filter=attribute_filter  # Apply folder filtering via OpenAI metadata
+                filters=search_filters  # Apply folder/file filtering via OpenAI metadata
             )
 
             # Extract response content and citations
@@ -135,7 +222,11 @@ class ChatService:
                     "detected_hashtags": hashtags,
                     "recognized_folders": matched_folders,
                     "unrecognized_hashtags": unrecognized_hashtags,
-                    "folder_filtered": folder_ids is not None,
+                    "detected_file_refs": file_refs,
+                    "recognized_files": recognized_files,
+                    "unrecognized_file_refs": unrecognized_file_refs,
+                    "folder_filtered": bool(folder_ids),
+                    "file_filtered": bool(matched_file_ids),
                     "processing_strategy": "openai_responses"
                 }
             )
@@ -152,31 +243,74 @@ class ChatService:
         result = await db.execute(stmt)
         return result.scalar_one_or_none()
 
-    def _build_attribute_filter(self, folder_ids: List[UUID]) -> Dict[str, Any]:
-        """Build OpenAI attribute filter for folder-based filtering.
-
-        Args:
-            folder_ids: List of folder UUIDs to filter by
-
-        Returns:
-            OpenAI attribute filter dictionary
+    def _build_search_filters(
+        self,
+        folder_ids: Optional[List[UUID]] = None,
+        item_ids: Optional[List[UUID]] = None
+    ) -> Optional[Dict[str, Any]]:
         """
-        # If single folder, use simple equality filter
-        if len(folder_ids) == 1:
-            return {
-                "type": "eq",
-                "key": "folder_id",
-                "value": str(folder_ids[0])
-            }
+        Build OpenAI file search filters combining folder and file constraints with OR logic.
 
-        # If multiple folders, use 'in' filter
+        When both folders and files are specified, we want to search for content that is EITHER:
+        - In one of the specified folders, OR
+        - One of the specified files
+
+        This allows users to reference multiple folders and files in a single query.
+        """
+        or_filters: List[Dict[str, Any]] = []
+
+        # Add folder filter
+        if folder_ids:
+            unique_folder_ids = list({str(fid) for fid in folder_ids})
+            if len(unique_folder_ids) == 1:
+                or_filters.append({
+                    "type": "eq",
+                    "key": "folder_id",
+                    "value": unique_folder_ids[0]
+                })
+            else:
+                or_filters.append({
+                    "type": "in",
+                    "key": "folder_id",
+                    "value": unique_folder_ids
+                })
+
+        # Add item filter
+        if item_ids:
+            unique_item_ids = list({str(iid) for iid in item_ids})
+            if len(unique_item_ids) == 1:
+                or_filters.append({
+                    "type": "eq",
+                    "key": "knowledge_item_id",
+                    "value": unique_item_ids[0]
+                })
+            else:
+                or_filters.append({
+                    "type": "in",
+                    "key": "knowledge_item_id",
+                    "value": unique_item_ids
+                })
+
+        if not or_filters:
+            return None
+
+        # If only one filter, return it directly
+        if len(or_filters) == 1:
+            return or_filters[0]
+
+        # Combine with OR logic when we have both folders and files
         return {
-            "type": "in",
-            "key": "folder_id",
-            "value": [str(fid) for fid in folder_ids]
+            "type": "or",
+            "filters": or_filters
         }
 
-    def _build_instructions(self, hashtags: List[str], matched_folders: List[Dict[str, Any]]) -> str:
+    def _build_instructions(
+        self,
+        hashtags: List[str],
+        matched_folders: List[Dict[str, Any]],
+        recognized_files: List[Dict[str, Any]],
+        unrecognized_file_refs: List[str]
+    ) -> str:
         """Build system instructions for OpenAI Responses API."""
         instructions = "You are a helpful assistant with access to the user's personal knowledge base."
 
@@ -188,11 +322,28 @@ class ChatService:
                 "Focus your answer on content from these specific folders."
             )
 
-        instructions += (
-            " Answer based primarily on the provided context documents. "
-            "Cite sources naturally in your response. Be conversational and helpful. "
-            "If the context is insufficient, clearly state your limitations."
-        )
+        if recognized_files:
+            file_names = [f["title"] for f in recognized_files]
+            instructions += (
+                f" You have been provided with access to the following specific files from the user's knowledge base: {', '.join(file_names)}. "
+                "These files have been retrieved and are available in your context. "
+                "Answer the user's question using the content from these files. "
+                "Cite the sources naturally in your response."
+            )
+
+        if unrecognized_file_refs:
+            instructions += (
+                f" The user mentioned files ({', '.join(unrecognized_file_refs)}), but they were not matched directly. "
+                "If you cannot source information from them, acknowledge the limitation."
+            )
+
+        if not recognized_files:
+            # Only add this generic instruction if no specific files were referenced
+            instructions += (
+                " Answer based primarily on the provided context documents. "
+                "Cite sources naturally in your response. Be conversational and helpful. "
+                "If the context is insufficient, clearly state your limitations."
+            )
 
         return instructions
 

@@ -159,6 +159,7 @@ async def update_folder(
 @router.delete("/{folder_id}")
 async def delete_folder(
     folder_id: UUID = Path(...),
+    force: bool = False,
     db: AsyncSession = Depends(get_db),
     auth_data: dict = Depends(validate_any_auth)
 ):
@@ -173,7 +174,8 @@ async def delete_folder(
         success = await folder_service.delete_folder(
             db=db,
             user_id=user_id,
-            folder_id=folder_id
+            folder_id=folder_id,
+            force=force
         )
 
         if not success:
@@ -181,8 +183,9 @@ async def delete_folder(
 
         return {
             "success": True,
-            "message": "Folder deleted successfully",
-            "deleted_id": str(folder_id)
+            "message": f"Folder deleted successfully{' (force deleted)' if force else ''}",
+            "deleted_id": str(folder_id),
+            "force_deleted": force
         }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

@@ -226,10 +226,17 @@ class ChatMessage(BaseSchema):
     content: str
 
 
+class ContextItem(BaseSchema):
+    """Context item for chat (folder or file)."""
+    id: str  # UUID as string
+    type: str  # 'folder' or 'file'
+
+
 class ChatRequest(BaseSchema):
     message: str
     conversation_id: Optional[UUID] = None
     user_id: UUID
+    context_items: Optional[List[ContextItem]] = None  # New field for folders/files with types
 
 
 class ChatResponse(BaseSchema):

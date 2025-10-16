@@ -60,7 +60,7 @@ class ResponsesService(OpenAIBaseService):
         previous_response_id: Optional[str] = None,
         max_num_results: int = 20,
         temperature: float = 0.7,
-        attribute_filter: Optional[Dict[str, Any]] = None,
+        filters: Optional[Dict[str, Any]] = None,
     ) -> Response:
         """Create a response with both file search and web search enabled.
 
@@ -74,7 +74,7 @@ class ResponsesService(OpenAIBaseService):
             previous_response_id: Previous response ID for conversation continuity
             max_num_results: Maximum number of file search results (1-50)
             temperature: Sampling temperature (0.0 to 2.0, default 0.7). Note: Ignored for reasoning models (o1, gpt-5)
-            attribute_filter: OpenAI attribute filter for narrowing search results
+            filters: OpenAI file search filters for narrowing search results
 
         Returns:
             The Response object with both search capabilities
@@ -93,8 +93,8 @@ class ResponsesService(OpenAIBaseService):
         }
 
         # Add attribute filter if provided
-        if attribute_filter:
-            file_search_tool["attribute_filter"] = attribute_filter
+        if filters:
+            file_search_tool["filters"] = filters
 
         tools = [
             file_search_tool,

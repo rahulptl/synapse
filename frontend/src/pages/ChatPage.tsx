@@ -42,9 +42,20 @@ interface ChatSource {
 
 interface HashtagInfo {
   detected_hashtags: string[];
+  detected_file_refs?: string[];
   recognized_folders: Array<{ id: string; name: string }>;
+  recognized_files?: Array<{
+    id: string;
+    title: string;
+    folder_id?: string | null;
+    reference: string;
+    match_score: number;
+    matched_field: string;
+  }>;
   unrecognized_hashtags: string[];
+  unrecognized_file_refs?: string[];
   folder_filtered: boolean;
+  file_filtered?: boolean;
 }
 
 export default function ChatPage() {
@@ -97,14 +108,26 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [conversationDrafts, setConversationDrafts] = useState<Record<string, string>>({});
   const [hashtagInfo, setHashtagInfo] = useState<HashtagInfo | null>(null);
   const [userFolders, setUserFolders] = useState<Array<{ id: string; name: string }>>([]);
   const [showAutocomplete, setShowAutocomplete] = useState(false);
-  const [autocompleteType, setAutocompleteType] = useState<'folder' | 'file' | null>(null);
+  const [autocompleteType, setAutocompleteType] = useState<'unified' | null>(null);
   const [autocompleteQuery, setAutocompleteQuery] = useState('');
   const [selectedAutocompleteIndex, setSelectedAutocompleteIndex] = useState(0);
   const [cursorPosition, setCursorPosition] = useState(0);
-  const [fileAutocompleteSuggestions, setFileAutocompleteSuggestions] = useState<Array<{ id: string; title: string; folder_name: string; content_type: string }>>([]);
+  const [unifiedSuggestions, setUnifiedSuggestions] = useState<Array<{
+    id: string;
+    name: string;
+    type: 'folder' | 'file';
+    depth: number;
+    match_score: number;
+    content_type?: string;
+    folder_id?: string;
+    folder_name?: string;
+    path?: string;
+    has_children?: boolean;
+  }>>([]);
   const [selectedSource, setSelectedSource] = useState<any | null>(null);
   const [showSourceDialog, setShowSourceDialog] = useState(false);
   const [conversationToDelete, setConversationToDelete] = useState<string | null>(null);
@@ -157,33 +180,27 @@ export default function ChatPage() {
     </div>
   );
 
-  // Parse hashtags from input message
-  const parseHashtags = (message: string) => {
-    const hashtagRegex = /#([\w\-_]+)/g;
-    const hashtags: string[] = [];
+  // Track selected context items (folders and files) with their types and IDs
+  const [selectedContextItems, setSelectedContextItems] = useState<Array<{
+    id: string;
+    name: string;
+    type: 'folder' | 'file';
+  }>>([]);
+
+  // Parse @ references from input message (now for both folders and files)
+  const parseAtRefs = (message: string) => {
+    // Handle both quoted names (@"About Me") and unquoted (@About)
+    const atRefRegex = /@"([^"]+)"|@(\S+)/g;
+    const atRefs: string[] = [];
     let match: RegExpExecArray | null;
 
-    while ((match = hashtagRegex.exec(message)) !== null) {
-      hashtags.push(match[1]);
+    while ((match = atRefRegex.exec(message)) !== null) {
+      // Use group 1 for quoted names, group 2 for unquoted
+      const refName = match[1] || match[2];
+      atRefs.push(refName);
     }
 
-    return hashtags;
-  };
-
-  // Parse @ file references from input message
-  const parseFileRefs = (message: string) => {
-    // Handle both quoted filenames (@"About Me") and unquoted (@About)
-    const fileRefRegex = /@"([^"]+)"|@(\S+)/g;
-    const fileRefs: string[] = [];
-    let match: RegExpExecArray | null;
-
-    while ((match = fileRefRegex.exec(message)) !== null) {
-      // Use group 1 for quoted filenames, group 2 for unquoted
-      const fileName = match[1] || match[2];
-      fileRefs.push(fileName);
-    }
-
-    return fileRefs;
+    return atRefs;
   };
 
   // Render message with highlighted hashtags
@@ -262,7 +279,7 @@ export default function ChatPage() {
       .map((msg) => {
         const roleLabel =
           msg.role === 'assistant'
-            ? 'Synapse AI'
+            ? 'Assistant'
             : msg.role === 'system'
               ? 'System'
               : 'You';
@@ -323,13 +340,42 @@ export default function ChatPage() {
     }
   }, [location.state]);
 
+  // Save current draft before switching conversations
+  const saveCurrentDraft = (conversationId: string | null) => {
+    if (conversationId && inputMessage.trim()) {
+      setConversationDrafts(prev => ({
+        ...prev,
+        [conversationId]: inputMessage.trim()
+      }));
+    }
+  };
+
+  // Restore draft for a specific conversation
+  const restoreDraft = (conversationId: string | null) => {
+    if (conversationId && conversationDrafts[conversationId]) {
+      setInputMessage(conversationDrafts[conversationId]);
+    } else {
+      setInputMessage('');
+    }
+  };
+
   useEffect(() => {
     if (selectedConversation) {
       loadMessages(selectedConversation);
+      restoreDraft(selectedConversation);
     } else {
       setMessages([]);
+      setInputMessage('');
     }
-  }, [selectedConversation]);
+  }, [selectedConversation, conversationDrafts]);
+
+  // Create a wrapper for setSelectedConversation that saves draft first
+  const handleConversationSelect = (conversationId: string | null) => {
+    if (selectedConversation !== conversationId) {
+      saveCurrentDraft(selectedConversation);
+      setSelectedConversation(conversationId);
+    }
+  };
 
   useEffect(() => {
     scrollToBottom();
@@ -420,7 +466,7 @@ export default function ChatPage() {
 
       const newConversation = response.data || response;
       setConversations(prev => [newConversation, ...prev]);
-      setSelectedConversation(newConversation.id);
+      handleConversationSelect(newConversation.id);
     } catch (error) {
       toast({
         title: "Error",
@@ -449,7 +495,7 @@ export default function ChatPage() {
 
       // If this was the selected conversation, clear selection
       if (selectedConversation === conversationToDelete) {
-        setSelectedConversation(null);
+        handleConversationSelect(null);
         setMessages([]);
       }
 
@@ -472,9 +518,21 @@ export default function ChatPage() {
     if (!inputMessage.trim() || !user || !accessToken) return;
 
     const userMessage = inputMessage.trim();
+    // Clear current draft since message is being sent
+    if (selectedConversation) {
+      setConversationDrafts(prev => {
+        const newDrafts = { ...prev };
+        delete newDrafts[selectedConversation];
+        return newDrafts;
+      });
+    }
     setInputMessage('');
     setIsLoading(true);
     setHashtagInfo(null);
+
+    // Clear selected context items after sending
+    const contextItemsCopy = [...selectedContextItems];
+    setSelectedContextItems([]);
 
     // Add user message immediately to UI with temporary ID
     const tempUserMessage: Message = {
@@ -486,12 +544,19 @@ export default function ChatPage() {
     setMessages(prev => [...prev, tempUserMessage]);
 
     try {
+      // Prepare context items for backend
+      const contextItems = contextItemsCopy.map(item => ({
+        id: item.id,
+        type: item.type
+      }));
+
       // Use the backend RAG chat endpoint
       const response = await apiClient.chatWithRag(
         {
           message: userMessage,
           conversation_id: selectedConversation,
-          user_id: user.id
+          user_id: user.id,
+          context_items: contextItems  // Pass folder and file IDs with types
         },
         {
           userId: user.id,
@@ -503,7 +568,7 @@ export default function ChatPage() {
 
       // If this was a new conversation, update the selected conversation
       if (!selectedConversation && convId) {
-        setSelectedConversation(convId);
+        handleConversationSelect(convId);
         await loadConversations(); // Refresh conversations list
       }
 
@@ -547,7 +612,7 @@ export default function ChatPage() {
     }
   };
 
-  // Handle input changes and detect hashtag/@ autocomplete
+  // Handle input changes and detect unified @ autocomplete
   const handleInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     const cursorPos = e.target.selectionStart || 0;
@@ -555,106 +620,87 @@ export default function ChatPage() {
     setInputMessage(value);
     setCursorPosition(cursorPos);
 
-    // Check if we're typing a hashtag (folder) or @ (file)
+    // Sync selected context items with message content
+    // Parse current @ references in message
+    const currentRefs = parseAtRefs(value);
+
+    // Remove items that are no longer in the message
+    setSelectedContextItems(prev => {
+      return prev.filter(item => {
+        // Check if this item's name is still referenced in the message
+        const isStillReferenced = currentRefs.some(ref => {
+          // Handle quoted and unquoted names
+          const normalizedRef = ref.toLowerCase();
+          const normalizedName = item.name.toLowerCase();
+          return normalizedRef === normalizedName;
+        });
+        return isStillReferenced;
+      });
+    });
+
+    // Check if we're typing @ for unified suggestions
     const textBeforeCursor = value.substring(0, cursorPos);
-    const hashtagMatch = textBeforeCursor.match(/#(\w*)$/);
-    const fileMatch = textBeforeCursor.match(/@(\S*)$/);
+    const atMatch = textBeforeCursor.match(/@(\S*)$/);
 
-    if (hashtagMatch && userFolders.length > 0) {
-      // Folder autocomplete
-      const query = hashtagMatch[1].toLowerCase();
+    if (atMatch && user && accessToken) {
+      // Unified autocomplete for both folders and files
+      const query = atMatch[1];
       setAutocompleteQuery(query);
-      setAutocompleteType('folder');
-      setShowAutocomplete(true);
-      setSelectedAutocompleteIndex(0);
-    } else if (fileMatch && user && accessToken) {
-      // File autocomplete
-      const query = fileMatch[1];
-      setAutocompleteQuery(query);
-      setAutocompleteType('file');
+      setAutocompleteType('unified');
       setShowAutocomplete(true);
       setSelectedAutocompleteIndex(0);
 
-      // Fetch file suggestions (only if query has at least 1 character)
-      if (query.length >= 1) {
-        try {
-          const auth = { userId: user.id, accessToken };
-          // Get folder IDs from current hashtags to narrow search
-          const hashtags = parseHashtags(value);
-          const folderIds = hashtags
-            .map(tag => userFolders.find(f => f.name.toLowerCase() === tag.toLowerCase())?.id)
-            .filter(Boolean) as string[];
-
-          const suggestions = await apiClient.searchContentTitles(
-            query,
-            folderIds.length > 0 ? folderIds : null,
-            10,
-            auth
-          );
-          setFileAutocompleteSuggestions(suggestions);
-        } catch (error) {
-          console.error('Failed to fetch file suggestions:', error);
-          // Set empty suggestions on error
-          setFileAutocompleteSuggestions([]);
-        }
-      } else {
-        // Clear suggestions when query is empty
-        setFileAutocompleteSuggestions([]);
+      try {
+        const auth = { userId: user.id, accessToken };
+        const suggestions = await apiClient.getUnifiedSuggestions(
+          query,
+          auth,
+          25
+        );
+        console.log('Unified suggestions received:', suggestions);
+        setUnifiedSuggestions(suggestions as typeof unifiedSuggestions);
+      } catch (error) {
+        console.error('Failed to fetch unified suggestions:', error);
+        setUnifiedSuggestions([]);
       }
     } else {
       setShowAutocomplete(false);
       setAutocompleteType(null);
+      setUnifiedSuggestions([]);
     }
   };
 
-  // Get filtered folder suggestions
-  const getFilteredFolders = () => {
-    if (!autocompleteQuery) return userFolders;
-    return userFolders.filter(folder =>
-      folder.name.toLowerCase().includes(autocompleteQuery.toLowerCase())
-    );
-  };
-
-  // Handle autocomplete selection (both folders and files)
-  const selectAutocompleteFolder = (folderName: string) => {
+  // Handle unified autocomplete selection
+  const selectUnifiedSuggestion = (suggestion: typeof unifiedSuggestions[0]) => {
     const textBeforeCursor = inputMessage.substring(0, cursorPosition);
     const textAfterCursor = inputMessage.substring(cursorPosition);
-    const hashtagMatch = textBeforeCursor.match(/#(\w*)$/);
+    const atMatch = textBeforeCursor.match(/@(\S*)$/);
 
-    if (hashtagMatch) {
-      const beforeHashtag = textBeforeCursor.substring(0, hashtagMatch.index);
-      const newText = beforeHashtag + '#' + folderName + ' ' + textAfterCursor;
+    if (atMatch) {
+      const beforeAt = textBeforeCursor.substring(0, atMatch.index);
+      // If name contains spaces, wrap it in quotes
+      const formattedName = suggestion.name.includes(' ') ? `"${suggestion.name}"` : suggestion.name;
+      const newText = beforeAt + '@' + formattedName + ' ' + textAfterCursor;
       setInputMessage(newText);
       setShowAutocomplete(false);
+
+      // Add to selected context items
+      setSelectedContextItems(prev => {
+        // Check if already selected
+        const exists = prev.some(item => item.id === suggestion.id && item.type === suggestion.type);
+        if (exists) return prev;
+
+        return [...prev, {
+          id: suggestion.id,
+          name: suggestion.name,
+          type: suggestion.type
+        }];
+      });
 
       // Focus back to input and set cursor position
       setTimeout(() => {
         if (inputRef.current) {
-          const newCursorPos = beforeHashtag.length + folderName.length + 2; // +2 for # and space
-          inputRef.current.focus();
-          inputRef.current.setSelectionRange(newCursorPos, newCursorPos);
-        }
-      }, 0);
-    }
-  };
-
-  const selectAutocompleteFile = (fileName: string) => {
-    const textBeforeCursor = inputMessage.substring(0, cursorPosition);
-    const textAfterCursor = inputMessage.substring(cursorPosition);
-    const fileMatch = textBeforeCursor.match(/@(\S*)$/);
-
-    if (fileMatch) {
-      const beforeAt = textBeforeCursor.substring(0, fileMatch.index);
-      // If filename contains spaces, wrap it in quotes
-      const formattedFileName = fileName.includes(' ') ? `"${fileName}"` : fileName;
-      const newText = beforeAt + '@' + formattedFileName + ' ' + textAfterCursor;
-      setInputMessage(newText);
-      setShowAutocomplete(false);
-
-      // Focus back to input and set cursor position
-      setTimeout(() => {
-        if (inputRef.current) {
-          const newCursorPos = beforeAt.length + formattedFileName.length + 2; // +2 for @ and space
+          const newCursorPos = beforeAt.length + formattedName.length + 2; // +2 for @ and space
           inputRef.current.focus();
           inputRef.current.setSelectionRange(newCursorPos, newCursorPos);
         }
@@ -663,27 +709,45 @@ export default function ChatPage() {
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (showAutocomplete) {
-      const items = autocompleteType === 'folder' ? getFilteredFolders() : fileAutocompleteSuggestions;
+    if (showAutocomplete && autocompleteType === 'unified') {
+      const items = unifiedSuggestions;
 
       if (e.key === 'ArrowDown') {
         e.preventDefault();
-        setSelectedAutocompleteIndex(prev =>
-          prev < items.length - 1 ? prev + 1 : 0
-        );
+        const newIndex = selectedAutocompleteIndex < items.length - 1 ? selectedAutocompleteIndex + 1 : 0;
+        setSelectedAutocompleteIndex(newIndex);
+
+        // Scroll the selected item into view
+        setTimeout(() => {
+          const suggestionElements = document.querySelectorAll('[data-suggestion-index]');
+          const selectedElement = suggestionElements[newIndex] as HTMLElement;
+          if (selectedElement) {
+            selectedElement.scrollIntoView({
+              behavior: 'smooth',
+              block: 'nearest'
+            });
+          }
+        }, 0);
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
-        setSelectedAutocompleteIndex(prev =>
-          prev > 0 ? prev - 1 : items.length - 1
-        );
+        const newIndex = selectedAutocompleteIndex > 0 ? selectedAutocompleteIndex - 1 : items.length - 1;
+        setSelectedAutocompleteIndex(newIndex);
+
+        // Scroll the selected item into view
+        setTimeout(() => {
+          const suggestionElements = document.querySelectorAll('[data-suggestion-index]');
+          const selectedElement = suggestionElements[newIndex] as HTMLElement;
+          if (selectedElement) {
+            selectedElement.scrollIntoView({
+              behavior: 'smooth',
+              block: 'nearest'
+            });
+          }
+        }, 0);
       } else if (e.key === 'Tab' || e.key === 'Enter') {
         e.preventDefault();
         if (items[selectedAutocompleteIndex]) {
-          if (autocompleteType === 'folder') {
-            selectAutocompleteFolder((items[selectedAutocompleteIndex] as any).name);
-          } else if (autocompleteType === 'file') {
-            selectAutocompleteFile((items[selectedAutocompleteIndex] as any).title);
-          }
+          selectUnifiedSuggestion(items[selectedAutocompleteIndex]);
         }
       } else if (e.key === 'Escape') {
         setShowAutocomplete(false);
@@ -947,7 +1011,7 @@ export default function ChatPage() {
                   ? 'bg-gradient-to-r from-blue-500/25 to-purple-500/25 shadow-xl ring-2 ring-blue-400/40 scale-[1.02]'
                   : 'bg-white/8 hover:bg-white/12 shadow-lg hover:shadow-xl'
               }`}
-              onClick={() => setSelectedConversation(conversation.id)}
+              onClick={() => handleConversationSelect(conversation.id)}
             >
               <CardContent className="p-5">
                 <div className="flex items-start space-x-3">
@@ -1052,7 +1116,15 @@ export default function ChatPage() {
                                   : message.content
                                 }
                               </div>
-                              <div className="flex items-center justify-end mt-3 pt-2 border-t border-white/20">
+                              <div className="flex items-center justify-between mt-3 pt-2 border-t border-white/20">
+                                <button
+                                  onClick={() => initiateSaveMessage(message)}
+                                  className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center space-x-1.5 text-xs text-blue-400 hover:text-blue-300 bg-blue-900/30 hover:bg-blue-900/50 px-2.5 py-1.5 rounded-lg"
+                                  title="Save to Memory"
+                                >
+                                  <Bookmark className="h-3.5 w-3.5" />
+                                  <span className="font-medium">Save</span>
+                                </button>
                                 <p className="text-xs opacity-90 font-medium">
                                   {new Date(message.created_at).toLocaleTimeString([], {
                                     hour: '2-digit',
@@ -1094,10 +1166,6 @@ export default function ChatPage() {
                                     <Bookmark className="h-3.5 w-3.5" />
                                     <span className="font-medium">Save</span>
                                   </button>
-                                </div>
-                                <div className="flex items-center space-x-2 text-xs text-emerald-300 bg-emerald-900/40 px-3 py-1.5 rounded-full backdrop-blur-sm">
-                                  <Sparkles className="h-3.5 w-3.5" />
-                                  <span className="font-semibold">Synapse AI</span>
                                 </div>
                               </div>
                                                           </div>
@@ -1177,119 +1245,100 @@ export default function ChatPage() {
             {/* Input Area */}
             <div className="border-t border-white/10 bg-slate-900/80 backdrop-blur-xl p-4 md:p-6">
               <div className="max-w-4xl mx-auto space-y-4 md:space-y-6">
-                {/* Autocomplete Dropdown - Above input */}
-                {showAutocomplete && (
-                  <div className="bg-white/10 backdrop-blur-2xl border border-white/20 rounded-2xl shadow-2xl max-h-48 overflow-y-auto animate-fade-in">
-                    {autocompleteType === 'folder' ? (
-                      // Folder Autocomplete
-                      getFilteredFolders().length > 0 ? (
-                        getFilteredFolders().map((folder, index) => (
-                          <div
-                            key={folder.id}
-                            className={`px-4 py-3 cursor-pointer flex items-center space-x-3 transition-all duration-200 ${
-                              index === selectedAutocompleteIndex
-                                ? 'bg-blue-500/30 text-blue-200 scale-[1.02]'
-                                : 'hover:bg-white/10 text-gray-300 hover:text-white'
-                            }`}
-                            onClick={() => selectAutocompleteFolder(folder.name)}
-                          >
-                            <Folder className="h-4 w-4 text-blue-400" />
-                            <span className="text-sm font-medium">{folder.name.charAt(0).toUpperCase() + folder.name.slice(1)}</span>
-                          </div>
-                        ))
-                      ) : (
-                        <div className="px-4 py-3 text-sm text-gray-400">
-                          {autocompleteQuery
-                            ? `No folders found matching "${autocompleteQuery}"`
-                            : userFolders.length === 0
-                              ? "No folders available"
-                              : "Loading folders..."
-                          }
-                        </div>
-                      )
-                    ) : (
-                      // File Autocomplete
-                      fileAutocompleteSuggestions.length > 0 ? (
-                        fileAutocompleteSuggestions.map((file, index) => (
-                          <div
-                            key={file.id}
-                            className={`px-4 py-3 cursor-pointer flex items-center justify-between space-x-3 transition-all duration-200 ${
-                              index === selectedAutocompleteIndex
-                                ? 'bg-purple-500/30 text-purple-200 scale-[1.02]'
-                                : 'hover:bg-white/10 text-gray-300 hover:text-white'
-                            }`}
-                            onClick={() => selectAutocompleteFile(file.title)}
-                          >
-                            <div className="flex items-center space-x-3 min-w-0 flex-1">
-                              <FileText className="h-4 w-4 text-purple-400 flex-shrink-0" />
-                              <div className="min-w-0 flex-1">
-                                <div className="text-sm font-medium truncate">{file.title}</div>
-                                <div className="text-xs text-gray-400 truncate">
-                                  <Folder className="h-3 w-3 inline mr-1" />
-                                  {file.folder_name}
+                {/* Unified Autocomplete Dropdown - Above input */}
+                {showAutocomplete && autocompleteType === 'unified' && (
+                  <div className="bg-white/10 backdrop-blur-2xl border border-white/20 rounded-2xl shadow-2xl max-h-64 overflow-y-auto animate-fade-in">
+                    {unifiedSuggestions.length > 0 ? (
+                      unifiedSuggestions.map((suggestion, index) => (
+                        <div
+                          key={`${suggestion.type}-${suggestion.id}`}
+                          data-suggestion-index={index}
+                          className={`px-4 py-3 cursor-pointer flex items-center transition-all duration-200 ${
+                            index === selectedAutocompleteIndex
+                              ? 'bg-gradient-to-r from-blue-500/30 to-purple-500/30 text-blue-200 scale-[1.02]'
+                              : 'hover:bg-white/10 text-gray-300 hover:text-white'
+                          }`}
+                          style={{ paddingLeft: `${12 + suggestion.depth * 20}px` }}
+                          onClick={() => selectUnifiedSuggestion(suggestion)}
+                        >
+                          {suggestion.type === 'folder' ? (
+                            <>
+                              <div className="flex items-center space-x-3 min-w-0 flex-1">
+                                <Folder className={`h-4 w-4 flex-shrink-0 ${suggestion.has_children ? 'text-blue-400' : 'text-blue-300'}`} />
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-sm font-medium">{suggestion.name}</div>
+                                  {suggestion.path && (
+                                    <div className="text-xs text-gray-400 truncate">{suggestion.path}</div>
+                                  )}
                                 </div>
+                                {suggestion.has_children && (
+                                  <div className="text-xs text-gray-400">
+                                    <span className="inline-block w-4 h-4 text-center">▶</span>
+                                  </div>
+                                )}
                               </div>
-                            </div>
-                            <Badge variant="outline" className="text-xs flex-shrink-0">
-                              {file.content_type}
-                            </Badge>
-                          </div>
-                        ))
-                      ) : (
-                        <div className="px-4 py-3 text-sm text-gray-400">
-                          {autocompleteQuery
-                            ? `No files found matching "${autocompleteQuery}"`
-                            : "Start typing to search files..."
-                          }
+                            </>
+                          ) : (
+                            <>
+                              <div className="flex items-center space-x-3 min-w-0 flex-1">
+                                <FileText className="h-4 w-4 text-purple-400 flex-shrink-0" />
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-sm font-medium truncate">{suggestion.name}</div>
+                                  <div className="text-xs text-gray-400 truncate">
+                                    in {suggestion.folder_name}
+                                  </div>
+                                </div>
+                                {suggestion.content_type && (
+                                  <Badge variant="outline" className="text-xs flex-shrink-0">
+                                    {suggestion.content_type.split('/')[0] || 'file'}
+                                  </Badge>
+                                )}
+                              </div>
+                            </>
+                          )}
                         </div>
-                      )
+                      ))
+                    ) : (
+                      <div className="px-4 py-3 text-sm text-gray-400">
+                        {autocompleteQuery
+                          ? `No items found matching "${autocompleteQuery}"`
+                          : "No folders or files available"
+                        }
+                      </div>
                     )}
 
                     {/* Instructions */}
                     <div className="px-4 py-2 text-xs text-gray-400 border-t border-white/10 bg-black/20 rounded-b-2xl">
-                      ↑↓ Navigate • Tab/Enter Select • Esc Close
+                      ↑↓ Navigate • Tab/Enter Select • Esc Close • Folders and files are shown hierarchically
                     </div>
                   </div>
                 )}
 
-                {/* Hashtag Preview */}
-                {inputMessage && parseHashtags(inputMessage).length > 0 && (
-                  <div className="p-5 bg-gradient-to-r from-blue-500/20 to-purple-500/20 border border-blue-400/40 rounded-2xl animate-fade-in backdrop-blur-xl">
-                    <div className="flex items-center space-x-3 text-sm text-gray-200 mb-3">
-                      <div className="p-1.5 bg-blue-500/30 rounded-lg">
-                        <Folder className="h-4 w-4 text-blue-300" />
-                      </div>
-                      <span className="font-semibold">Filtering by folders:</span>
-                    </div>
-                    <div className="flex flex-wrap gap-3">
-                      {parseHashtags(inputMessage).map((hashtag, index) => (
-                        <Badge
-                          key={index}
-                          className="bg-gradient-to-r from-blue-500/30 to-purple-500/30 text-blue-200 hover:from-blue-500/40 hover:to-purple-500/40 text-sm px-3 py-1 border border-blue-400/30 rounded-full font-semibold"
-                        >
-                          #{hashtag}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* File References Preview */}
-                {inputMessage && parseFileRefs(inputMessage).length > 0 && (
-                  <div className="p-5 bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-400/40 rounded-2xl animate-fade-in backdrop-blur-xl">
+                {/* @ References Preview with Type Indicators */}
+                {selectedContextItems.length > 0 && (
+                  <div className="p-5 bg-gradient-to-r from-purple-500/20 to-blue-500/20 border border-purple-400/40 rounded-2xl animate-fade-in backdrop-blur-xl">
                     <div className="flex items-center space-x-3 text-sm text-gray-200 mb-3">
                       <div className="p-1.5 bg-purple-500/30 rounded-lg">
-                        <FileText className="h-4 w-4 text-purple-300" />
+                        <Search className="h-4 w-4 text-purple-300" />
                       </div>
-                      <span className="font-semibold">Filtering by files:</span>
+                      <span className="font-semibold">Context ({selectedContextItems.length} {selectedContextItems.length === 1 ? 'item' : 'items'}):</span>
                     </div>
                     <div className="flex flex-wrap gap-3">
-                      {parseFileRefs(inputMessage).map((fileRef, index) => (
+                      {selectedContextItems.map((item, index) => (
                         <Badge
                           key={index}
-                          className="bg-gradient-to-r from-purple-500/30 to-pink-500/30 text-purple-200 hover:from-purple-500/40 hover:to-pink-500/40 text-sm px-3 py-1 border border-purple-400/30 rounded-full font-semibold"
+                          className={`${
+                            item.type === 'folder'
+                              ? 'bg-gradient-to-r from-blue-500/30 to-cyan-500/30 text-blue-200 hover:from-blue-500/40 hover:to-cyan-500/40 border-blue-400/30'
+                              : 'bg-gradient-to-r from-purple-500/30 to-pink-500/30 text-purple-200 hover:from-purple-500/40 hover:to-pink-500/40 border-purple-400/30'
+                          } text-sm px-3 py-1 border rounded-full font-semibold flex items-center gap-2`}
                         >
-                          @{fileRef}
+                          {item.type === 'folder' ? (
+                            <Folder className="h-3 w-3" />
+                          ) : (
+                            <FileText className="h-3 w-3" />
+                          )}
+                          @{item.name}
                         </Badge>
                       ))}
                     </div>
@@ -1344,11 +1393,9 @@ export default function ChatPage() {
 
                 {/* Filter Hint */}
                 <div className="flex items-center justify-center space-x-2 text-xs text-blue-200/70">
-                  <span>💡 Pro tip: Use</span>
-                  <code className="bg-blue-900/30 text-blue-300 px-2 py-0.5 rounded font-mono">#folder</code>
-                  <span>or</span>
-                  <code className="bg-purple-900/30 text-purple-300 px-2 py-0.5 rounded font-mono">@"file name"</code>
-                  <span>for filenames with spaces</span>
+                  <span>💡 Use</span>
+                  <code className="bg-purple-900/30 text-purple-300 px-2 py-0.5 rounded font-mono">@</code>
+                  <span>to reference specific files and folders</span>
                 </div>
 
                 {/* AI Disclaimer */}
@@ -1373,7 +1420,7 @@ export default function ChatPage() {
                   Ready to explore your knowledge?
                 </h3>
                 <p className="text-gray-300 max-w-lg mx-auto text-lg leading-relaxed">
-                  Start a conversation with your AI assistant. Use <code className="bg-blue-900/50 text-blue-300 px-2 py-1 rounded-md font-mono text-sm">#folder</code> or <code className="bg-purple-900/50 text-purple-300 px-2 py-1 rounded-md font-mono text-sm">@"file name"</code> to filter your search.
+                  Start a conversation with your AI assistant. Use <code className="bg-purple-900/50 text-purple-300 px-2 py-1 rounded-md font-mono text-sm">@symbol</code> to reference both folders and files, with hierarchical suggestions showing your knowledge base structure.
                 </p>
               </div>
               <div className="flex flex-wrap justify-center gap-3">

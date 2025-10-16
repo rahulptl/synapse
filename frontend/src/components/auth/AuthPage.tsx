@@ -60,7 +60,7 @@ export function AuthPage() {
           <div className="text-3xl font-bold text-primary mb-2">Zyph</div>
           <CardTitle>{isLogin ? 'Sign In' : 'Create Account'}</CardTitle>
           <CardDescription>
-            {isLogin 
+            {isLogin
               ? 'Enter your credentials to access your knowledge base'
               : 'Create an account to start organizing your knowledge'
             }

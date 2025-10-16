@@ -134,9 +134,10 @@ async def create_text_entry(
                     db=db
                 )
 
-                # Add to vector store with attributes
+                # Add to vector store with attributes (including knowledge_item_id for OR filtering)
                 attributes = {
                     "folder_id": str(text_request.folder_id),
+                    "knowledge_item_id": str(knowledge_item.id),
                     "title": text_request.title,
                     "source_type": "text",
                 }
@@ -276,6 +277,141 @@ async def create_content(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail="Failed to create knowledge item")
+
+
+@router.get("/unified-suggestions")
+async def get_unified_suggestions(
+    q: str = Query("", min_length=0, description="Search query"),
+    limit: int = Query(20, ge=1, le=50, description="Max results"),
+    db: AsyncSession = Depends(get_db),
+    auth_data: dict = Depends(validate_any_auth)
+):
+    """
+    Get unified suggestions for both folders and files when user types @ symbol.
+
+    Returns hierarchical structure with folders and their files, properly indented.
+
+    Args:
+        q: Search query (optional, filters results)
+        limit: Maximum number of results (default 20)
+
+    Returns:
+        List of suggestions with type (folder/file), hierarchy info, and match scores
+    """
+    user_id = UUID(auth_data["user_id"])
+
+    try:
+        from app.models.database import KnowledgeItem, Folder
+        from sqlalchemy import select, func
+        from app.services.folder_service import folder_service
+
+        logger.info(f"Getting unified suggestions: q='{q}', user_id={user_id}")
+
+        # Get folder hierarchy
+        folders = await folder_service.get_folder_hierarchy(db=db, user_id=user_id)
+        logger.info(f"Found {len(folders)} top-level folders for user {user_id}")
+
+        suggestions = []
+        order_counter = 0
+        query_lower = q.lower() if q else ""
+
+        # Process folders and their content
+        processed_folder_ids_in_processing = set()
+
+        async def process_folder_hierarchy(folder_list, depth=0):
+            nonlocal suggestions, order_counter
+
+            for folder in folder_list:
+                # Use the folder's actual depth from database, but adjust for current recursion depth
+                actual_depth = folder.get('depth', depth)
+                folder_id = folder['id']
+
+                # CRITICAL FIX: Skip folders that have already been processed
+                if folder_id in processed_folder_ids_in_processing:
+                    logger.warning(f"SKIPPING DUPLICATE FOLDER: {folder['name']} (id: {folder['id']}) - already processed")
+                    continue  # Skip this folder entirely
+
+                processed_folder_ids_in_processing.add(folder_id)
+
+                # Check if folder matches query
+                folder_matches = not q or query_lower in folder['name'].lower()
+
+                if folder_matches:
+                    suggestions.append({
+                        "id": str(folder['id']),  # Convert UUID to string for frontend
+                        "name": folder['name'],
+                        "type": "folder",
+                        "depth": actual_depth,  # Use actual depth from database
+                        "path": folder.get('path', ''),
+                        "match_score": 1.0 if folder['name'].lower() == query_lower else (0.9 if folder['name'].lower().startswith(query_lower) else 0.7),
+                        "has_children": 'children' in folder and len(folder['children']) > 0,
+                        "order": order_counter,
+                    })
+                    order_counter += 1
+
+                # Get files in this folder
+                # Always show files when @ is typed (even if folder doesn't match query)
+                try:
+                    files_stmt = select(KnowledgeItem).where(
+                        KnowledgeItem.user_id == user_id,
+                        KnowledgeItem.folder_id == folder['id'],  # folder['id'] is already a UUID object
+                        KnowledgeItem.status.in_(['completed', 'processing', 'pending'])
+                    )
+
+                    # Add title filter if query provided and folder doesn't match
+                    if q and not folder_matches:
+                        files_stmt = files_stmt.where(KnowledgeItem.title.ilike(f"%{q}%"))
+
+                    files_result = await db.execute(files_stmt)
+                    files = files_result.scalars().all()
+
+                    for file in files:
+                        # Calculate match score for files
+                        title_lower = file.title.lower()
+                        if title_lower == query_lower:
+                            file_match_score = 1.0
+                        elif title_lower.startswith(query_lower):
+                            file_match_score = 0.9
+                        else:
+                            file_match_score = 0.7
+
+                        suggestions.append({
+                            "id": str(file.id),
+                            "name": file.title,
+                            "type": "file",
+                            "content_type": file.content_type,
+                            "folder_id": str(folder['id']),  # Convert UUID to string for frontend
+                            "folder_name": folder['name'],
+                            "depth": actual_depth + 1,  # Files are one level deeper than their folder
+                            "match_score": file_match_score,
+                            "order": order_counter,
+                        })
+                        order_counter += 1
+                except Exception as e:
+                    logger.warning(f"Failed to get files for folder {folder['id']}: {e}")
+
+                # Recursively process children
+                if 'children' in folder and folder['children']:
+                    await process_folder_hierarchy(folder['children'], actual_depth + 1)
+
+        # Process the hierarchy
+        await process_folder_hierarchy(folders)
+
+        # Preserve hierarchical ordering based on traversal order
+        suggestions.sort(key=lambda x: x.get("order", 0))
+
+        # Limit results
+        suggestions = suggestions[:limit]
+
+        # Remove internal ordering metadata before returning
+        for suggestion in suggestions:
+            suggestion.pop("order", None)
+
+        return suggestions
+
+    except Exception as e:
+        logger.error(f"Failed to get unified suggestions: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get unified suggestions")
 
 
 @router.get("/search-titles")
