@@ -188,7 +188,7 @@ function FolderNode({
             />
           ) : (
             <span
-              className={`text-sm cursor-pointer flex-1 min-w-0 font-medium transition-colors truncate ${
+              className={`text-base cursor-pointer flex-1 min-w-0 font-semibold transition-colors truncate ${
                 isSelected ? 'text-white' : 'text-gray-200 group-hover:text-white'
               }`}
               onClick={(e) => {
@@ -202,7 +202,7 @@ function FolderNode({
                 }
               }}
             >
-              {folder.name}
+              {folder.name.charAt(0).toUpperCase() + folder.name.slice(1)}
             </span>
           )}
         </div>
@@ -349,7 +349,7 @@ export function FolderTree({
     <div className="h-full flex flex-col">
       <div className="p-5 border-b border-white/10">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-white">Folders</h3>
+          <h3 className="text-xl font-bold text-white">Folders</h3>
           <Button
             variant="ghost"
             size="sm"

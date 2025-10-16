@@ -111,7 +111,7 @@ export function KnowledgeItemContextMenu({
         >
           <div className="flex items-center space-x-2">
             <Folder className="h-4 w-4" />
-            <span className="text-sm">{folder.name}</span>
+            <span className="text-sm">{folder.name.charAt(0).toUpperCase() + folder.name.slice(1)}</span>
             {folder.id === currentFolderId && (
               <span className="text-xs text-gray-400">(current)</span>
             )}

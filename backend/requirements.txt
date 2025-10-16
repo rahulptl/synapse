@@ -44,9 +44,8 @@ pillow>=10.0.0  # Required for image processing, OCR, and docling (flexible for 
 # AI-powered document processing
 docling>=2.55.0  # Unified document processing (PDF, DOCX, PPTX, XLSX, HTML)
 docling-core[chunking-openai]>=2.8.0  # Smart chunking with structure-awareness and token limits
-easyocr>=1.7.0  # Advanced OCR engine (80+ languages, GPU support)
+easyocr  # Advanced OCR engine (80+ languages, GPU support)
 # torch>=2.0.0  # Installed separately with CPU-only version in Dockerfile
-transformers>=4.37.0  # HuggingFace models needed by Docling's AutoProcessor
 tiktoken>=0.5.0  # OpenAI tokenizer for token-aware chunking
 
 # Vector database
@@ -77,3 +76,4 @@ mypy==1.7.1
 # Documentation (dev only)
 mkdocs==1.5.3
 mkdocs-material==9.4.8
+openai

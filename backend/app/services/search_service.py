@@ -12,7 +12,7 @@ from sqlalchemy import select, and_, or_, func
 from sqlalchemy.orm import selectinload
 import logging
 
-from app.models.database import KnowledgeItem, Folder, Vector
+from app.models.database import KnowledgeItem, Folder, OpenAIFile
 from app.models.schemas import ContentType
 from app.core.embeddings import embedding_service
 
@@ -104,19 +104,17 @@ async def estimate_relevant_chunks(
     Estimate the number of relevant chunks for a query without full similarity calculation.
 
     Uses a fast approximation based on:
-    1. Total vector count in filtered scope
+    1. Total knowledge item count in filtered scope
     2. Folder/item filtering
     3. BM25-style keyword matching as proxy
 
-    Returns estimated number of chunks that would pass relevance threshold.
+    Returns estimated number of items that would pass relevance threshold.
     """
     try:
-        # Build count query
-        stmt = select(func.count(Vector.id)).join(
-            KnowledgeItem, Vector.knowledge_item_id == KnowledgeItem.id
-        ).where(
+        # Build count query for knowledge items
+        stmt = select(func.count(KnowledgeItem.id)).where(
             KnowledgeItem.user_id == user_id,
-            KnowledgeItem.processing_status == "completed"
+            KnowledgeItem.status == "completed"
         )
 
         # Apply filters
@@ -127,18 +125,18 @@ async def estimate_relevant_chunks(
             stmt = stmt.where(KnowledgeItem.id.in_(item_ids))
 
         result = await db.execute(stmt)
-        total_vectors = result.scalar() or 0
+        total_items = result.scalar() or 0
 
-        # If very few vectors, return exact count
-        if total_vectors <= 20:
-            return total_vectors
+        # If very few items, return exact count
+        if total_items <= 20:
+            return total_items
 
         # Estimate relevance ratio based on query specificity
         # More specific queries (longer, more unique terms) = lower ratio
         query_terms = query_text.lower().split()
         unique_terms = len(set(query_terms))
 
-        # Heuristic: 30-60% of vectors are typically relevant
+        # Heuristic: 30-60% of items are typically relevant
         # Specific queries (many unique terms) → 30%
         # General queries (few unique terms) → 60%
         if unique_terms >= 5:
@@ -148,9 +146,9 @@ async def estimate_relevant_chunks(
         else:
             relevance_ratio = 0.6  # General query
 
-        estimated = int(total_vectors * relevance_ratio)
+        estimated = int(total_items * relevance_ratio)
 
-        logger.debug(f"Estimated {estimated} relevant chunks from {total_vectors} total "
+        logger.debug(f"Estimated {estimated} relevant items from {total_items} total "
                     f"(query terms: {unique_terms}, ratio: {relevance_ratio})")
 
         return estimated
@@ -265,8 +263,8 @@ class SearchService:
             - cleaned_message: Message with @ references removed
             - original_message: Original message
         """
-        file_ref_regex = re.compile(r'@([\w\-_\.]+)')  # Matches @filename patterns
-        file_refs = file_ref_regex.findall(message)
+        file_ref_regex = re.compile(r'@"([^"]+)"|@(\S+)')  # Support both quoted and unquoted filenames
+        file_refs = [match[0] or match[1] for match in file_ref_regex.findall(message)]
 
         cleaned_message = file_ref_regex.sub('', message).strip()
         cleaned_message = re.sub(r'\s+', ' ', cleaned_message)
@@ -289,10 +287,10 @@ class SearchService:
             - original_message: Original message
         """
         hashtag_regex = re.compile(r'#([\w\-_\.]+)')
-        file_ref_regex = re.compile(r'@([\w\-_\.]+)')
+        file_ref_regex = re.compile(r'@"([^"]+)"|@(\S+)')
 
         hashtags = hashtag_regex.findall(message)
-        file_refs = file_ref_regex.findall(message)
+        file_refs = [match[0] or match[1] for match in file_ref_regex.findall(message)]
 
         # Remove both types of references
         cleaned_message = hashtag_regex.sub('', message)
@@ -478,81 +476,91 @@ class SearchService:
         retrieval_strategy: str = "top_k"
     ) -> List[Dict[str, Any]]:
         """
-        Perform semantic search using vector embeddings with optional BM25 hybrid ranking.
+        Perform semantic search using OpenAI Vector Stores.
 
         Args:
             item_ids: Optional list of specific knowledge item IDs to search within
         """
         try:
-            # Generate embedding for the search query
-            query_embedding = await embedding_service.generate_embedding(query_text)
-            logger.debug('Generated query embedding for semantic search')
+            # Use OpenAI Vector Store for semantic search
+            from app.services.openai import VectorStoreService
+            from app.models.database import Profile
 
-            # Build the search query
-            stmt = (
-                select(Vector, KnowledgeItem, Folder.name.label('folder_name'))
-                .join(KnowledgeItem, Vector.knowledge_item_id == KnowledgeItem.id)
-                .join(Folder, KnowledgeItem.folder_id == Folder.id)
-                .where(KnowledgeItem.user_id == user_id)
-            )
+            # Get user's vector store
+            profile_stmt = select(Profile.openai_vector_store_id).where(Profile.user_id == user_id)
+            profile_result = await db.execute(profile_stmt)
+            vector_store_id = profile_result.scalar_one_or_none()
 
-            # Apply folder filter if specified
-            if folder_ids and len(folder_ids) > 0:
-                # Ensure folder_ids is a list and contains valid UUIDs
-                valid_folder_ids = [fid for fid in folder_ids if fid is not None]
-                if valid_folder_ids:
-                    stmt = stmt.where(KnowledgeItem.folder_id.in_(valid_folder_ids))
-                    logger.info(f'🔍 Folder filter applied: searching within {len(valid_folder_ids)} folders: {[str(fid) for fid in valid_folder_ids]}')
-
-            # Apply item filter if specified (for #filename references)
-            if item_ids and len(item_ids) > 0:
-                valid_item_ids = [iid for iid in item_ids if iid is not None]
-                if valid_item_ids:
-                    stmt = stmt.where(KnowledgeItem.id.in_(valid_item_ids))
-                    logger.debug(f'Filtering search to {len(valid_item_ids)} specific items')
-
-            # Execute the search query
-            result = await db.execute(stmt)
-            vector_results = result.all()
-
-            if not vector_results:
-                logger.debug('No vector results found')
+            if not vector_store_id:
+                logger.warning(f"No vector store found for user {user_id}")
                 return []
 
-            # Calculate semantic similarities for all results
+            # Search in OpenAI Vector Store
+            vector_store_service = VectorStoreService()
+
+            # Build attributes for filtering
+            attributes = {}
+            if folder_ids:
+                attributes["folder_id"] = [str(fid) for fid in folder_ids]
+
+            # Create search query
+            results = await vector_store_service.search(
+                query=query_text,
+                vector_store_id=vector_store_id,
+                max_num_results=limit,
+                attributes=attributes if attributes else None
+            )
+
+            if not results:
+                logger.debug('No OpenAI vector search results found')
+                return []
+
+            # Convert OpenAI results to knowledge items
             results_with_scores = []
-            for row in vector_results:
-                vector, knowledge_item, folder_name = row
+            for result in results:
+                # Get the knowledge item from OpenAI file
+                stmt = select(KnowledgeItem, Folder.name.label('folder_name')).join(
+                    Folder, KnowledgeItem.folder_id == Folder.id
+                ).join(
+                    OpenAIFile, KnowledgeItem.id == OpenAIFile.knowledge_item_id
+                ).where(
+                    KnowledgeItem.user_id == user_id,
+                    OpenAIFile.openai_file_id == result.file_id
+                )
 
-                if vector.embedding is None or len(vector.embedding) == 0:
-                    continue
+                db_result = await db.execute(stmt)
+                row = db_result.first()
 
-                # Calculate cosine similarity
-                dot_product = sum(a * b for a, b in zip(query_embedding, vector.embedding))
-                magnitude_a = math.sqrt(sum(a * a for a in query_embedding))
-                magnitude_b = math.sqrt(sum(b * b for b in vector.embedding))
-                semantic_score = dot_product / (magnitude_a * magnitude_b) if (magnitude_a * magnitude_b) != 0 else 0
+                if row:
+                    knowledge_item, folder_name = row
 
-                # Convert to native Python float to avoid numpy serialization issues
-                semantic_score = float(semantic_score)
+                    # Load full content if stored externally
+                    content = knowledge_item.content
+                    if knowledge_item.item_metadata and knowledge_item.item_metadata.get('stored_in_storage'):
+                        if knowledge_item.content.startswith('[STORED_IN_STORAGE:'):
+                            storage_path = knowledge_item.content.replace('[STORED_IN_STORAGE:', '').replace(']', '')
+                            try:
+                                from app.core.storage import storage_service
+                                content_bytes = await storage_service.download_content(storage_path)
+                                content = content_bytes.decode('utf-8')
+                            except Exception as e:
+                                logger.error(f"Failed to load stored content: {e}")
+                                # Keep the storage reference as content
 
-                # Use full content from knowledge_item instead of just the preview
-                # This ensures the LLM has complete context to answer questions
-                full_content = knowledge_item.content if knowledge_item.content else vector.content_preview
+                    result_item = {
+                        'id': knowledge_item.id,
+                        'title': knowledge_item.title,
+                        'content': content,
+                        'content_type': knowledge_item.content_type,
+                        'source_url': knowledge_item.source_url,
+                        'folder_name': folder_name,
+                        'similarity': result.score,
+                        'semantic_score': result.score,
+                        'created_at': knowledge_item.created_at.isoformat() if knowledge_item.created_at else None,
+                        'openai_file_id': result.file_id
+                    }
 
-                result_item = {
-                    'id': knowledge_item.id,
-                    'title': knowledge_item.title,
-                    'content': full_content,
-                    'content_type': knowledge_item.content_type,
-                    'source_url': knowledge_item.source_url,
-                    'folder_name': folder_name,
-                    'similarity': semantic_score,
-                    'semantic_score': semantic_score,
-                    'created_at': knowledge_item.created_at.isoformat() if knowledge_item.created_at else None
-                }
-
-                results_with_scores.append(result_item)
+                    results_with_scores.append(result_item)
 
             # Apply BM25 hybrid ranking if enabled
             if use_hybrid_ranking and results_with_scores:
@@ -565,9 +573,6 @@ class SearchService:
             else:
                 # Sort by semantic similarity only
                 results_with_scores.sort(key=lambda x: x['similarity'], reverse=True)
-
-            # Convert any remaining numpy types to Python types
-            results_with_scores = convert_numpy_types(results_with_scores)
 
             # Apply relevance threshold filtering
             from app.config import settings
@@ -597,7 +602,7 @@ class SearchService:
 
             if final_results:
                 strategy_info = f" (strategy: {retrieval_strategy}, limit: {result_limit})"
-                logger.info(f"Retrieved {len(final_results)} documents for query: '{query_text[:50]}{'...' if len(query_text) > 50 else ''}'{strategy_info}")
+                logger.info(f"Retrieved {len(final_results)} documents from OpenAI for query: '{query_text[:50]}{'...' if len(query_text) > 50 else ''}'{strategy_info}")
                 # Log first 5 for brevity
                 for i, result in enumerate(final_results[:5], 1):
                     similarity_score = result.get('hybrid_score', result.get('similarity', 0))
@@ -606,12 +611,12 @@ class SearchService:
                 if len(final_results) > 5:
                     logger.info(f"  ... and {len(final_results) - 5} more results")
             else:
-                logger.info(f"No documents found for query: '{query_text}'")
+                logger.info(f"No documents found in OpenAI vector store for query: '{query_text}'")
 
             return final_results
 
         except Exception as e:
-            logger.error(f"Semantic search failed: {e}")
+            logger.error(f"OpenAI semantic search failed: {e}")
             logger.error(f"Query text: {query_text}")
             logger.error(f"Folder IDs: {folder_ids}")
             logger.error(f"User ID: {user_id}")

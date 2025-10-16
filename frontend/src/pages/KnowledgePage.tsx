@@ -6,30 +6,13 @@ import { FolderTree } from '@/components/knowledge/FolderTree';
 import { ItemList } from '@/components/knowledge/ItemList';
 import { ItemDetails } from '@/components/knowledge/ItemDetails';
 import { UploadDialog } from '@/components/knowledge/UploadDialog';
+import { StorageUsageIndicator } from '@/components/knowledge/StorageUsageIndicator';
 import { useToast } from '@/hooks/use-toast';
+import { KnowledgeItem, Folder } from '@/types/knowledge';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
-import { Menu, FolderOpen, MessageSquare } from 'lucide-react';
+import { Menu, FolderOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
-interface Folder {
-  id: string;
-  name: string;
-  path: string;
-  depth: number;
-  parent_id: string | null;
-  children?: Folder[];
-}
-
-interface KnowledgeItem {
-  id: string;
-  title: string;
-  content: string;
-  content_type: string;
-  source_url?: string;
-  metadata?: any;
-  created_at: string;
-  updated_at: string;
-}
 
 export default function KnowledgePage() {
   const { user, accessToken, loading } = useAuth();
@@ -302,28 +285,25 @@ export default function KnowledgePage() {
     }
   };
 
-  // Function to start conversation with selected folder
-  const startConversation = () => {
-    if (!selectedFolder) return;
-
-    const folder = folders.find(f => f.id === selectedFolder);
-    if (!folder) return;
-
+  
+  // Function to start conversation with a specific item
+  const chatWithItem = (itemId: string, itemTitle: string) => {
     navigate('/chat', {
       state: {
-        preSelectedFolder: {
-          id: folder.id,
-          name: folder.name,
-          type: 'folder'
+        preSelectedItem: {
+          id: itemId,
+          title: itemTitle,
+          type: 'item'
         }
       }
     });
 
     toast({
       title: "Opening Chat",
-      description: `Starting conversation about "${folder.name}"`,
+      description: `Starting conversation about "${itemTitle}"`,
     });
   };
+
 
   if (loading) {
     return (
@@ -365,24 +345,40 @@ export default function KnowledgePage() {
   return (
     <div className="flex h-[calc(100vh-4rem)] bg-gradient-to-br from-slate-950 via-gray-900 to-slate-800">
       {/* Desktop Sidebar - Folder Tree */}
-      <div className="hidden md:block w-64 lg:w-80 flex-shrink-0 bg-white/5 backdrop-blur-2xl border-r border-white/10 shadow-2xl">
-        <FolderTree
-          folders={folders}
-          selectedFolder={selectedFolder}
-          onFolderSelect={setSelectedFolder}
-          onCreateFolder={createFolder}
-          onDeleteFolder={deleteFolder}
-          onRenameFolder={renameFolder}
-        />
+      <div className="hidden md:block w-72 lg:w-96 flex-shrink-0 bg-white/5 backdrop-blur-2xl border-r border-white/10 shadow-2xl">
+        <div className="h-full flex flex-col">
+          {/* Storage Usage Indicator */}
+          <div className="p-4 border-b border-white/10">
+            <StorageUsageIndicator />
+          </div>
+
+          {/* Folder Tree */}
+          <div className="flex-1 overflow-hidden">
+            <FolderTree
+              folders={folders}
+              selectedFolder={selectedFolder}
+              onFolderSelect={setSelectedFolder}
+              onCreateFolder={createFolder}
+              onDeleteFolder={deleteFolder}
+              onRenameFolder={renameFolder}
+            />
+          </div>
+        </div>
       </div>
 
       {/* Mobile Drawer - Folder Tree */}
       <Sheet open={isMobileDrawerOpen} onOpenChange={setIsMobileDrawerOpen}>
-        <SheetContent side="left" className="w-80 p-0 bg-gradient-to-br from-slate-950 via-gray-900 to-slate-800 border-r border-white/10">
+        <SheetContent side="left" className="w-96 p-0 bg-gradient-to-br from-slate-950 via-gray-900 to-slate-800 border-r border-white/10">
           <SheetHeader className="p-5 border-b border-white/10">
             <SheetTitle className="text-white">Folders</SheetTitle>
           </SheetHeader>
-          <div className="h-[calc(100%-5rem)] overflow-hidden">
+
+          {/* Storage Usage for Mobile */}
+          <div className="p-4 border-b border-white/10">
+            <StorageUsageIndicator />
+          </div>
+
+          <div className="h-[calc(100%-9rem)] overflow-hidden">
             <FolderTree
               folders={folders}
               selectedFolder={selectedFolder}
@@ -414,15 +410,6 @@ export default function KnowledgePage() {
                 </span>
               </Button>
               <div className="flex items-center gap-2">
-                <Button
-                  onClick={startConversation}
-                  size="sm"
-                  variant="ghost"
-                  className="h-9 px-3 text-blue-400 hover:bg-blue-500/10 hover:text-blue-300"
-                  title="Start conversation with this folder"
-                >
-                  <MessageSquare className="h-4 w-4" />
-                </Button>
                 <UploadDialog
                   folderId={selectedFolder}
                   onUploadComplete={() => loadFolderItems(selectedFolder)}
@@ -437,27 +424,11 @@ export default function KnowledgePage() {
                 selectedItem ? 'hidden lg:flex lg:flex-col' : 'flex flex-col'
               }`}>
                 {/* Desktop Header */}
-                <div className="hidden md:flex p-4 border-b border-white/10 items-center justify-between">
-                  <div>
-                    <h3 className="text-lg font-semibold text-white">Items</h3>
-                    <p className="text-sm text-gray-400">{folderItems.length} item{folderItems.length !== 1 ? 's' : ''}</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      onClick={startConversation}
-                      size="sm"
-                      variant="ghost"
-                      className="h-9 px-3 text-blue-400 hover:bg-blue-500/10 hover:text-blue-300"
-                      title="Start conversation with this folder"
-                    >
-                      <MessageSquare className="h-4 w-4 mr-2" />
-                      <span className="text-sm font-medium">Chat</span>
-                    </Button>
-                    <UploadDialog
-                      folderId={selectedFolder}
-                      onUploadComplete={() => loadFolderItems(selectedFolder)}
-                    />
-                  </div>
+                <div className="hidden md:flex px-4 py-3 border-b border-white/10 items-center justify-center">
+                  <UploadDialog
+                    folderId={selectedFolder}
+                    onUploadComplete={() => loadFolderItems(selectedFolder)}
+                  />
                 </div>
                 <ItemList
                   items={folderItems}
@@ -469,6 +440,7 @@ export default function KnowledgePage() {
                   onReprocessItem={reprocessItem}
                   onRenameItem={renameItem}
                   onMoveItem={moveItem}
+                  onChatWithItem={chatWithItem}
                 />
               </div>
 
@@ -480,6 +452,7 @@ export default function KnowledgePage() {
                   item={selectedItemData}
                   onDeleteItem={deleteItem}
                   onBack={() => setSelectedItem(null)}
+                  folderName={getSelectedFolderName()}
                 />
               </div>
             </div>
@@ -508,7 +481,7 @@ export default function KnowledgePage() {
               </div>
               <div className="space-y-4">
                 <h3 className="text-2xl font-bold bg-gradient-to-r from-blue-400 via-emerald-400 to-indigo-400 bg-clip-text text-transparent">
-                  Welcome to your Knowledge Base
+                  Welcome to your Memory
                 </h3>
                 <p className="text-gray-300 max-w-lg mx-auto text-lg leading-relaxed">
                   {folders.length === 0 ? (

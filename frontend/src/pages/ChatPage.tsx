@@ -13,8 +13,6 @@ import { Send, MessageSquare, Plus, Folder, Bot, Search, Brain, Sparkles, Extern
 import { useToast } from '@/hooks/use-toast';
 import { apiClient } from '@/services/apiClient';
 import { FolderSelectorDialog } from '@/components/chat/FolderSelectorDialog';
-import { UploadDialog } from '@/components/knowledge/UploadDialog';
-
 interface Message {
   id: string;
   role: string;
@@ -53,7 +51,7 @@ export default function ChatPage() {
   const { user, loading, accessToken } = useAuth();
   const location = useLocation();
 
-  // Add custom CSS animations
+  // Add custom CSS animations and chat tail styles
   useEffect(() => {
     const style = document.createElement('style');
     style.textContent = `
@@ -85,7 +83,8 @@ export default function ChatPage() {
       .float-animation {
         animation: float 6s ease-in-out infinite;
       }
-    `;
+
+        `;
     document.head.appendChild(style);
     return () => {
       if (document.head.contains(style)) {
@@ -106,29 +105,29 @@ export default function ChatPage() {
   const [selectedAutocompleteIndex, setSelectedAutocompleteIndex] = useState(0);
   const [cursorPosition, setCursorPosition] = useState(0);
   const [fileAutocompleteSuggestions, setFileAutocompleteSuggestions] = useState<Array<{ id: string; title: string; folder_name: string; content_type: string }>>([]);
-  const [searchPhaseIndex, setSearchPhaseIndex] = useState<number>(0);
   const [selectedSource, setSelectedSource] = useState<any | null>(null);
   const [showSourceDialog, setShowSourceDialog] = useState(false);
   const [conversationToDelete, setConversationToDelete] = useState<string | null>(null);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [messageToSave, setMessageToSave] = useState<Message | null>(null);
-  const [showUploadDialog, setShowUploadDialog] = useState(false);
-  const [selectedUploadFolderId, setSelectedUploadFolderId] = useState<string>('');
   const [showFolderSelectForUpload, setShowFolderSelectForUpload] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
-  // Dynamic search phase messages
-  const searchPhaseMessages = [
-    "Looking in your knowledge base...",
-    "Scanning documents...",
-    "Extracting relevant information...",
-    "Analyzing content...",
-    "Sanitizing data...",
-    "Synthesizing insights...",
-    "Preparing your answer..."
+  // Single quirky search message
+  const searchMessages = [
+    "Rummaging through your brain files... 🧠",
+    "Shaking the knowledge tree... 🌳",
+    "Following the digital breadcrumbs... 🍞",
+    "Consulting the data spirits... 👻",
+    "Brewing some answer magic... ✨",
+    "Digging through the archives... 🕵️",
+    "Whispering to the algorithms... 🤫"
   ];
+  const [searchMessage] = useState(
+    searchMessages[Math.floor(Math.random() * searchMessages.length)]
+  );
 
   // Quirky AI placeholder texts
   const placeholderTexts = [
@@ -173,12 +172,15 @@ export default function ChatPage() {
 
   // Parse @ file references from input message
   const parseFileRefs = (message: string) => {
-    const fileRefRegex = /@([\w\-_\.]+)/g;
+    // Handle both quoted filenames (@"About Me") and unquoted (@About)
+    const fileRefRegex = /@"([^"]+)"|@(\S+)/g;
     const fileRefs: string[] = [];
     let match: RegExpExecArray | null;
 
     while ((match = fileRefRegex.exec(message)) !== null) {
-      fileRefs.push(match[1]);
+      // Use group 1 for quoted filenames, group 2 for unquoted
+      const fileName = match[1] || match[2];
+      fileRefs.push(fileName);
     }
 
     return fileRefs;
@@ -225,6 +227,50 @@ export default function ChatPage() {
     }
 
     return parts;
+  };
+
+  const getConversationDefaultTitle = () => {
+    const conversation = conversations.find(conv => conv.id === selectedConversation);
+    const normalizedTitle = conversation?.title?.trim();
+    if (normalizedTitle && normalizedTitle.toLowerCase() !== 'new conversation') {
+      return normalizedTitle;
+    }
+
+    const firstAssistantMessage = messages.find(msg => msg.role === 'assistant');
+    if (firstAssistantMessage?.content) {
+      return `Chat Insight: ${firstAssistantMessage.content.split('\n')[0].slice(0, 80)}`;
+    }
+
+    const firstUserMessage = messages.find(
+      msg => msg.role !== 'assistant' && msg.role !== 'system'
+    );
+    if (firstUserMessage?.content) {
+      return `Chat Thread: ${firstUserMessage.content.split('\n')[0].slice(0, 80)}`;
+    }
+
+    const referenceTimestamp =
+      conversation?.created_at || messages[0]?.created_at || new Date().toISOString();
+    return `Conversation ${new Date(referenceTimestamp).toLocaleString()}`;
+  };
+
+  const buildConversationTranscript = () => {
+    if (messages.length === 0) {
+      return '';
+    }
+
+    return messages
+      .map((msg) => {
+        const roleLabel =
+          msg.role === 'assistant'
+            ? 'Synapse AI'
+            : msg.role === 'system'
+              ? 'System'
+              : 'You';
+        const timestamp = new Date(msg.created_at).toLocaleString();
+        const body = msg.content?.trim() ?? '';
+        return `${roleLabel} (${timestamp})\n${body}`;
+      })
+      .join('\n\n');
   };
 
   useEffect(() => {
@@ -289,24 +335,7 @@ export default function ChatPage() {
     scrollToBottom();
   }, [messages]);
 
-  // Cycle through search phase messages when loading
-  useEffect(() => {
-    if (!isLoading) {
-      setSearchPhaseIndex(0);
-      return;
-    }
-
-    // Cycle through messages every 5-6 seconds (40 seconds / 7 messages ≈ 5.7 seconds each)
-    const interval = setInterval(() => {
-      setSearchPhaseIndex((prevIndex) => {
-        const nextIndex = prevIndex + 1;
-        return nextIndex >= searchPhaseMessages.length ? prevIndex : nextIndex;
-      });
-    }, 5700);
-
-    return () => clearInterval(interval);
-  }, [isLoading, searchPhaseMessages.length]);
-
+  
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -446,7 +475,6 @@ export default function ChatPage() {
     setInputMessage('');
     setIsLoading(true);
     setHashtagInfo(null);
-    setSearchPhaseIndex(0);
 
     // Add user message immediately to UI with temporary ID
     const tempUserMessage: Message = {
@@ -516,7 +544,6 @@ export default function ChatPage() {
       });
     } finally {
       setIsLoading(false);
-      setSearchPhaseIndex(0);
     }
   };
 
@@ -531,7 +558,7 @@ export default function ChatPage() {
     // Check if we're typing a hashtag (folder) or @ (file)
     const textBeforeCursor = value.substring(0, cursorPos);
     const hashtagMatch = textBeforeCursor.match(/#(\w*)$/);
-    const fileMatch = textBeforeCursor.match(/@([\w\-_]*)$/);
+    const fileMatch = textBeforeCursor.match(/@(\S*)$/);
 
     if (hashtagMatch && userFolders.length > 0) {
       // Folder autocomplete
@@ -614,18 +641,20 @@ export default function ChatPage() {
   const selectAutocompleteFile = (fileName: string) => {
     const textBeforeCursor = inputMessage.substring(0, cursorPosition);
     const textAfterCursor = inputMessage.substring(cursorPosition);
-    const fileMatch = textBeforeCursor.match(/@([\w\-_]*)$/);
+    const fileMatch = textBeforeCursor.match(/@(\S*)$/);
 
     if (fileMatch) {
       const beforeAt = textBeforeCursor.substring(0, fileMatch.index);
-      const newText = beforeAt + '@' + fileName + ' ' + textAfterCursor;
+      // If filename contains spaces, wrap it in quotes
+      const formattedFileName = fileName.includes(' ') ? `"${fileName}"` : fileName;
+      const newText = beforeAt + '@' + formattedFileName + ' ' + textAfterCursor;
       setInputMessage(newText);
       setShowAutocomplete(false);
 
       // Focus back to input and set cursor position
       setTimeout(() => {
         if (inputRef.current) {
-          const newCursorPos = beforeAt.length + fileName.length + 2; // +2 for @ and space
+          const newCursorPos = beforeAt.length + formattedFileName.length + 2; // +2 for @ and space
           inputRef.current.focus();
           inputRef.current.setSelectionRange(newCursorPos, newCursorPos);
         }
@@ -756,8 +785,8 @@ export default function ChatPage() {
       );
 
       toast({
-        title: "Saved to Knowledge Base",
-        description: `"${title}" has been added to your knowledge base`,
+        title: "Saved to Memory",
+        description: `"${title}" has been added to your memory`,
       });
 
       // Emit event for real-time KB update
@@ -782,28 +811,97 @@ export default function ChatPage() {
     if (userFolders.length === 0) {
       toast({
         title: "No folders available",
-        description: "Please create a folder in Knowledge Base first",
+        description: "Please create a folder in Memory first",
         variant: "destructive",
       });
       return;
     }
+
+    if (!selectedConversation) {
+      toast({
+        title: "Select a conversation",
+        description: "Open a conversation before saving it to your memory",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (messages.length === 0) {
+      toast({
+        title: "Nothing to save yet",
+        description: "Send a message to start the conversation before saving it",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setShowFolderSelectForUpload(true);
   };
 
-  // Function to handle folder selection for upload
-  const handleFolderSelectedForUpload = (folderId: string) => {
-    setSelectedUploadFolderId(folderId);
-    setShowFolderSelectForUpload(false);
-    setShowUploadDialog(true);
-  };
+  // Function to handle folder selection for saving conversation transcript
+  const handleFolderSelectedForUpload = async (folderId: string, customTitle?: string) => {
+    if (!user || !accessToken || !selectedConversation) {
+      return;
+    }
 
-  // Function to handle upload complete
-  const handleUploadComplete = () => {
-    setShowUploadDialog(false);
-    toast({
-      title: "Upload Complete",
-      description: "Your files have been added to the knowledge base",
-    });
+    const transcriptBody = buildConversationTranscript();
+    if (!transcriptBody.trim()) {
+      toast({
+        title: "Nothing to save",
+        description: "The current conversation is empty.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const baseTitle = getConversationDefaultTitle();
+    const title = customTitle && customTitle.trim().length > 0 ? customTitle.trim() : baseTitle;
+    const savedAt = new Date();
+    const header = `Conversation Title: ${title}\nSaved On: ${savedAt.toLocaleString()}`;
+    const transcript = `${header}\n\n${transcriptBody}`;
+
+    try {
+      await apiClient.createTextEntry(
+        {
+          title,
+          content: transcript,
+          folder_id: folderId,
+          metadata: {
+            source: 'conversation',
+            conversation_id: selectedConversation,
+            conversation_title: baseTitle,
+            message_count: messages.length,
+            saved_from_chat: true,
+            saved_at: savedAt.toISOString(),
+          },
+        },
+        {
+          userId: user.id,
+          accessToken,
+        }
+      );
+
+      toast({
+        title: "Conversation saved",
+        description: `"${title}" has been added to your memory`,
+      });
+
+      window.dispatchEvent(new CustomEvent('knowledge-item-added', {
+        detail: {
+          folderId,
+          title,
+        },
+      }));
+    } catch (error) {
+      console.error('Failed to save conversation:', error);
+      toast({
+        title: "Error",
+        description: "Failed to save conversation to knowledge base",
+        variant: "destructive",
+      });
+    } finally {
+      setShowFolderSelectForUpload(false);
+    }
   };
 
   // Function to start new chat (currently unused but kept for future use)
@@ -905,7 +1003,7 @@ export default function ChatPage() {
   return (
     <div className="flex h-[calc(100vh-4rem)] bg-gradient-to-br from-slate-950 via-gray-900 to-slate-800">
       {/* Desktop Left Sidebar - Conversations */}
-      <div className="hidden md:block w-80 bg-white/5 backdrop-blur-2xl border-r border-white/10 shadow-2xl">
+      <div className="hidden md:block w-96 bg-white/5 backdrop-blur-2xl border-r border-white/10 shadow-2xl">
         <ConversationSidebar />
       </div>
 
@@ -962,9 +1060,7 @@ export default function ChatPage() {
                                   })}
                                 </p>
                               </div>
-                              {/* Tail */}
-                              <div className="absolute top-2 -right-1 w-3 h-3 bg-purple-600 transform rotate-45 rounded-sm"></div>
-                            </div>
+                                                          </div>
                           </div>
                         </div>
                       </div>
@@ -993,7 +1089,7 @@ export default function ChatPage() {
                                   <button
                                     onClick={() => initiateSaveMessage(message)}
                                     className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center space-x-1.5 text-xs text-blue-400 hover:text-blue-300 bg-blue-900/30 hover:bg-blue-900/50 px-2.5 py-1.5 rounded-lg"
-                                    title="Save to Knowledge Base"
+                                    title="Save to Memory"
                                   >
                                     <Bookmark className="h-3.5 w-3.5" />
                                     <span className="font-medium">Save</span>
@@ -1004,9 +1100,7 @@ export default function ChatPage() {
                                   <span className="font-semibold">Synapse AI</span>
                                 </div>
                               </div>
-                              {/* Tail */}
-                              <div className="absolute top-2 -left-1 w-3 h-3 bg-white/10 border-l border-t border-white/20 transform rotate-45 rounded-sm"></div>
-                            </div>
+                                                          </div>
 
                             {/* Sources for AI messages - Modern design */}
                             {message.metadata?.sources && message.metadata.sources.length > 0 && (
@@ -1070,7 +1164,7 @@ export default function ChatPage() {
                       <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-3xl rounded-tl-lg shadow-lg px-5 py-3">
                         <div className="flex items-center space-x-3">
                           <TypingIndicator />
-                          <span className="text-sm text-gray-300">{searchPhaseMessages[searchPhaseIndex]}</span>
+                          <span className="text-sm text-gray-300 animate-pulse">{searchMessage}</span>
                         </div>
                       </div>
                     </div>
@@ -1100,7 +1194,7 @@ export default function ChatPage() {
                             onClick={() => selectAutocompleteFolder(folder.name)}
                           >
                             <Folder className="h-4 w-4 text-blue-400" />
-                            <span className="text-sm font-medium">{folder.name}</span>
+                            <span className="text-sm font-medium">{folder.name.charAt(0).toUpperCase() + folder.name.slice(1)}</span>
                           </div>
                         ))
                       ) : (
@@ -1208,7 +1302,7 @@ export default function ChatPage() {
                   <Button
                     onClick={handleUploadClick}
                     className="h-14 w-14 rounded-2xl border-0 bg-white/10 text-gray-400 hover:bg-white/20 hover:text-white shadow-xl transition-all duration-300 hover:scale-110"
-                    title="Upload files to Knowledge Base"
+                    title="Upload files to Memory"
                   >
                     <Upload className="h-5 w-5" />
                   </Button>
@@ -1253,8 +1347,8 @@ export default function ChatPage() {
                   <span>💡 Pro tip: Use</span>
                   <code className="bg-blue-900/30 text-blue-300 px-2 py-0.5 rounded font-mono">#folder</code>
                   <span>or</span>
-                  <code className="bg-purple-900/30 text-purple-300 px-2 py-0.5 rounded font-mono">@file</code>
-                  <span>to filter your search</span>
+                  <code className="bg-purple-900/30 text-purple-300 px-2 py-0.5 rounded font-mono">@"file name"</code>
+                  <span>for filenames with spaces</span>
                 </div>
 
                 {/* AI Disclaimer */}
@@ -1279,7 +1373,7 @@ export default function ChatPage() {
                   Ready to explore your knowledge?
                 </h3>
                 <p className="text-gray-300 max-w-lg mx-auto text-lg leading-relaxed">
-                  Start a conversation with your AI assistant. Use <code className="bg-blue-900/50 text-blue-300 px-2 py-1 rounded-md font-mono text-sm">#folder</code> or <code className="bg-purple-900/50 text-purple-300 px-2 py-1 rounded-md font-mono text-sm">@file</code> to filter your search.
+                  Start a conversation with your AI assistant. Use <code className="bg-blue-900/50 text-blue-300 px-2 py-1 rounded-md font-mono text-sm">#folder</code> or <code className="bg-purple-900/50 text-purple-300 px-2 py-1 rounded-md font-mono text-sm">@"file name"</code> to filter your search.
                 </p>
               </div>
               <div className="flex flex-wrap justify-center gap-3">
@@ -1404,17 +1498,9 @@ export default function ChatPage() {
         onOpenChange={setShowFolderSelectForUpload}
         folders={userFolders}
         onSelect={handleFolderSelectedForUpload}
-        defaultTitle=""
-        showTitleInput={false}
+        defaultTitle={getConversationDefaultTitle()}
+        showTitleInput={true}
       />
-
-      {/* Upload Dialog */}
-      {selectedUploadFolderId && (
-        <UploadDialog
-          folderId={selectedUploadFolderId}
-          onUploadComplete={handleUploadComplete}
-        />
-      )}
     </div>
   );
 }

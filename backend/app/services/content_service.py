@@ -9,13 +9,14 @@ from sqlalchemy import select, delete
 from sqlalchemy.orm import selectinload
 import logging
 
-from app.models.database import KnowledgeItem, Folder, Vector
+from app.models.database import KnowledgeItem, Folder, GCSFile, OpenAIFile
 from app.models.schemas import (
     KnowledgeItemCreate, KnowledgeItemUpdate,
-    ProcessingStatus, ContentType
+    ContentType
 )
 from app.core.storage import storage_service
 from app.config import settings
+from app.services.openai import VectorStoreService
 
 logger = logging.getLogger(__name__)
 
@@ -134,9 +135,9 @@ class ContentService:
             title=sanitized_title,
             content=final_content,
             content_type=item_data.content_type,
-            source_url=item_data.source_url,
+            source_type='text',  # Text-based content for OpenAI processing
             item_metadata={**(item_data.metadata or {}), **storage_metadata},
-            processing_status=ProcessingStatus.PENDING
+            status="pending"
         )
 
         db.add(knowledge_item)
@@ -256,7 +257,7 @@ class ContentService:
                     raise ValueError("Failed to store updated content")
 
             # Trigger reprocessing if content changed
-            item.processing_status = ProcessingStatus.PENDING
+            item.status = "pending"
 
         await db.commit()
         await db.refresh(item)
@@ -283,6 +284,18 @@ class ContentService:
         if not item:
             return False
 
+        # Collect OpenAI vector store cleanup targets before deleting
+        openai_cleanup_targets: List[Dict[str, str]] = []
+        if settings.ENABLE_OPENAI_VECTOR_STORES:
+            openai_stmt = select(OpenAIFile).where(OpenAIFile.knowledge_item_id == item_id)
+            openai_result = await db.execute(openai_stmt)
+            for record in openai_result.scalars().all():
+                if record.vector_store_id and record.openai_vector_store_file_id:
+                    openai_cleanup_targets.append({
+                        "vector_store_id": record.vector_store_id,
+                        "vector_store_file_id": record.openai_vector_store_file_id
+                    })
+
         # Delete from external storage if applicable
         if item.item_metadata and item.item_metadata.get("stored_in_storage"):
             storage_path = item.item_metadata.get("storage_path")
@@ -293,8 +306,23 @@ class ContentService:
                     logger.error(f"Failed to delete stored content: {e}")
                     # Continue with database deletion
 
-        # Delete vectors (should cascade automatically)
-        await db.execute(delete(Vector).where(Vector.knowledge_item_id == item_id))
+        # Remove from OpenAI vector store before deleting database record
+        if openai_cleanup_targets:
+            vector_store_service = VectorStoreService()
+            for target in openai_cleanup_targets:
+                try:
+                    await vector_store_service.delete_file(
+                        vector_store_id=target["vector_store_id"],
+                        file_id=target["vector_store_file_id"]
+                    )
+                except Exception as e:
+                    logger.error(
+                        "Failed to delete vector store file %s from vector store %s: %s",
+                        target["vector_store_file_id"],
+                        target["vector_store_id"],
+                        e,
+                        exc_info=True
+                    )
 
         # Delete knowledge item
         await db.execute(
@@ -374,42 +402,21 @@ class ContentService:
         if not folder:
             raise ValueError("Folder not found or insufficient permissions")
 
-        # Get content items with vectors eagerly loaded for status calculation
-        from sqlalchemy.orm import selectinload
-
+        # Get content items with OpenAI status for searchability
         content_stmt = select(KnowledgeItem).where(
             KnowledgeItem.folder_id == folder_id,
             KnowledgeItem.user_id == user_id
-        ).options(selectinload(KnowledgeItem.vectors)).order_by(KnowledgeItem.created_at.desc())
+        ).order_by(KnowledgeItem.created_at.desc())
 
         content_result = await db.execute(content_stmt)
         content_items = content_result.scalars().all()
 
-        # Convert content items to match edge function format
+        # Convert content items to match simplified format
         content_list = []
         for item in content_items:
-            # Count vectors with actual embeddings
-            vector_count = len(item.vectors) if item.vectors else 0
-            vectors_with_embeddings = 0
+            # Check if item is indexed in OpenAI (searchable)
+            is_searchable = item.status == "completed"
 
-            if item.vectors:
-                for vector in item.vectors:
-                    # Check for None explicitly to avoid "array truth value" error
-                    if vector.embedding is not None and len(vector.embedding) > 0:
-                        # Check if not all zeros (placeholder embedding)
-                        try:
-                            if not all(x == 0.0 for x in vector.embedding):
-                                vectors_with_embeddings += 1
-                        except (TypeError, ValueError):
-                            # If we can't iterate, assume it's a valid embedding
-                            vectors_with_embeddings += 1
-
-            # Determine if searchable
-            is_searchable = (
-                item.processing_status == "completed" and
-                item.is_chunked and
-                vectors_with_embeddings > 0
-            )
             # Load full content if stored externally
             content = item.content
             if item.item_metadata and item.item_metadata.get("stored_in_storage"):
@@ -423,8 +430,6 @@ class ContentService:
                         # Keep the storage reference as content
 
             # Format timestamps as UTC ISO strings with 'Z' suffix
-            # Database stores UTC times but doesn't include timezone info
-            # Adding 'Z' tells JavaScript to interpret as UTC
             created_at_str = None
             if item.created_at:
                 created_at_str = item.created_at.isoformat()
@@ -442,12 +447,8 @@ class ContentService:
                 "title": item.title,
                 "content": content,  # Include the actual content
                 "content_type": item.content_type,
-                "source_url": item.source_url,
-                "processing_status": item.processing_status,
-                "is_chunked": item.is_chunked,
-                "total_chunks": item.total_chunks,
-                "vector_count": vector_count,
-                "vectors_with_embeddings": vectors_with_embeddings,
+                "source_type": item.source_type,
+                "status": item.status,
                 "is_searchable": is_searchable,
                 "created_at": created_at_str,
                 "updated_at": updated_at_str,

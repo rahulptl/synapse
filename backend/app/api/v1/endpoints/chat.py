@@ -1,5 +1,5 @@
 """
-RAG chat endpoints.
+Chat endpoints with OpenAI Responses API integration.
 """
 from typing import Optional, List
 from uuid import UUID
@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
+import logging
 
 from app.core.database import get_db
 from app.core.security import validate_any_auth
@@ -28,9 +29,10 @@ async def chat(
     auth_data: dict = Depends(validate_any_auth)
 ):
     """
-    Process RAG chat with context retrieval and async job support.
+    Process chat using OpenAI Responses API.
 
-    Equivalent to: rag-chat edge function
+    Uses the ChatService which integrates with OpenAI's Responses API
+    and vector stores for efficient knowledge base retrieval.
     """
     user_id = UUID(auth_data["user_id"])
 
@@ -47,6 +49,8 @@ async def chat(
         )
         return response
     except Exception as e:
+        logger = logging.getLogger(__name__)
+        logger.error(f"Chat processing failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Chat processing failed")
 
 
@@ -322,8 +326,8 @@ async def save_message_to_knowledge_base(
         )
 
         # Queue for processing
-        from app.api.v1.endpoints.files import process_knowledge_item_background
-        background_tasks.add_task(process_knowledge_item_background, knowledge_item.id)
+        from app.services.processing_service import processing_service
+        background_tasks.add_task(processing_service.process_knowledge_item, knowledge_item.id)
 
         return {
             "success": True,

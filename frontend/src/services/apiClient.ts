@@ -3,7 +3,7 @@
  * Handles all authenticated requests to the Cloud SQL backend
  */
 
-export interface ApiResponse<T = any> {
+export interface ApiResponse<T = unknown> {
   success?: boolean;
   data?: T;
   error?: string;
@@ -123,6 +123,24 @@ class ApiClient {
   }
 
   // Content operations
+  async createTextEntry(
+    textData: {
+      title: string;
+      content: string;
+      folder_id: string;
+      description?: string;
+      tags?: string[];
+      metadata?: Record<string, unknown>;
+    },
+    auth: { userId: string; accessToken: string }
+  ) {
+    return this.request('/content/text', {
+      method: 'POST',
+      body: JSON.stringify(textData),
+      auth,
+    });
+  }
+
   async createContent(
     contentData: {
       title: string;
@@ -130,7 +148,7 @@ class ApiClient {
       content_type: string;
       folder_id: string;
       source_url?: string;
-      metadata?: any;
+      metadata?: Record<string, unknown>;
     },
     auth: { userId: string; accessToken: string }
   ) {
@@ -219,11 +237,12 @@ class ApiClient {
     return response.json();
   }
 
+  
   async uploadFileWithProgress(
     formData: FormData,
     auth: { userId: string; accessToken: string },
     onProgress: (progress: number) => void
-  ): Promise<any> {
+  ): Promise<unknown> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
 
@@ -272,86 +291,8 @@ class ApiClient {
     });
   }
 
-  // Large file upload with signed URLs (>32MB)
-  async getSignedUploadUrl(
-    data: {
-      filename: string;
-      content_type: string;
-      folder_id: string;
-      title: string;
-      description?: string;
-      file_size: number;
-    },
-    auth: { userId: string; accessToken: string }
-  ): Promise<{ upload_url: string; storage_path: string; expires_in: number }> {
-    return this.request('/files/upload/signed-url', {
-      method: 'POST',
-      body: JSON.stringify(data),
-      auth,
-    });
-  }
-
-  async uploadToSignedUrl(
-    signedUrl: string,
-    file: File,
-    onProgress?: (progress: number) => void
-  ): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-
-      // Track upload progress
-      if (onProgress) {
-        xhr.upload.addEventListener('progress', (event) => {
-          if (event.lengthComputable) {
-            const percentComplete = Math.round((event.loaded / event.total) * 100);
-            onProgress(percentComplete);
-          }
-        });
-      }
-
-      // Handle completion
-      xhr.addEventListener('load', () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          resolve();
-        } else {
-          reject(new Error(`GCS upload failed: ${xhr.statusText}`));
-        }
-      });
-
-      // Handle errors
-      xhr.addEventListener('error', () => {
-        reject(new Error('GCS upload failed: Network error'));
-      });
-
-      xhr.addEventListener('abort', () => {
-        reject(new Error('GCS upload cancelled'));
-      });
-
-      // Upload to GCS with PUT method
-      xhr.open('PUT', signedUrl);
-      xhr.setRequestHeader('Content-Type', file.type);
-      xhr.send(file);
-    });
-  }
-
-  async notifyUploadComplete(
-    data: {
-      storage_path: string;
-      folder_id: string;
-      title: string;
-      description?: string;
-      file_size: number;
-      content_type: string;
-    },
-    auth: { userId: string; accessToken: string }
-  ) {
-    return this.request('/files/upload/complete', {
-      method: 'POST',
-      body: JSON.stringify(data),
-      auth,
-    });
-  }
-
+  
+  
   // Search operations
   async searchContent(
     searchData: {
@@ -537,6 +478,30 @@ class ApiClient {
       auth,
     });
   }
-}
+
+  // Get user storage usage information
+  async getUserStorageUsage(auth: { userId: string; accessToken: string }): Promise<{
+    used_bytes: number;
+    total_bytes: number;
+    used_percentage: number;
+    used_formatted: string;
+    total_formatted: string;
+    stats?: {
+      total_items: number;
+      content_bytes: number;
+      file_bytes: number;
+      content_formatted: string;
+      file_formatted: string;
+    };
+  }> {
+    try {
+      return this.request('/content/user/storage-usage', { auth });
+    } catch (error) {
+      // If endpoint doesn't exist, this will be handled by the component
+      throw error;
+    }
+  }
+
+  }
 
 export const apiClient = new ApiClient();

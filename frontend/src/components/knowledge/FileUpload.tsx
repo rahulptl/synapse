@@ -116,8 +116,9 @@ export function FileUpload({ folderId, onUploadComplete }: FileUploadProps) {
           formData.append('title', files.length === 1 ? title : `${title} - ${file.name}`);
           if (description) formData.append('description', description);
 
-          // Upload file without progress tracking
+          // Simple upload using the simplified backend
           await apiClient.uploadFile(formData, auth);
+          console.log(`✅ Uploaded ${file.name} using simplified backend`);
 
           // Mark as success
           setUploadProgress(prev =>
@@ -141,7 +142,7 @@ export function FileUpload({ folderId, onUploadComplete }: FileUploadProps) {
 
       if (successCount > 0) {
         toast({
-          title: "Success",
+          title: "Upload Complete",
           description: `${successCount} file(s) uploaded successfully${errorCount > 0 ? `, ${errorCount} failed` : ''}`,
         });
 
@@ -188,11 +189,10 @@ export function FileUpload({ folderId, onUploadComplete }: FileUploadProps) {
     try {
       const auth = getAuthData();
 
-      await apiClient.createContent({
+      await apiClient.createTextEntry({
         folder_id: folderId,
         title: title.trim(),
         content: textContent.trim(),
-        content_type: 'text',
         description: description || '',
       }, auth);
 

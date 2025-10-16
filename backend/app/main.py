@@ -36,18 +36,7 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database initialized")
 
-    # Preload document processing models (if enabled)
-    if settings.PRELOAD_MODELS_ON_STARTUP:
-        try:
-            logger.info("Preloading document processing models...")
-            from app.services.model_loader import preload_models
-            await preload_models()
-            logger.info("✅ Document processing models preloaded successfully")
-        except Exception as e:
-            logger.warning(
-                f"⚠️ Model preloading failed (will load on-demand): {e}",
-                exc_info=True
-            )
+    # Note: Model preloading removed in simplified backend architecture
 
     yield
     # Shutdown
@@ -86,13 +75,11 @@ def create_application() -> FastAPI:
     # Health check endpoint
     @app.get("/health")
     async def health_check():
-        """Health check with model status."""
-        from app.services.model_loader import get_model_status
-
+        """Health check endpoint."""
         health_data = {
             "status": "healthy",
             "environment": settings.ENVIRONMENT,
-            "models": get_model_status()
+            "backend": "simplified"
         }
         return health_data
 

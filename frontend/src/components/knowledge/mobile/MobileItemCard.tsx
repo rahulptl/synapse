@@ -8,6 +8,7 @@ import {
   CheckCircle,
   Loader2,
   AlertCircle,
+  Download,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -19,7 +20,7 @@ interface KnowledgeItem {
   content: string;
   content_type: string;
   source_url?: string;
-  metadata?: any;
+  metadata?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
   is_chunked?: boolean;
@@ -36,6 +37,7 @@ interface MobileItemCardProps {
   onSelect: () => void;
   onDelete: () => void;
   onReprocess?: () => void;
+  onDownload?: () => void;
 }
 
 /**
@@ -48,6 +50,7 @@ export function MobileItemCard({
   onSelect,
   onDelete,
   onReprocess,
+  onDownload,
 }: MobileItemCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -149,10 +152,82 @@ export function MobileItemCard({
 
   const [showSwipeHint, setShowSwipeHint] = useState(true);
 
+  const handleDownload = async () => {
+    try {
+      // Import apiClient dynamically to avoid circular dependencies
+      const { apiClient } = await import('@/services/apiClient');
+
+      // Get auth from localStorage (assuming this is how auth is stored)
+      const accessToken = localStorage.getItem('accessToken');
+      const userId = localStorage.getItem('userId');
+
+      if (!accessToken || !userId) {
+        console.error('Authentication credentials not found');
+        return;
+      }
+
+      const auth = { userId, accessToken };
+
+      // Generate a safe filename from the title
+      const fileName = `${item.title.replace(/[^a-zA-Z0-9\s]/g, '_').trim()}`;
+
+      try {
+        // Try to get a signed URL from backend (for cloud storage files)
+        const downloadResponse = await apiClient.getContentDownloadUrl(item.id, auth);
+
+        if (downloadResponse.download_url) {
+          // For cloud storage files, redirect to signed URL
+          const link = document.createElement('a');
+          link.href = downloadResponse.download_url;
+          link.download = fileName;
+          link.target = '_blank'; // Open in new tab for cloud files
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        }
+      } catch (signedUrlError) {
+        // If signed URL fails, try downloading as zip (works for all content types)
+        try {
+          const blob = await apiClient.exportItemAsZip(item.id, auth);
+          apiClient.downloadBlob(blob, `${fileName}.zip`);
+        } catch (zipError) {
+          console.error('Both signed URL and zip download failed:', zipError);
+
+          // Final fallback: use client-side generation for text content
+          if (item.content) {
+            let content: string;
+            let mimeType: string;
+
+            if (item.content_type === 'url' && item.source_url) {
+              content = `Title: ${item.title}\nURL: ${item.source_url}\n\nContent:\n${item.content}`;
+              mimeType = 'text/plain';
+            } else {
+              content = item.content;
+              mimeType = 'text/plain';
+            }
+
+            const blob = new Blob([content], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `${fileName}.txt`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to download item:', error);
+    }
+  };
+
   return (
     <SwipeableItem
       onDelete={onDelete}
       onReprocess={onReprocess}
+      onDownload={onDownload || handleDownload}
       onSwipe={() => setShowSwipeHint(false)}
     >
       <Card

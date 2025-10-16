@@ -36,7 +36,7 @@ interface KnowledgeItem {
   content: string;
   content_type: string;
   source_url?: string;
-  metadata?: any;
+  metadata?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
   is_chunked?: boolean;

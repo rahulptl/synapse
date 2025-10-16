@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FileText, ExternalLink, Calendar, Trash2, Loader2, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
+import { FileText, ExternalLink, Calendar, Trash2, Loader2, CheckCircle, AlertCircle, RefreshCw, MessageSquare, Download } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -11,7 +11,7 @@ interface KnowledgeItem {
   content: string;
   content_type: string;
   source_url?: string;
-  metadata?: any;
+  metadata?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
   is_chunked?: boolean;
@@ -39,6 +39,7 @@ interface ItemListProps {
   onReprocessItem?: (itemId: string) => void;
   onRenameItem?: (itemId: string, newTitle: string) => Promise<void>;
   onMoveItem?: (itemId: string, targetFolderId: string) => Promise<void>;
+  onChatWithItem?: (itemId: string, itemTitle: string) => void;
 }
 
 export function ItemList({
@@ -50,7 +51,8 @@ export function ItemList({
   onDeleteItem,
   onReprocessItem,
   onRenameItem,
-  onMoveItem
+  onMoveItem,
+  onChatWithItem
 }: ItemListProps) {
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
   const [dragOverFolder, setDragOverFolder] = useState<string | null>(null);
@@ -108,20 +110,12 @@ export function ItemList({
   const getProcessingStatusText = (item: KnowledgeItem) => {
     // Use is_searchable flag if available (from enhanced status endpoint)
     if (item.is_searchable === true) {
-      return `Searchable (${item.total_chunks} chunks)`;
+      return 'Searchable';
     }
 
     // Check if item has been chunked/processed
     if (item.is_chunked && item.total_chunks && item.total_chunks > 0) {
-      // Check vector status if available
-      if (item.vector_count !== undefined && item.vectors_with_embeddings !== undefined) {
-        if (item.vectors_with_embeddings === item.total_chunks) {
-          return `Searchable (${item.total_chunks} chunks)`;
-        } else if (item.vectors_with_embeddings > 0) {
-          return `Processing embeddings (${item.vectors_with_embeddings}/${item.total_chunks})`;
-        }
-      }
-      return `Searchable (${item.total_chunks} chunks)`;
+      return 'Searchable';
     }
 
     // Check explicit status
@@ -129,13 +123,84 @@ export function ItemList({
       case 'processing':
         return 'Processing for search...';
       case 'completed':
-        return item.total_chunks > 0 ? 'Searchable' : 'Processing incomplete';
+        return 'Searchable';
       case 'failed':
         return 'Processing failed - Click to retry';
       case 'pending':
         return 'Queued for processing...';
       default:
-        return 'Processing...';  // More optimistic default
+        return 'Processing...';
+    }
+  };
+
+  const handleDownload = async (item: KnowledgeItem) => {
+    try {
+      // Import apiClient dynamically to avoid circular dependencies
+      const { apiClient } = await import('@/services/apiClient');
+
+      // Get auth from localStorage (assuming this is how auth is stored)
+      const accessToken = localStorage.getItem('accessToken');
+      const userId = localStorage.getItem('userId');
+
+      if (!accessToken || !userId) {
+        console.error('Authentication credentials not found');
+        return;
+      }
+
+      const auth = { userId, accessToken };
+
+      // Generate a safe filename from the title
+      const fileName = `${item.title.replace(/[^a-zA-Z0-9\s]/g, '_').trim()}`;
+
+      try {
+        // Try to get a signed URL from backend (for cloud storage files)
+        const downloadResponse = await apiClient.getContentDownloadUrl(item.id, auth);
+
+        if (downloadResponse.download_url) {
+          // For cloud storage files, redirect to signed URL
+          const link = document.createElement('a');
+          link.href = downloadResponse.download_url;
+          link.download = fileName;
+          link.target = '_blank'; // Open in new tab for cloud files
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        }
+      } catch (signedUrlError) {
+        // If signed URL fails, try downloading as zip (works for all content types)
+        try {
+          const blob = await apiClient.exportItemAsZip(item.id, auth);
+          apiClient.downloadBlob(blob, `${fileName}.zip`);
+        } catch (zipError) {
+          console.error('Both signed URL and zip download failed:', zipError);
+
+          // Final fallback: use client-side generation for text content
+          if (item.content) {
+            let content: string;
+            let mimeType: string;
+
+            if (item.content_type === 'url' && item.source_url) {
+              content = `Title: ${item.title}\nURL: ${item.source_url}\n\nContent:\n${item.content}`;
+              mimeType = 'text/plain';
+            } else {
+              content = item.content;
+              mimeType = 'text/plain';
+            }
+
+            const blob = new Blob([content], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `${fileName}.txt`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to download item:', error);
     }
   };
 
@@ -149,7 +214,7 @@ export function ItemList({
               <FileText className="h-12 w-12 mx-auto text-gray-400" />
             </div>
           </div>
-          <p className="text-gray-300 font-medium">No items in this folder</p>
+          <p className="text-gray-300 font-semibold text-base">No items in this folder</p>
           <p className="text-sm text-gray-400">Upload files or add content to get started</p>
         </div>
       </div>
@@ -183,24 +248,49 @@ export function ItemList({
                 onClick={() => onItemSelect(item.id)}
               >
             <CardContent className="p-4 w-full">
-              <div className="flex items-start gap-3 mb-3 w-full min-w-0">
-                <div className={`p-2 rounded-lg transition-colors flex-shrink-0 ${
-                  selectedItem === item.id ? 'bg-blue-400/30 text-blue-200' : 'bg-white/10 text-gray-300 group-hover:bg-white/20'
-                }`}>
-                  {getContentTypeIcon(item.content_type)}
-                </div>
-                <div className="flex-1 min-w-0 overflow-hidden">
-                  <h4 className={`font-semibold text-sm leading-tight truncate transition-colors ${
-                    selectedItem === item.id ? 'text-white' : 'text-gray-200 group-hover:text-white'
-                  }`}>{item.title}</h4>
-                  <div className="flex items-center gap-2 mt-1">
-                    <Badge className={`text-xs px-2 py-1 ${getContentTypeColor(item.content_type)} border-0 flex-shrink-0`}>
-                      {item.content_type}
-                    </Badge>
-                    {item.processing_status && getProcessingStatusIcon(item.processing_status)}
+              <div className="flex items-start justify-between gap-3 w-full min-w-0">
+                <div className="flex items-start gap-3 flex-1 min-w-0">
+                  <div className={`p-2 rounded-lg transition-colors flex-shrink-0 ${
+                    selectedItem === item.id ? 'bg-blue-400/30 text-blue-200' : 'bg-white/10 text-gray-300 group-hover:bg-white/20'
+                  }`}>
+                    {getContentTypeIcon(item.content_type)}
+                  </div>
+                  <div className="flex-1 min-w-0 space-y-2">
+                    <h4 className={`font-bold text-base leading-tight truncate transition-colors ${
+                      selectedItem === item.id ? 'text-white' : 'text-gray-200 group-hover:text-white'
+                    }`}>{item.title}</h4>
+
+                    <div className="flex items-center gap-3 text-sm text-gray-400">
+                      <div className="flex items-center gap-1.5">
+                        {getProcessingStatusIcon(item.is_searchable ? 'completed' : item.processing_status)}
+                        <span className="font-medium">
+                          {getProcessingStatusText(item)}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Calendar className="h-4 w-4" />
+                        <span className="font-medium">{formatDate(item.created_at)}</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
+
                 <div className="flex items-center space-x-1 flex-shrink-0">
+                  {/* Chat button */}
+                  {onChatWithItem && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-purple-500/20 hover:text-purple-400 hidden md:flex"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onChatWithItem(item.id, item.title);
+                      }}
+                      title="Chat about this item"
+                    >
+                      <MessageSquare className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
                   {/* Show reprocess button for all items with content */}
                   {onReprocessItem && (
                     <Button
@@ -216,6 +306,19 @@ export function ItemList({
                       <RefreshCw className="h-3.5 w-3.5" />
                     </Button>
                   )}
+                  {/* Download button */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-green-500/20 hover:text-green-400 hidden md:flex"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDownload(item);
+                    }}
+                    title="Download this item"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                  </Button>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -224,38 +327,10 @@ export function ItemList({
                       e.stopPropagation();
                       onDeleteItem(item.id);
                     }}
+                    title="Delete this item"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
-                </div>
-              </div>
-
-              <p className="text-sm text-gray-400 line-clamp-2 mb-3 leading-relaxed break-words">
-                {item.content ? item.content.substring(0, 120) + '...' : 'No content preview available'}
-              </p>
-
-              <div className="flex items-center justify-between text-xs gap-2 min-w-0">
-                <div className="flex items-center space-x-1 text-gray-400 flex-shrink-0">
-                  <Calendar className="h-3 w-3" />
-                  <span className="font-medium whitespace-nowrap">{formatDate(item.created_at)}</span>
-                </div>
-
-                <div className="flex items-center gap-2 min-w-0 overflow-hidden">
-                  {item.source_url && (
-                    <div className="flex items-center space-x-1 text-gray-400 min-w-0 hidden sm:flex">
-                      <ExternalLink className="h-3 w-3 flex-shrink-0" />
-                      <span className="truncate max-w-24 font-medium">
-                        {new URL(item.source_url).hostname}
-                      </span>
-                    </div>
-                  )}
-
-                  <div className="flex items-center gap-1.5 text-gray-400 flex-shrink-0">
-                    {getProcessingStatusIcon(item.processing_status)}
-                    <span className="text-xs font-medium hidden sm:inline">
-                      {getProcessingStatusText(item)}
-                    </span>
-                  </div>
                 </div>
               </div>
             </CardContent>

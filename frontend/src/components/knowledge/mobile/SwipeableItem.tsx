@@ -1,11 +1,12 @@
 import { ReactNode } from 'react';
 import { useSwipe, SwipeHandlers } from '@/hooks/useSwipe';
-import { Trash2, RefreshCw } from 'lucide-react';
+import { Trash2, RefreshCw, Download } from 'lucide-react';
 
 interface SwipeableItemProps {
   children: ReactNode;
   onDelete?: () => void;
   onReprocess?: () => void;
+  onDownload?: () => void;
   onSwipe?: () => void; // Callback when user starts swiping
   threshold?: number;
 }
@@ -19,6 +20,7 @@ export function SwipeableItem({
   children,
   onDelete,
   onReprocess,
+  onDownload,
   onSwipe,
   threshold = 80,
 }: SwipeableItemProps) {
@@ -49,6 +51,12 @@ export function SwipeableItem({
           navigator.vibrate(50);
         }
         onReprocess();
+      } else if (onDownload) {
+        // Trigger haptic feedback if available
+        if ('vibrate' in navigator) {
+          navigator.vibrate(50);
+        }
+        onDownload();
       }
     },
   };
@@ -79,6 +87,9 @@ export function SwipeableItem({
     if (swipeState.direction === 'right' && onReprocess) {
       return 'rgba(59, 130, 246, 0.2)'; // Blue for reprocess
     }
+    if (swipeState.direction === 'right' && onDownload && !onReprocess) {
+      return 'rgba(34, 197, 94, 0.2)'; // Green for download
+    }
 
     return 'transparent';
   };
@@ -102,6 +113,16 @@ export function SwipeableItem({
         <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center justify-center">
           <div className="bg-blue-500 p-3 rounded-full">
             <RefreshCw className="h-5 w-5 text-white" />
+          </div>
+        </div>
+      );
+    }
+
+    if (swipeState.direction === 'right' && onDownload && !onReprocess) {
+      return (
+        <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center justify-center">
+          <div className="bg-green-500 p-3 rounded-full">
+            <Download className="h-5 w-5 text-white" />
           </div>
         </div>
       );

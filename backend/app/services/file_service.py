@@ -1,24 +1,22 @@
 """
-File upload and processing service.
+Simple file upload service.
 """
-import io
 import re
 import logging
 from typing import Optional, Dict, Any
 from uuid import UUID
-from datetime import datetime, timezone
 from fastapi import UploadFile, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.models.database import KnowledgeItem, Folder
-from app.models.schemas import (
-    FileUploadResponse, ProcessContentResponse, ContentType, ProcessingStatus
-)
+from app.models.database import KnowledgeItem, Folder, GCSFile
 from app.services.content_service import content_service
 from app.core.storage import storage_service
 from app.config import settings
+
+# Type alias for response
+FileUploadResponse = Dict[str, Any]
 
 logger = logging.getLogger(__name__)
 
@@ -103,10 +101,11 @@ class FileService:
                 logger.error(f"Failed to upload file to storage: {e}")
                 raise ValueError("Failed to upload file to storage")
 
-            # Create knowledge item with file reference (match edge function format)
+            # Create knowledge item with file reference placeholder
+            # This will be replaced with extracted text during processing
             file_content_text = f"[FILE:{storage_path}]"
 
-            # Prepare metadata to match edge function format
+            # Prepare metadata
             metadata = {
                 "storage_path": storage_path,
                 "original_filename": file.filename,
@@ -116,24 +115,37 @@ class FileService:
                 "description": description or None
             }
 
-            # Create knowledge item
-            from app.models.schemas import KnowledgeItemCreate
-            item_data = KnowledgeItemCreate(
+            # Create knowledge item with proper fields for processing
+            knowledge_item = KnowledgeItem(
+                user_id=user_id,
                 folder_id=folder_id,
                 title=title,
                 content=file_content_text,
                 content_type=content_type,
-                source_url=storage_url,
-                metadata=metadata
+                source_type='upload',  # Mark as file upload for processing
+                filename=file.filename,  # Store filename for processor selection
+                size_bytes=file_size,   # Store size for UI display
+                item_metadata=metadata,
+                status="pending"  # Will be processed in background
             )
 
-            knowledge_item = await content_service.create_knowledge_item(
-                db=db,
-                user_id=user_id,
-                item_data=item_data
-            )
+            db.add(knowledge_item)
+            await db.commit()
+            await db.refresh(knowledge_item)
 
-            # Return response matching edge function format
+            # Create GCSFile record for processing service
+            # Use 'local' as bucket name for local file storage
+            bucket_name = settings.GCS_BUCKET_NAME or "local"
+            gcs_file = GCSFile(
+                knowledge_item_id=knowledge_item.id,
+                bucket_name=bucket_name,
+                object_path=storage_path,
+                gcs_url=storage_url
+            )
+            db.add(gcs_file)
+            await db.commit()
+
+            # Return simplified response
             return {
                 "success": True,
                 "item": {
@@ -143,15 +155,12 @@ class FileService:
                     "title": knowledge_item.title,
                     "content": knowledge_item.content,
                     "content_type": knowledge_item.content_type,
-                    "source_url": knowledge_item.source_url,
-                    "metadata": content_service.sanitize_metadata_for_response(knowledge_item.id, knowledge_item.item_metadata),
+                    "source_type": knowledge_item.source_type,
+                    "status": knowledge_item.status,
+                    "metadata": knowledge_item.item_metadata,
                     "created_at": knowledge_item.created_at.isoformat() if knowledge_item.created_at else None,
                     "updated_at": knowledge_item.updated_at.isoformat() if knowledge_item.updated_at else None,
-                    "processing_status": knowledge_item.processing_status,
-                    "is_chunked": knowledge_item.is_chunked,
-                    "total_chunks": knowledge_item.total_chunks
                 },
-                "processing_status": "queued",
                 "file_info": {
                     "filename": file.filename,
                     "size": file_size,
@@ -164,55 +173,7 @@ class FileService:
             logger.error(f"File upload failed: {e}")
             raise
 
-    async def process_content(
-        self,
-        db: AsyncSession,
-        user_id: UUID,
-        knowledge_item_id: UUID,
-        batch_offset: int = 0
-    ) -> ProcessContentResponse:
-        """
-        Process content for embeddings generation.
-
-        Args:
-            db: Database session
-            user_id: User ID
-            knowledge_item_id: Knowledge item ID to process
-            batch_offset: Batch offset for processing
-
-        Returns:
-            ProcessContentResponse with processing results
-        """
-        # Verify the knowledge item belongs to the user
-        stmt = select(KnowledgeItem).where(
-            KnowledgeItem.id == knowledge_item_id,
-            KnowledgeItem.user_id == user_id
-        )
-        result = await db.execute(stmt)
-        item = result.scalar_one_or_none()
-
-        if not item:
-            raise ValueError("Knowledge item not found or access denied")
-
-        try:
-            # Placeholder for processing - actual implementation will be added with embeddings
-            # Update the processing status
-            item.processing_status = ProcessingStatus.COMPLETED
-            await db.commit()
-
-            return ProcessContentResponse(
-                success=True,
-                message="Content processed successfully",
-                knowledge_item_id=knowledge_item_id,
-                vectors_created=0,  # Placeholder
-                chunks_processed=1,  # Placeholder
-                processing_status=ProcessingStatus.COMPLETED
-            )
-
-        except Exception as e:
-            logger.error(f"Content processing failed: {e}")
-            raise ValueError(f"Content processing failed: {str(e)}")
-
+    
     async def download_file(
         self,
         db: AsyncSession,
@@ -347,17 +308,7 @@ class FileService:
 
         return f"{safe_name}{ext}"
 
-    async def _store_file_content_for_processing(self, knowledge_item_id: UUID, content: bytes):
-        """
-        Store file content temporarily for processing.
-
-        In a real implementation, this might use a cache or temporary storage.
-        For now, we'll modify the processing service to handle this directly.
-        """
-        # This is a placeholder - in practice, you might store this in Redis,
-        # a temporary file, or pass it directly to the processing service
-        pass
-
+    
     async def generate_signed_upload_url(
         self,
         db: AsyncSession,
@@ -502,7 +453,7 @@ class FileService:
             item_data=item_data
         )
 
-        # Return response matching regular upload format
+        # Return simplified response
         return {
             "success": True,
             "item": {
@@ -512,15 +463,12 @@ class FileService:
                 "title": knowledge_item.title,
                 "content": knowledge_item.content,
                 "content_type": knowledge_item.content_type,
-                "source_url": knowledge_item.source_url,
+                "source_type": knowledge_item.source_type,
+                "status": knowledge_item.status,
                 "metadata": knowledge_item.item_metadata,
                 "created_at": knowledge_item.created_at.isoformat() if knowledge_item.created_at else None,
                 "updated_at": knowledge_item.updated_at.isoformat() if knowledge_item.updated_at else None,
-                "processing_status": knowledge_item.processing_status,
-                "is_chunked": knowledge_item.is_chunked,
-                "total_chunks": knowledge_item.total_chunks
             },
-            "processing_status": "queued",
             "file_info": {
                 "filename": filename,
                 "size": file_size,

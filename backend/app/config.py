@@ -26,6 +26,17 @@ class Settings(BaseSettings):
     # External APIs
     OPENAI_API_KEY: str
 
+    # OpenAI Vector Stores
+    ENABLE_OPENAI_VECTOR_STORES: bool = True  # Feature flag for OpenAI vector stores
+    OPENAI_VECTOR_STORE_EXPIRATION_DAYS: int = 365  # Vector store expiration (default: 1 year)
+    OPENAI_FILE_PURPOSE: str = "user_data"  # Default purpose for file uploads
+    OPENAI_FILE_EXPIRATION_DAYS: int = 30  # File expiration in days
+    OPENAI_MAX_FILE_SIZE_MB: int = 512  # Max file size for standard uploads
+    OPENAI_MAX_SEARCH_RESULTS: int = 20  # Max results from vector search
+    OPENAI_RESPONSES_MODEL: str = "gpt-4.1"  # Model for Responses API
+    OPENAI_RESPONSES_TEMPERATURE: float = 1.0  # Temperature for responses
+    OPENAI_RESPONSES_MAX_OUTPUT_TOKENS: Optional[int] = None  # Max output tokens (None = model default)
+
     # Storage
     STORAGE_BACKEND: str = "gcs"  # supabase, s3, gcs, local
     SUPABASE_URL: Optional[str] = None
@@ -101,6 +112,28 @@ class Settings(BaseSettings):
     REDIS_URL: Optional[str] = None
     ENABLE_CACHING: bool = True
     CACHE_TTL_SECONDS: int = 3600
+
+    # Document Summarization
+    ENABLE_DOCUMENT_SUMMARIZATION: bool = True  # Feature flag for document summarization
+    SUMMARY_MAX_CHUNK_TOKENS: int = 2000  # Max tokens per summarization chunk
+    SUMMARY_OVERLAP_RATIO: float = 0.15  # 15% overlap between chunks
+    SUMMARY_PROVIDER: str = "openai"  # openai, azure, anthropic, gemini
+    SUMMARY_MODEL_MAP_STAGE: str = "gpt-5-mini"  # Model for chunk summarization
+    SUMMARY_MODEL_REDUCE_STAGE: str = "gpt-5-mini"  # Model for final aggregation
+    SUMMARY_MAX_PARALLEL_CALLS: int = 8  # Max concurrent chunk summarization calls
+    SUMMARY_TIMEOUT_SECONDS: int = 120  # Timeout per summarization call
+    SUMMARY_RETRY_ATTEMPTS: int = 2  # Max retry attempts per chunk
+
+    # LLM Provider Configuration
+    AZURE_OPENAI_ENDPOINT: Optional[str] = None
+    AZURE_OPENAI_API_KEY: Optional[str] = None
+    AZURE_OPENAI_API_VERSION: str = "2024-02-15-preview"
+    AZURE_DEPLOYMENT_NAME: Optional[str] = None
+
+    ANTHROPIC_API_KEY: Optional[str] = None
+
+    GOOGLE_API_KEY: Optional[str] = None
+    GEMINI_MODEL: str = "gemini-1.5-pro"
 
     @field_validator("DATABASE_URL", mode="before")
     @classmethod

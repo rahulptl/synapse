@@ -25,8 +25,8 @@ class DialogManager {
 
             // Get current window to calculate centered position
             const currentWindow = await chrome.windows.getCurrent();
-            const dialogWidth = 500;
-            const dialogHeight = 650;
+            const dialogWidth = 420;
+            const dialogHeight = 480;
 
             // Calculate centered position relative to current window
             const left = Math.round(currentWindow.left + (currentWindow.width - dialogWidth) / 2);
@@ -53,15 +53,15 @@ class DialogManager {
         } catch (error) {
             console.error('[DialogManager] Failed to show protected content dialog:', error);
 
-            // Fallback: Show enhanced browser notification
+            // Fallback: Show helpful browser notification
             try {
                 await chrome.notifications.create(`zyph-fallback-${Date.now()}`, {
                     type: 'basic',
                     iconUrl: this.getNotificationIconUrl(),
-                    title: 'Protected Content - Use Right-Click to Save',
-                    message: `${message}\n\nTo save content: Select text -> Right-click -> Choose "Save to Zyph"`,
-                    requireInteraction: true,
-                    priority: 2
+                    title: '💡 Tip: How to Save This Page',
+                    message: `${message}\n\nSelect text -> Right-click -> Choose "Save to Zyph"`,
+                    requireInteraction: false,
+                    priority: 1
                 });
             } catch (notificationError) {
                 console.error('[DialogManager] Fallback notification also failed:', notificationError);
@@ -71,11 +71,11 @@ class DialogManager {
 
     async showProtectedPageBadge(pageType) {
         try {
-            chrome.action.setBadgeText({ text: 'LOCK' });
-            chrome.action.setBadgeBackgroundColor({ color: '#FF6B35' });
-            chrome.action.setTitle({ title: `Protected Content Detected\n\nZyph cannot read ${pageType} automatically.\nClick to learn how to save content using right-click.` });
+            chrome.action.setBadgeText({ text: '💡' });
+            chrome.action.setBadgeBackgroundColor({ color: '#3B82F6' });
+            chrome.action.setTitle({ title: `Tip: How to Save This Page\n\nFor ${pageType}, use text selection:\n1. Select the text you want\n2. Right-click and choose "Save to Zyph"` });
 
-            console.log('[DialogManager] Protected page badge notification set');
+            console.log('[DialogManager] Helpful tip badge notification set');
 
             // Clear badge after 10 seconds
             setTimeout(() => {
@@ -108,28 +108,28 @@ class DialogManager {
 
             this.restrictedNotificationShown.add(notificationKey);
 
-            let message = 'This is a protected page that Zyph cannot read automatically.';
-            let instructions = 'To save content: Select the text you want, then right-click and choose "Save to Zyph".';
+            let message = 'This page needs a simple extra step to save content.';
+            let instructions = 'Select the text you want, then right-click and choose "Save to Zyph".';
 
             if (pageType === 'Chrome internal page' && contentType === 'page') {
-                message = 'This is a protected content page (Chrome internal page).';
-                instructions = 'To save content: 1) Select the text you want to save, 2) Right-click on the selection, 3) Choose "Save to Zyph" from the context menu.';
+                message = 'Chrome protects this page for your security.';
+                instructions = 'Just select the text you want, right-click, and choose "Save to Zyph".';
             } else if (pageType === 'Chrome internal page' && contentType === 'selection') {
-                message = 'This is a protected content page (Chrome internal page).';
-                instructions = 'You can save selected text by right-clicking and choosing "Save to Zyph".';
+                message = 'Chrome protects this page for your security.';
+                instructions = 'You can save text by selecting it, right-clicking, and choosing "Save to Zyph".';
             } else if (contentType === 'page') {
-                instructions = 'To save content: 1) Select the text you want to save, 2) Right-click on the selection, 3) Choose "Save to Zyph" from the context menu.';
+                instructions = 'Select the text you want, right-click, and choose "Save to Zyph".';
             } else if (contentType === 'selection') {
-                instructions = 'You can save selected text by right-clicking and choosing "Save to Zyph".';
+                instructions = 'Select text, right-click, and choose "Save to Zyph".';
             }
 
             const notificationOptions = {
                 type: 'basic',
                 iconUrl: this.getNotificationIconUrl(),
-                title: 'Protected Content - Use Right-Click to Save',
-                message: `${message}\n\nTo save content: Select text -> Right-click -> Choose "Save to Zyph"`,
-                requireInteraction: true,
-                priority: 2,
+                title: '💡 Tip: How to Save This Page',
+                message: `${message}\n\n${instructions}`,
+                requireInteraction: false,
+                priority: 1,
                 buttons: [
                     { title: 'Got it!' },
                     { title: 'Open Extension' }
@@ -148,11 +148,11 @@ class DialogManager {
                 console.error('[DialogManager] Failed to show restricted page notification:', notificationError);
             }
 
-            // Try to show an in-page warning popup when content scripts are allowed
+            // Try to show an in-page helpful tip when content scripts are allowed
             if (tab.id !== undefined) {
-                let headline = 'Protected Content - Use Right-Click to Save';
+                let headline = '💡 Tip: How to Save This Page';
                 if (pageType === 'Chrome internal page') {
-                    headline = 'Protected Content - Use Right-Click to Save';
+                    headline = '💡 Quick Tip for Protected Pages';
                 }
 
                 const overlayPayload = {

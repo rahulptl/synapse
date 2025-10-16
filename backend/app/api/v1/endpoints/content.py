@@ -1,15 +1,17 @@
 """
 Content management endpoints.
 """
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Header, Path, BackgroundTasks, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from pydantic import BaseModel
 import zipfile
 import io
 import json
+import math
 from datetime import datetime
 
 from app.core.database import get_db
@@ -18,6 +20,8 @@ from app.services.content_service import content_service
 from app.models.schemas import (
     KnowledgeItemCreate, KnowledgeItemUpdate, ContentType
 )
+from app.models.database import KnowledgeItem, OpenAIFile
+from app.config import settings
 import logging
 
 logger = logging.getLogger(__name__)
@@ -33,6 +37,179 @@ class MoveContentRequest(BaseModel):
 class RenameContentRequest(BaseModel):
     """Request model for renaming content."""
     new_title: str
+
+
+# Pydantic models for text entry
+class TextEntryRequest(BaseModel):
+    """Request model for creating text-only knowledge items."""
+    title: str
+    content: str
+    folder_id: UUID
+    description: Optional[str] = None
+    tags: Optional[List[str]] = None
+    metadata: Optional[dict] = None
+
+
+class TextEntryResponse(BaseModel):
+    """Response model for text entry creation."""
+    success: bool
+    message: str
+    item: Dict[str, Any]
+
+
+@router.post("/text", response_model=TextEntryResponse)
+async def create_text_entry(
+    text_request: TextEntryRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    auth_data: dict = Depends(validate_any_auth)
+):
+    """
+    Create a text-only knowledge entry (no file upload).
+
+    This endpoint allows users to directly add text content without uploading a file.
+    The text is stored directly in the knowledge item and sent to OpenAI for search indexing.
+    """
+    user_id = UUID(auth_data["user_id"])
+
+    try:
+        from app.services.openai import FileService, VectorStoreService
+        from app.models.database import Profile
+
+        # Validate content
+        if not text_request.content or not text_request.content.strip():
+            raise HTTPException(status_code=400, detail="Content cannot be empty")
+
+        if len(text_request.content) > 10_000_000:  # 10MB limit
+            raise HTTPException(status_code=400, detail="Content too large (max 10MB)")
+
+        # Prepare metadata - merge tags into metadata
+        metadata = text_request.metadata or {}
+        if text_request.tags:
+            metadata['tags'] = text_request.tags
+
+        # Create knowledge item (text entry)
+        knowledge_item = KnowledgeItem(
+            user_id=user_id,
+            folder_id=text_request.folder_id,
+            title=text_request.title,
+            description=text_request.description,
+            content=text_request.content,
+            filename=None,  # No file for text entries
+            content_type='text/plain',  # Text content type
+            size_bytes=None,  # No file size
+            source_type='text',  # Direct text input
+            item_metadata=metadata,
+            status="pending"
+        )
+        db.add(knowledge_item)
+        await db.flush()  # Get ID without committing
+        logger.info(f"Created text knowledge item: {knowledge_item.id}")
+
+        # Send to OpenAI for search indexing (parallel processing)
+        openai_file = None
+        if settings.ENABLE_OPENAI_VECTOR_STORES:
+            try:
+                file_service = FileService()
+                vector_store_service = VectorStoreService()
+
+                # Upload text to OpenAI
+                openai_response = await file_service.upload_text_file(
+                    content=text_request.content,
+                    filename=f"{text_request.title}.txt",
+                    purpose=settings.OPENAI_FILE_PURPOSE
+                )
+
+                # Get user profile for vector store
+                profile_stmt = select(Profile).where(Profile.user_id == user_id)
+                profile_result = await db.execute(profile_stmt)
+                profile = profile_result.scalar_one_or_none()
+
+                user_name = profile.full_name or profile.email if profile else str(user_id)
+
+                # Get or create user's vector store
+                vector_store = await vector_store_service.get_or_create_user_vector_store(
+                    user_id=user_id,
+                    user_name=user_name,
+                    db=db
+                )
+
+                # Add to vector store with attributes
+                attributes = {
+                    "folder_id": str(text_request.folder_id),
+                    "title": text_request.title,
+                    "source_type": "text",
+                }
+
+                vector_store_file = await vector_store_service.add_file_to_vector_store(
+                    vector_store_id=vector_store.id,
+                    file_id=openai_response.id,
+                    attributes=attributes
+                )
+
+                # Create OpenAIFile record
+                openai_file = OpenAIFile(
+                    knowledge_item_id=knowledge_item.id,
+                    openai_file_id=openai_response.id,
+                    openai_vector_store_file_id=vector_store_file.id,
+                    vector_store_id=vector_store.id,
+                    status="completed",
+                    openai_attributes=attributes,
+                    usage_bytes=getattr(openai_response, 'bytes', 0),
+                    completed_at=datetime.utcnow()
+                )
+                db.add(openai_file)
+                logger.info(f"Created OpenAIFile record for text entry: {openai_file.openai_file_id}")
+
+            except Exception as e:
+                logger.error(f"OpenAI processing failed for text entry: {e}")
+                # Continue without OpenAI - don't fail the text entry
+
+        # Update status
+        knowledge_item.status = "completed" if openai_file else "failed"
+
+        # Commit all records
+        await db.commit()
+        logger.info(f"✅ Text entry created successfully: {knowledge_item.id}")
+
+        # Prepare response
+        response_data = {
+            "id": str(knowledge_item.id),
+            "user_id": str(user_id),
+            "folder_id": str(text_request.folder_id),
+            "title": text_request.title,
+            "description": text_request.description,
+            "content": text_request.content,
+            "content_type": "text/plain",
+            "source_type": "text",
+            "status": knowledge_item.status,
+            "tags": text_request.tags,
+            "metadata": text_request.metadata,
+            "created_at": knowledge_item.created_at.isoformat() if knowledge_item.created_at else None,
+            "updated_at": knowledge_item.updated_at.isoformat() if knowledge_item.updated_at else None,
+            "filename": None,  # No file for text entries
+            "size_bytes": None,
+            "openai_info": {
+                "indexed": openai_file is not None,
+                "status": "completed" if openai_file else "skipped",
+                "vector_store_id": openai_file.vector_store_id if openai_file else None,
+                "openai_file_id": openai_file.openai_file_id if openai_file else None
+            }
+        }
+
+        return TextEntryResponse(
+            success=True,
+            message=f"Text entry '{text_request.title}' created successfully",
+            item=response_data
+        )
+
+    except ValueError as e:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Failed to create text entry: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to create text entry")
 
 
 @router.post("/")
@@ -58,13 +235,13 @@ async def create_content(
 
         # Add background processing task for text content
         try:
-            from app.api.v1.endpoints.files import process_knowledge_item_background
-            background_tasks.add_task(process_knowledge_item_background, knowledge_item.id)
+            from app.services.processing_service import processing_service
+            background_tasks.add_task(processing_service.process_knowledge_item, knowledge_item.id)
             logger.info(f"Added background processing task for knowledge item {knowledge_item.id}")
         except Exception as e:
             logger.error(f"Failed to add background task for content creation: {e}", exc_info=True)
             # Mark item as failed so user knows there's an issue
-            knowledge_item.processing_status = "failed"
+            knowledge_item.status = "failed"
             await db.commit()
             raise HTTPException(
                 status_code=500,
@@ -86,9 +263,7 @@ async def create_content(
                 "metadata": content_service.sanitize_metadata_for_response(knowledge_item.id, knowledge_item.item_metadata),
                 "created_at": knowledge_item.created_at.isoformat() if knowledge_item.created_at else None,
                 "updated_at": knowledge_item.updated_at.isoformat() if knowledge_item.updated_at else None,
-                "processing_status": knowledge_item.processing_status,
-                "is_chunked": knowledge_item.is_chunked,
-                "total_chunks": knowledge_item.total_chunks
+                "status": knowledge_item.status
             },
             "processing_status": "queued",
             "storage_info": {
@@ -143,7 +318,7 @@ async def search_content_titles(
             Folder, KnowledgeItem.folder_id == Folder.id
         ).where(
             KnowledgeItem.user_id == user_id,
-            KnowledgeItem.processing_status == 'completed'  # Only show processed items
+            KnowledgeItem.status.in_(['completed', 'processing', 'pending'])  # Include items being processed
         )
 
         # Add folder filter if specified
@@ -265,8 +440,8 @@ async def update_content(
             )
 
             if content_changed:
-                from app.api.v1.endpoints.files import process_knowledge_item_background
-                background_tasks.add_task(process_knowledge_item_background, knowledge_item.id)
+                from app.services.processing_service import processing_service
+                background_tasks.add_task(processing_service.process_knowledge_item, knowledge_item.id)
                 logger.info(f"Added background processing task for updated knowledge item {knowledge_item.id}")
         except Exception as e:
             logger.error(f"Failed to add background task for content update: {e}", exc_info=True)
@@ -326,8 +501,8 @@ async def reprocess_content(
 
         # Add background processing task to reprocess
         try:
-            from app.api.v1.endpoints.files import process_knowledge_item_background
-            background_tasks.add_task(process_knowledge_item_background, knowledge_item.id)
+            from app.services.processing_service import processing_service
+            background_tasks.add_task(processing_service.process_knowledge_item, knowledge_item.id)
             logger.info(f"Added background reprocessing task for knowledge item {knowledge_item.id}")
         except Exception as e:
             logger.error(f"Failed to add background task for reprocessing: {e}")
@@ -794,3 +969,72 @@ async def get_content_download_url(
             status_code=500,
             detail=f"Failed to generate download URL: {str(e)}"
         )
+
+
+@router.get("/user/storage-usage")
+async def get_user_storage_usage(
+    db: AsyncSession = Depends(get_db),
+    auth_data: dict = Depends(validate_any_auth)
+):
+    """
+    Get user's storage usage statistics.
+
+    Returns:
+        Storage usage information including used bytes, total limit, and percentages
+    """
+    try:
+        user_id = UUID(auth_data["user_id"])
+        STORAGE_LIMIT_BYTES = 1024 * 1024 * 1024  # 1 GB per user
+
+        from sqlalchemy import func, select
+        from app.models.database import KnowledgeItem
+
+        # Calculate total storage used by user
+        # Sum up content size for text content and file sizes for uploads
+        stmt = select(
+            func.sum(func.length(KnowledgeItem.content)).label("total_content_bytes"),
+            func.sum(KnowledgeItem.size_bytes).label("total_file_bytes"),
+            func.count(KnowledgeItem.id).label("total_items")
+        ).where(
+            KnowledgeItem.user_id == user_id
+        )
+
+        result = await db.execute(stmt)
+        row = result.first()
+
+        # Calculate total bytes used
+        content_bytes = row.total_content_bytes or 0
+        file_bytes = row.total_file_bytes or 0
+        total_used_bytes = content_bytes + file_bytes
+
+        # Format bytes for display
+        def format_bytes(bytes_count: int) -> str:
+            if bytes_count == 0:
+                return "0 B"
+            k = 1024
+            sizes = ["B", "KB", "MB", "GB"]
+            i = int(math.floor(math.log(bytes_count) / math.log(k)))
+            return f"{round(bytes_count / math.pow(k, i), 1)} {sizes[i]}"
+
+        # Calculate percentage
+        used_percentage = (total_used_bytes / STORAGE_LIMIT_BYTES) * 100
+        used_percentage = min(used_percentage, 100)  # Cap at 100%
+
+        return {
+            "used_bytes": total_used_bytes,
+            "total_bytes": STORAGE_LIMIT_BYTES,
+            "used_percentage": used_percentage,
+            "used_formatted": format_bytes(total_used_bytes),
+            "total_formatted": format_bytes(STORAGE_LIMIT_BYTES),
+            "stats": {
+                "total_items": row.total_items or 0,
+                "content_bytes": content_bytes,
+                "file_bytes": file_bytes,
+                "content_formatted": format_bytes(content_bytes),
+                "file_formatted": format_bytes(file_bytes)
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to get storage usage: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get storage usage")

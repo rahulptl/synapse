@@ -345,29 +345,15 @@ class ZyphBackgroundManager {
     async showProtectedPageError(tab) {
         try {
             const pageType = Zyph.Utils.getPageType(tab.url);
-            const message = `Cannot save content from ${pageType}. This page type is protected by your browser for security reasons.`;
+            const message = `This page needs a simple extra step. Select the text you want, right-click, and choose "Save to Zyph".`;
 
-            console.log(`[Background] Protected page error: ${message}`);
+            console.log(`[Background] Protected page tip shown for: ${pageType}`);
 
-            // Show notification
-            await chrome.notifications.create({
-                type: 'basic',
-                iconUrl: '../assets/icon48.png',
-                title: 'Zyph - Protected Page',
-                message: message,
-                priority: 2
-            });
-
-            // Show badge error
-            chrome.action.setBadgeText({ text: 'ERR' });
-            chrome.action.setBadgeBackgroundColor({ color: '#ff9800' });
-
-            setTimeout(() => {
-                chrome.action.setBadgeText({ text: '' });
-            }, 3000);
+            // Show helpful notification using DialogManager
+            await this.dialogManager.showRestrictedPageNotification(tab, 'page');
 
         } catch (error) {
-            console.error('[Background] Failed to show protected page error:', error);
+            console.error('[Background] Failed to show protected page tip:', error);
         }
     }
 

@@ -63,8 +63,14 @@ steps:
       - '${_CPU}'
       - '--timeout'
       - '300'
+      - '--startup-probe-timeout-seconds'
+      - '10'
+      - '--startup-probe-period-seconds'
+      - '5'
+      - '--startup-probe-failure-threshold'
+      - '8'
       - '--set-env-vars'
-      - 'ENVIRONMENT=${_ENVIRONMENT},API_V1_STR=/api/v1,MAX_CONTENT_SIZE_MB=50,CHUNK_SIZE=500,CHUNK_OVERLAP=50,SIMILARITY_THRESHOLD=0.7,EMBEDDING_MODEL=text-embedding-3-large,CHAT_MODEL=${_CHAT_MODEL},MAX_CHAT_HISTORY=10,CHAT_TIMEOUT_SECONDS=60,RATE_LIMIT_PER_MINUTE=${_RATE_LIMIT},LOG_LEVEL=${_LOG_LEVEL},ENABLE_CACHING=true,CACHE_TTL_SECONDS=3600,STORAGE_BACKEND=gcs,GCS_BUCKET_NAME=${_GCS_BUCKET},GCS_FOLDER_PREFIX=${_ENV},GCS_PROJECT_ID=$PROJECT_ID'
+      - 'ENVIRONMENT=${_ENVIRONMENT},API_V1_STR=/api/v1,MAX_CONTENT_SIZE_MB=50,CHUNK_SIZE=500,CHUNK_OVERLAP=50,SIMILARITY_THRESHOLD=0.7,EMBEDDING_MODEL=text-embedding-3-large,CHAT_MODEL=${_CHAT_MODEL},MAX_CHAT_HISTORY=10,CHAT_TIMEOUT_SECONDS=60,RATE_LIMIT_PER_MINUTE=${_RATE_LIMIT},LOG_LEVEL=${_LOG_LEVEL},ENABLE_CACHING=true,CACHE_TTL_SECONDS=3600,STORAGE_BACKEND=gcs,GCS_BUCKET_NAME=${_GCS_BUCKET},GCS_FOLDER_PREFIX=${_ENV},GCS_PROJECT_ID=$PROJECT_ID,PRELOAD_MODELS_ON_STARTUP=${_PRELOAD_MODELS}'
       - '--set-secrets'
       - 'SECRET_KEY=backend-secret-key:latest,OPENAI_API_KEY=openai-api-key:latest,DATABASE_URL=database-url-${_ENV}:latest'
       - '--add-cloudsql-instances'
@@ -87,6 +93,7 @@ substitutions:
   _GCS_BUCKET: 'synapse_storage'
   _CLOUD_SQL_CONNECTION: 'synapse-473918:asia-south1:synapse'
   _SERVICE_ACCOUNT: 'synapse-backend@synapse-473918.iam.gserviceaccount.com'
+  _PRELOAD_MODELS: 'true'  # Set to 'false' for faster cold starts (models load on-demand)
 
 options:
   logging: CLOUD_LOGGING_ONLY

@@ -90,7 +90,19 @@
       "Bash(gcloud run revisions list:*)",
       "Read(//private/tmp/**)",
       "Bash(rm:*)",
-      "Bash(npm run type-check:*)"
+      "Bash(npm run type-check:*)",
+      "WebFetch(domain:platform.openai.com)",
+      "Bash(docker run:*)",
+      "Bash(pip show:*)",
+      "Bash(npm run:*)",
+      "Bash(docker cp:*)",
+      "Bash(docker-compose down:*)",
+      "Bash(docker stop:*)",
+      "Bash(docker rm:*)",
+      "Bash(docker-compose stop:*)",
+      "Bash(docker-compose:*)",
+      "Bash(gcloud sql databases:*)",
+      "Bash(gcloud sql export sql:*)"
     ],
     "deny": [],
     "ask": []

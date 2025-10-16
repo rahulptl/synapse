@@ -79,7 +79,7 @@ export function FolderSelectorDialog({
             ) : (
               <Folder className="h-4 w-4" />
             )}
-            <span className="text-sm font-medium">{folder.name}</span>
+            <span className="text-sm font-medium">{folder.name.charAt(0).toUpperCase() + folder.name.slice(1)}</span>
           </div>
         </button>
         {folder.children && folder.children.length > 0 && (

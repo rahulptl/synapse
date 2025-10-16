@@ -209,9 +209,9 @@ class ZyphContentCapture {
             this.dismissRestrictedWarning(true);
 
             const {
-                headline = "Protected Content - Use Right-Click to Save",
-                message = 'This is a protected page that Zyph cannot read automatically.',
-                instructions = 'To save content: 1) Select the text you want to save, 2) Right-click on the selection, 3) Choose "Save to Zyph" from the context menu.',
+                headline = "💡 Tip: How to Save This Page",
+                message = 'This page needs a simple extra step to save content.',
+                instructions = 'Select the text you want, right-click, and choose "Save to Zyph".',
                 domain = ''
             } = payload || {};
 
@@ -220,133 +220,103 @@ class ZyphContentCapture {
             container.setAttribute('role', 'alert');
             container.style.cssText = `
                 position: fixed;
-                top: 20px;
-                right: 20px;
-                width: 360px;
-                max-width: calc(100vw - 40px);
-                background: linear-gradient(135deg, rgba(20, 30, 48, 0.98), rgba(30, 41, 59, 0.98));
-                color: #F8FAFC;
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                padding: 20px 22px;
-                border-radius: 16px;
-                border: 1px solid rgba(59, 130, 246, 0.3);
-                box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.05);
+                top: 12px;
+                right: 12px;
+                width: 280px;
+                max-width: calc(100vw - 24px);
+                background: rgba(255, 255, 255, 0.97);
+                color: #1e293b;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+                padding: 10px 12px;
+                border-radius: 10px;
+                border: 1px solid rgba(226, 232, 240, 0.8);
+                box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.06);
                 z-index: 2147483647;
-                line-height: 1.5;
                 opacity: 0;
-                transform: translateY(-12px) scale(0.95);
-                transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-                backdrop-filter: blur(12px);
+                transform: translateY(-6px) scale(0.97);
+                transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
             `;
 
             const layout = document.createElement('div');
-            layout.style.cssText = 'display: flex; align-items: flex-start; gap: 14px;';
+            layout.style.cssText = 'display: flex; align-items: flex-start; gap: 8px;';
 
-            // Add an icon
+            // Minimal lightbulb icon
             const iconEl = document.createElement('div');
             iconEl.style.cssText = `
                 flex-shrink: 0;
-                width: 24px;
-                height: 24px;
-                background: rgba(59, 130, 246, 0.2);
-                border-radius: 8px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                margin-top: 2px;
+                width: 16px;
+                height: 16px;
+                margin-top: 1px;
             `;
             iconEl.innerHTML = `
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="2.5">
-                    <path d="M9 12l2 2 4-4"/>
-                    <path d="M21 12c-1 0-3-1-3-3s2-3 3-3 3 1 3 3-2 3-3 3"/>
-                    <path d="M3 12c1 0 3-1 3-3s-2-3-3-3-3 1-3 3 2 3 3 3"/>
-                    <path d="M13 12h3"/>
-                    <path d="M8 12H5"/>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>
+                    <circle cx="12" cy="12" r="4"/>
                 </svg>
             `;
 
             const contentBox = document.createElement('div');
-            contentBox.style.cssText = 'flex: 1;';
+            contentBox.style.cssText = 'flex: 1; min-width: 0;';
 
             const titleEl = document.createElement('div');
             titleEl.textContent = headline;
-            titleEl.style.cssText = 'font-weight: 700; font-size: 16px; margin-bottom: 8px; color: #F1F5F9;';
+            titleEl.style.cssText = 'font-weight: 600; font-size: 13px; margin-bottom: 4px; color: #0f172a; letter-spacing: -0.01em;';
 
             const messageEl = document.createElement('div');
             messageEl.textContent = message;
-            messageEl.style.cssText = 'font-size: 14px; margin-bottom: 12px; color: #CBD5E1;';
+            messageEl.style.cssText = 'font-size: 12px; color: #64748b; line-height: 1.4; margin-bottom: 6px;';
 
             const instructionsEl = document.createElement('div');
             instructionsEl.style.cssText = `
-                font-size: 13px;
-                color: #E2E8F0;
-                background: rgba(59, 130, 246, 0.1);
-                padding: 12px 14px;
-                border-radius: 10px;
-                border-left: 3px solid #3B82F6;
-                line-height: 1.6;
+                font-size: 11px;
+                color: #475569;
+                background: rgba(241, 245, 249, 0.8);
+                padding: 6px 8px;
+                border-radius: 6px;
+                line-height: 1.5;
+                border: 1px solid rgba(226, 232, 240, 0.6);
             `;
 
-            // Format instructions as a list
-            const instructionsList = instructions.split(', ').map((step, index) => {
-                if (step.includes(') ')) {
-                    return step;
-                }
-                return `${index + 1}) ${step}`;
-            });
-
-            instructionsEl.innerHTML = instructionsList.join('<br>');
+            // Simple instruction text - no numbering for brevity
+            instructionsEl.textContent = instructions;
 
             contentBox.appendChild(titleEl);
             contentBox.appendChild(messageEl);
             contentBox.appendChild(instructionsEl);
 
-            if (domain) {
-                const domainEl = document.createElement('div');
-                domainEl.textContent = domain;
-                domainEl.style.cssText = `
-                    font-size: 12px;
-                    color: #64748B;
-                    margin-top: 12px;
-                    padding: 4px 8px;
-                    background: rgba(15, 23, 42, 0.3);
-                    border-radius: 6px;
-                    text-align: center;
-                `;
-                contentBox.appendChild(domainEl);
-            }
-
             const closeButton = document.createElement('button');
             closeButton.type = 'button';
-            closeButton.setAttribute('aria-label', 'Dismiss Zyph restricted page warning');
+            closeButton.setAttribute('aria-label', 'Dismiss tip');
             closeButton.innerHTML = `
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
                     <line x1="18" y1="6" x2="6" y2="18"></line>
                     <line x1="6" y1="6" x2="18" y2="18"></line>
                 </svg>
             `;
             closeButton.style.cssText = `
-                background: rgba(71, 85, 105, 0.2);
+                background: transparent;
                 border: none;
-                color: #CBD5E1;
+                color: #94a3b8;
                 cursor: pointer;
-                padding: 8px;
-                border-radius: 8px;
+                padding: 4px;
+                border-radius: 4px;
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                transition: all 0.2s ease;
+                transition: all 0.15s ease;
                 flex-shrink: 0;
+                margin-top: -2px;
+                margin-right: -2px;
             `;
 
             closeButton.addEventListener('mouseenter', () => {
-                closeButton.style.background = 'rgba(248, 113, 113, 0.2)';
-                closeButton.style.color = '#FCA5A5';
+                closeButton.style.background = 'rgba(148, 163, 184, 0.15)';
+                closeButton.style.color = '#64748b';
             });
 
             closeButton.addEventListener('mouseleave', () => {
-                closeButton.style.background = 'rgba(71, 85, 105, 0.2)';
-                closeButton.style.color = '#CBD5E1';
+                closeButton.style.background = 'transparent';
+                closeButton.style.color = '#94a3b8';
             });
 
             closeButton.addEventListener('click', () => {

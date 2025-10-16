@@ -1,2 +1,0 @@
-- always clean up your code
-- always plan before implementing

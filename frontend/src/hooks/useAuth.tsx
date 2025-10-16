@@ -15,8 +15,8 @@ interface AuthContextType {
   user: User | null;
   accessToken: string | null;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<{ error: any }>;
-  signUp: (email: string, password: string, fullName: string) => Promise<{ error: any }>;
+  signIn: (email: string, password: string) => Promise<{ error: { message: string } | null }>;
+  signUp: (email: string, password: string, fullName: string) => Promise<{ error: { message: string } | null }>;
   signOut: () => Promise<void>;
 }
 
@@ -124,8 +124,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const errorData = await response.json();
         return { error: { message: errorData.detail || 'Login failed' } };
       }
-    } catch (error: any) {
-      return { error: { message: error.message || 'Network error' } };
+    } catch (error) {
+      return { error: { message: error instanceof Error ? error.message : 'Network error' } };
     }
   };
 
@@ -154,8 +154,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const errorData = await response.json();
         return { error: { message: errorData.detail || 'Signup failed' } };
       }
-    } catch (error: any) {
-      return { error: { message: error.message || 'Network error' } };
+    } catch (error) {
+      return { error: { message: error instanceof Error ? error.message : 'Network error' } };
     }
   };
 

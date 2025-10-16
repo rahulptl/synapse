@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,6 +14,7 @@ import { useAuth } from '@/hooks/useAuth';
 interface UploadDialogProps {
   folderId: string;
   onUploadComplete: () => void;
+  showButton?: boolean; // Control whether to show the "Add Content" button
 }
 
 interface FileUploadProgress {
@@ -23,8 +24,27 @@ interface FileUploadProgress {
   error?: string;
 }
 
-export function UploadDialog({ folderId, onUploadComplete }: UploadDialogProps) {
+export function UploadDialog({ folderId, onUploadComplete, showButton = true }: UploadDialogProps) {
   const [open, setOpen] = useState(false);
+
+  // Auto-open dialog if showButton is false (dialog-only mode)
+  useEffect(() => {
+    if (!showButton) {
+      setOpen(true);
+    }
+  }, [showButton]);
+
+  // Handle dialog close for dialog-only mode
+  const handleDialogClose = (isOpen: boolean) => {
+    setOpen(isOpen);
+    if (!isOpen) {
+      resetForm();
+      // Notify parent to clean up if in dialog-only mode
+      if (!showButton) {
+        onUploadComplete();
+      }
+    }
+  };
   const [files, setFiles] = useState<File[]>([]);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -59,30 +79,21 @@ export function UploadDialog({ folderId, onUploadComplete }: UploadDialogProps) 
     if (!selectedFiles) return;
     const newFiles = Array.from(selectedFiles);
 
-    // Validate file sizes (now supports up to 5GB via signed URLs)
-    const MAX_FILE_SIZE = 5 * 1024 * 1024 * 1024; // 5GB (GCS limit)
+    // Validate file sizes (32MB Cloud Run limit)
+    const MAX_FILE_SIZE = 32 * 1024 * 1024; // 32MB (Cloud Run limit)
     const oversizedFiles = newFiles.filter(f => f.size > MAX_FILE_SIZE);
 
     if (oversizedFiles.length > 0) {
       const fileList = oversizedFiles.map(f =>
-        `${f.name} (${(f.size / (1024 * 1024 * 1024)).toFixed(2)}GB)`
+        `${f.name} (${(f.size / (1024 * 1024)).toFixed(1)}MB)`
       ).join(', ');
 
       toast({
         title: "File too large",
-        description: `${oversizedFiles.length} file(s) exceed 5GB limit: ${fileList}`,
+        description: `${oversizedFiles.length} file(s) exceed 32MB limit: ${fileList}`,
         variant: "destructive",
       });
       return;
-    }
-
-    // Info toast for large files (>32MB) that will use direct GCS upload
-    const largeFiles = newFiles.filter(f => f.size > 32 * 1024 * 1024);
-    if (largeFiles.length > 0) {
-      toast({
-        title: "Large file detected",
-        description: `${largeFiles.length} file(s) will upload directly to cloud storage (may take longer)`,
-      });
     }
 
     setFiles(prev => [...prev, ...newFiles]);
@@ -144,54 +155,21 @@ export function UploadDialog({ folderId, onUploadComplete }: UploadDialogProps) 
         );
 
         try {
-          const LARGE_FILE_THRESHOLD = 32 * 1024 * 1024; // 32MB Cloud Run limit
+          // Simple file upload through Cloud Run (32MB limit)
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('folder_id', folderId);
+          formData.append('title', itemTitle);
+          if (description) formData.append('description', description);
 
-          // Large file: Use signed URL for direct GCS upload
-          if (file.size > LARGE_FILE_THRESHOLD) {
-            // Step 1: Get signed URL from backend
-            const { upload_url, storage_path } = await apiClient.getSignedUploadUrl(
-              {
-                filename: file.name,
-                content_type: file.type || 'application/octet-stream',
-                folder_id: folderId,
-                title: itemTitle,
-                description,
-                file_size: file.size,
-              },
-              auth
+          // Track upload progress
+          await apiClient.uploadFileWithProgress(formData, auth, (progress) => {
+            setUploadProgress(prev =>
+              prev.map((p, idx) => idx === i ? { ...p, progress } : p)
             );
+          });
 
-            // Step 2: Upload directly to GCS with progress tracking
-            await apiClient.uploadToSignedUrl(upload_url, file, (progress) => {
-              setUploadProgress(prev =>
-                prev.map((p, idx) => idx === i ? { ...p, progress } : p)
-              );
-            });
-
-            // Step 3: Notify backend that upload is complete
-            await apiClient.notifyUploadComplete(
-              {
-                storage_path,
-                folder_id: folderId,
-                title: itemTitle,
-                description,
-                file_size: file.size,
-                content_type: file.type || 'application/octet-stream',
-              },
-              auth
-            );
-          }
-          // Regular file: Use standard upload through Cloud Run
-          else {
-            const formData = new FormData();
-            formData.append('file', file);
-            formData.append('folder_id', folderId);
-            formData.append('title', itemTitle);
-            if (description) formData.append('description', description);
-
-            // Upload file without progress tracking
-            await apiClient.uploadFile(formData, auth);
-          }
+          console.log(`✅ Uploaded ${file.name} using simplified backend`);
 
           setUploadProgress(prev =>
             prev.map((p, idx) => idx === i ? { ...p, status: 'success', progress: 100 } : p)
@@ -267,11 +245,10 @@ export function UploadDialog({ folderId, onUploadComplete }: UploadDialogProps) 
     try {
       const auth = getAuthData();
 
-      await apiClient.createContent({
+      await apiClient.createTextEntry({
         folder_id: folderId,
         title: title.trim(),
         content: textContent.trim(),
-        content_type: 'text',
         description: description || '',
       }, auth);
 
@@ -322,19 +299,19 @@ export function UploadDialog({ folderId, onUploadComplete }: UploadDialogProps) 
 
   return (
     <>
-      <Button
-        onClick={() => setOpen(true)}
-        size="sm"
-        className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-lg"
-      >
-        <Plus className="h-4 w-4 mr-2" />
-        Add Content
-      </Button>
+      {/* Only show the button if showButton is true */}
+      {showButton && (
+        <Button
+          onClick={() => setOpen(true)}
+          size="sm"
+          className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-lg"
+        >
+          <Plus className="h-4 w-4 mr-2" />
+          Add Content
+        </Button>
+      )}
 
-      <Dialog open={open} onOpenChange={(isOpen) => {
-        setOpen(isOpen);
-        if (!isOpen) resetForm();
-      }}>
+      <Dialog open={open} onOpenChange={handleDialogClose}>
         <DialogContent className="sm:max-w-[600px] max-h-[90vh] bg-slate-900 border-slate-700 flex flex-col overflow-hidden">
           <DialogHeader className="flex-shrink-0">
             <DialogTitle className="text-white text-xl">Add Content to Folder</DialogTitle>
@@ -373,7 +350,7 @@ export function UploadDialog({ folderId, onUploadComplete }: UploadDialogProps) 
                   Drop files here or click to browse
                 </p>
                 <p className="text-xs text-gray-500 mt-1">
-                  Supports PDFs, documents, images, and more
+                  Supports PDFs, documents, images, and more (max 32MB per file)
                 </p>
               </div>
 

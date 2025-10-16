@@ -386,9 +386,18 @@ class ContentSaver {
                 }
             };
         } catch (error) {
-            console.warn(`[ContentSaver] Content script not available for selection, using fallback:`, error.message);
-            await this.dialogManager.showRestrictedPageNotification(tab, 'selection');
-            return this.createFallbackContent(info, tab, folder, 'selection');
+            console.warn(`[ContentSaver] Content script not available for selection, checking if we have valid selectionText:`, error.message);
+
+            // Only use fallback if we have valid selectionText (real user content)
+            if (info?.selectionText && info.selectionText.trim().length > 0) {
+                console.log('[ContentSaver] Using selectionText as fallback content');
+                return this.createFallbackContent(info, tab, folder, 'selection');
+            } else {
+                // No valid selection - this is a protected page
+                console.warn('[ContentSaver] No valid selectionText available - showing notification only');
+                await this.dialogManager.showRestrictedPageNotification(tab, 'selection');
+                return null;
+            }
         }
     }
 
@@ -398,12 +407,21 @@ class ContentSaver {
                 action: 'getPageContent'
             });
 
+            // Validate that we got meaningful content
+            const hasContent = response.content && response.content.length > 50;
+
+            if (!hasContent) {
+                console.warn('Content extraction returned empty or minimal content');
+                await this.dialogManager.showRestrictedPageNotification(tab, 'page');
+                return null; // Don't save empty content
+            }
+
             return {
                 id: Zyph.Utils.generateId(),
                 type: 'page',
                 folderId: folder.id,
                 title: response.title || tab.title,
-                content: response.content || 'Content could not be extracted',
+                content: response.content,
                 rawHtml: response.rawHtml,
                 url: tab.url,
                 favicon: response.favicon || Zyph.Utils.getDefaultFavicon(tab.url),
@@ -412,9 +430,10 @@ class ContentSaver {
                 metadata: response.metadata || {}
             };
         } catch (error) {
-            console.warn('Content script not available, using fallback for entire page');
+            console.warn('Content script not available for entire page - this is a protected page');
             await this.dialogManager.showRestrictedPageNotification(tab, 'page');
-            return this.createFallbackContent(null, tab, folder, 'page');
+            // Don't save fallback content with instructions - just return null
+            return null;
         }
     }
 
@@ -423,6 +442,7 @@ class ContentSaver {
             const domain = new URL(tab.url).hostname;
 
             if (type === 'selection' && info?.selectionText) {
+                // This is valid user content - selectionText from the context menu
                 const fallbackContent = {
                     id: Zyph.Utils.generateId(),
                     type: 'selection',
@@ -436,11 +456,14 @@ class ContentSaver {
                     metadata: {
                         pageTitle: tab.title,
                         selectedText: info.selectionText,
-                        fallback: true
+                        fallback: true,
+                        // This is real user content, so allow sync
+                        doNotSync: false
                     }
                 };
                 return fallbackContent;
             } else {
+                // This is instructional content - don't sync to API
                 const pageType = this.dialogManager.getPageType(tab.url);
                 let instructions;
 
@@ -464,7 +487,9 @@ class ContentSaver {
                         pageTitle: tab.title,
                         pageType: pageType,
                         fallback: true,
-                        reason: 'Content script not allowed on this page type'
+                        reason: 'Content script not allowed on this page type',
+                        // Don't sync instructional content to API
+                        doNotSync: true
                     }
                 };
                 return fallbackPageContent;
@@ -709,6 +734,12 @@ class ContentSaver {
         try {
             if (!folder?.remote?.id) {
                 console.log('[ContentSaver] Folder not linked to Zyph.com - skipping remote sync');
+                return;
+            }
+
+            // Skip sync if content is marked as doNotSync (e.g., instructional fallback content)
+            if (savedItem?.metadata?.doNotSync || originalContent?.metadata?.doNotSync) {
+                console.log('[ContentSaver] Content marked as doNotSync - skipping remote sync');
                 return;
             }
 
