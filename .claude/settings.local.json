@@ -103,7 +103,8 @@
       "Bash(docker-compose:*)",
       "Bash(gcloud sql databases:*)",
       "Bash(gcloud sql export sql:*)",
-      "Bash(gcloud sql users list:*)"
+      "Bash(gcloud sql users list:*)",
+      "Bash(gcloud builds log:*)"
     ],
     "deny": [],
     "ask": []
