@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     OPENAI_FILE_EXPIRATION_DAYS: int = 30  # File expiration in days
     OPENAI_MAX_FILE_SIZE_MB: int = 512  # Max file size for standard uploads
     OPENAI_MAX_SEARCH_RESULTS: int = 20  # Max results from vector search
-    OPENAI_RESPONSES_MODEL: str = "gpt-4.1"  # Model for Responses API
+    OPENAI_RESPONSES_MODEL: str = "gpt-5"  # Model for Responses API
     OPENAI_RESPONSES_TEMPERATURE: float = 1.0  # Temperature for responses
     OPENAI_RESPONSES_MAX_OUTPUT_TOKENS: Optional[int] = None  # Max output tokens (None = model default)
 
@@ -118,8 +118,8 @@ class Settings(BaseSettings):
     SUMMARY_MAX_CHUNK_TOKENS: int = 2000  # Max tokens per summarization chunk
     SUMMARY_OVERLAP_RATIO: float = 0.15  # 15% overlap between chunks
     SUMMARY_PROVIDER: str = "openai"  # openai, azure, anthropic, gemini
-    SUMMARY_MODEL_MAP_STAGE: str = "gpt-5-mini"  # Model for chunk summarization
-    SUMMARY_MODEL_REDUCE_STAGE: str = "gpt-5-mini"  # Model for final aggregation
+    SUMMARY_MODEL_MAP_STAGE: str = "gpt-5"  # Model for chunk summarization
+    SUMMARY_MODEL_REDUCE_STAGE: str = "gpt-5"  # Model for final aggregation
     SUMMARY_MAX_PARALLEL_CALLS: int = 8  # Max concurrent chunk summarization calls
     SUMMARY_TIMEOUT_SECONDS: int = 120  # Timeout per summarization call
     SUMMARY_RETRY_ATTEMPTS: int = 2  # Max retry attempts per chunk

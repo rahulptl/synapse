@@ -55,7 +55,7 @@ class ResponsesService(OpenAIBaseService):
         self,
         query: str,
         vector_store_ids: List[str],
-        model: str = "gpt-4.1",
+        model: str = "gpt-5",
         instructions: Optional[str] = None,
         previous_response_id: Optional[str] = None,
         max_num_results: int = 20,
@@ -69,11 +69,11 @@ class ResponsesService(OpenAIBaseService):
         Args:
             query: The user's query
             vector_store_ids: List of vector store IDs to search
-            model: The model to use (default: "gpt-4.1")
+            model: The model to use (default: "gpt-5")
             instructions: System instructions (uses DEFAULT_INSTRUCTIONS if not provided)
             previous_response_id: Previous response ID for conversation continuity
             max_num_results: Maximum number of file search results (1-50)
-            temperature: Sampling temperature (0.0 to 2.0, default 0.7)
+            temperature: Sampling temperature (0.0 to 2.0, default 0.7). Note: Ignored for reasoning models (o1, gpt-5)
             attribute_filter: OpenAI attribute filter for narrowing search results
 
         Returns:
@@ -108,8 +108,12 @@ class ResponsesService(OpenAIBaseService):
             'input': query,
             'tools': tools,
             'instructions': instructions,
-            'temperature': temperature,
         }
+
+        # Only add temperature for non-reasoning models (o1 series doesn't support it)
+        # GPT-5 and o1 models don't support temperature parameter
+        if not (model.startswith('o1') or model.startswith('gpt-5')):
+            kwargs['temperature'] = temperature
 
         if previous_response_id is not None:
             kwargs['previous_response_id'] = previous_response_id
