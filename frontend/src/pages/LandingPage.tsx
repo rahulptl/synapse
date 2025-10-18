@@ -10,13 +10,13 @@ export default function LandingPage() {
   const features = [
     {
       icon: <Database className="h-8 w-8 text-primary" />,
-      title: "Knowledge Base",
+      title: "Memory",
       description: "Organize your information in hierarchical folders with intelligent categorization and easy retrieval."
     },
     {
       icon: <MessageSquare className="h-8 w-8 text-primary" />,
       title: "AI Chat Interface",
-      description: "Ask questions about your knowledge base using natural language and get contextual answers powered by RAG."
+      description: "Ask questions about your memory using natural language and get contextual answers powered by RAG."
     },
     {
       icon: <Shield className="h-8 w-8 text-primary" />,
@@ -26,7 +26,7 @@ export default function LandingPage() {
     {
       icon: <Zap className="h-8 w-8 text-primary" />,
       title: "Quick Capture",
-      description: "Send information to Zyph from anywhere with browser extensions and mobile apps (coming soon)."
+      description: "Send information to Memory Bay from anywhere with browser extensions and mobile apps (coming soon)."
     },
     {
       icon: <Brain className="h-8 w-8 text-primary" />,
@@ -41,25 +41,24 @@ export default function LandingPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-subtle">
+    <div className="min-h-screen bg-background">
       {/* Hero Section */}
       <section className="relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-primary opacity-20"></div>
-        <div className="relative container mx-auto px-4 py-32 text-center">
+        <div className="container mx-auto px-4 py-32 text-center">
           <div className="max-w-5xl mx-auto">
             <h1 className="text-6xl md:text-7xl font-bold mb-8 bg-gradient-primary bg-clip-text text-transparent leading-tight">
               Your Second Brain
             </h1>
             <p className="text-xl md:text-2xl text-foreground/80 mb-12 leading-relaxed max-w-3xl mx-auto">
-              Zyph is a powerful context manager that helps you organize, store, and retrieve information 
-              using AI. Build your personal knowledge base and chat with your data using natural language.
+              Memory Bay is a powerful context manager that helps you organize, store, and retrieve information
+              using AI. Build your personal memory and chat with your data using natural language.
             </p>
             
             <div className="flex flex-col sm:flex-row gap-6 justify-center">
               {user ? (
                 <>
                   <Button asChild size="lg" className="text-lg px-10 py-6 bg-gradient-primary hover:shadow-glow transition-all duration-300">
-                    <Link to="/knowledge">Go to Knowledge Base</Link>
+                    <Link to="/knowledge">Go to Memory</Link>
                   </Button>
                   <Button asChild size="lg" variant="outline" className="text-lg px-10 py-6 border-primary/30 hover:bg-primary/10 transition-all duration-300">
                     <Link to="/chat">Go to Chat</Link>
@@ -124,7 +123,7 @@ export default function LandingPage() {
               </div>
               <h3 className="text-2xl font-semibold mb-6">Capture</h3>
               <p className="text-muted-foreground text-lg leading-relaxed">
-                Right-click and send content from anywhere on the web directly to your Zyph knowledge base
+                Right-click and send content from anywhere on the web directly to your Memory Bay memory
               </p>
             </div>
 
@@ -144,7 +143,7 @@ export default function LandingPage() {
               </div>
               <h3 className="text-2xl font-semibold mb-6">Retrieve</h3>
               <p className="text-muted-foreground text-lg leading-relaxed">
-                Ask questions in natural language and get intelligent answers from your knowledge base
+                Ask questions in natural language and get intelligent answers from your memory
               </p>
             </div>
           </div>
@@ -158,14 +157,14 @@ export default function LandingPage() {
           <div className="max-w-4xl mx-auto">
             <h2 className="text-4xl md:text-5xl font-bold mb-8 bg-gradient-accent bg-clip-text text-transparent">Ready to Build Your Second Brain?</h2>
             <p className="text-xl text-muted-foreground mb-12 max-w-2xl mx-auto">
-              Start organizing your knowledge today with Zyph's powerful AI-driven platform and unlock your potential
+              Start organizing your knowledge today with Memory Bay's powerful AI-driven platform and unlock your potential
             </p>
             
             <div className="flex flex-col sm:flex-row gap-6 justify-center">
               {user ? (
                 <>
                   <Button asChild size="lg" className="text-xl px-12 py-6 bg-gradient-primary hover:shadow-glow transition-all duration-300">
-                    <Link to="/knowledge">Open Knowledge Base</Link>
+                    <Link to="/knowledge">Open Memory</Link>
                   </Button>
                   <Button asChild size="lg" variant="outline" className="text-xl px-12 py-6 border-primary/30 hover:bg-primary/10 transition-all duration-300">
                     <Link to="/chat">Start Chatting</Link>

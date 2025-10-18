@@ -57,7 +57,7 @@ export function AuthPage() {
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <div className="text-3xl font-bold text-primary mb-2">Zyph</div>
+          <div className="text-3xl font-bold text-primary mb-2">Memory Bay</div>
           <CardTitle>{isLogin ? 'Sign In' : 'Create Account'}</CardTitle>
           <CardDescription>
             {isLogin

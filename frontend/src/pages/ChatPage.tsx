@@ -1072,7 +1072,7 @@ export default function ChatPage() {
       </div>
 
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col bg-gradient-to-br from-slate-900/80 to-gray-800/80 backdrop-blur-sm">
+      <div className="flex-1 flex flex-col bg-background">
         {/* Mobile Menu Button */}
         <div className="md:hidden flex items-center justify-between p-4 border-b border-white/10 bg-slate-900/80">
           <Sheet>
@@ -1529,7 +1529,7 @@ export default function ChatPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Save to Knowledge Base Dialog */}
+      {/* Save to Memory Dialog */}
       <FolderSelectorDialog
         open={showSaveDialog}
         onOpenChange={setShowSaveDialog}

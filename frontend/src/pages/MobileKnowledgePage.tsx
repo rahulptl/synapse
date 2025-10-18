@@ -394,7 +394,7 @@ export default function MobileKnowledgePage() {
 
             <div className="space-y-4">
               <h3 className="text-2xl font-bold bg-gradient-to-r from-blue-400 via-emerald-400 to-indigo-400 bg-clip-text text-transparent">
-                Welcome to your Knowledge Base
+                Welcome to your Memory
               </h3>
               <p className="text-gray-300 text-base leading-relaxed">
                 {folders.length === 0

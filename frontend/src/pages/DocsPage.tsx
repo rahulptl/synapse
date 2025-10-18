@@ -186,7 +186,7 @@ export default function DocsPage() {
               All endpoints require an API key in the request headers:
             </p>
             <code className="bg-muted px-3 py-1 rounded text-sm block">
-              x-api-key: zyph_your_api_key_here
+              x-api-key: memorybay_your_api_key_here
             </code>
           </div>
         </CardContent>
@@ -511,7 +511,7 @@ export default function DocsPage() {
                     <Input
                       id="apiKey"
                       type="password"
-                      placeholder="zyph_..."
+                      placeholder="memorybay_..."
                       value={apiKey}
                       onChange={(e) => setApiKey(e.target.value)}
                     />

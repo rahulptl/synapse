@@ -80,7 +80,7 @@ export function ItemDetails({ item, onDeleteItem, onBack, folderName }: ItemDeta
   };
 
   return (
-    <div className="h-full flex flex-col bg-gradient-to-br from-slate-900/50 to-gray-800/50">
+    <div className="h-full flex flex-col">
       {/* Header with mobile back button only */}
       <div className="border-b border-white/10">
         {/* Mobile back button */}

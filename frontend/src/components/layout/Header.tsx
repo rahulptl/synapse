@@ -18,9 +18,7 @@ export function Header() {
   const isActive = (href: string) => location.pathname.startsWith(href);
 
   return (
-    <header className="border-b border-white/10 bg-gradient-to-br from-slate-900/95 via-slate-900/90 to-slate-800/95 backdrop-blur-2xl sticky top-0 z-50 shadow-2xl">
-      {/* Animated gradient overlay */}
-      <div className="absolute inset-0 bg-gradient-to-r from-blue-500/5 via-purple-500/5 to-pink-500/5 animate-gradient-x opacity-50"></div>
+    <header className="border-b border-white/10 bg-background/95 backdrop-blur-2xl sticky top-0 z-50 shadow-2xl">
 
       <div className="relative flex h-16 items-center justify-between px-4 md:px-8">
         <div className="flex items-center space-x-4 md:space-x-12">
@@ -31,12 +29,12 @@ export function Header() {
           >
             <div className="relative">
               <div className="absolute -inset-1 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-lg blur opacity-30 group-hover:opacity-60 transition duration-300"></div>
-              <div className="relative bg-gradient-to-br from-blue-500 to-purple-600 p-1.5 rounded-lg">
+              <div className="relative p-1.5 rounded-lg">
                 <Sparkles className="h-5 w-5 text-white" />
               </div>
             </div>
             <span className="text-xl md:text-2xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
-              Zyph
+              Memory Bay
             </span>
           </Link>
 
@@ -72,7 +70,7 @@ export function Header() {
           {user && (
             <>
               <div className="hidden lg:flex items-center space-x-2.5 px-4 py-2 rounded-lg bg-white/5 border border-white/10 backdrop-blur-sm">
-                <div className="flex items-center justify-center w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 shadow-lg">
+                <div className="flex items-center justify-center w-7 h-7 rounded-full shadow-lg">
                   <User className="h-4 w-4 text-white" />
                 </div>
                 <span className="text-sm font-medium text-gray-300">{user.email}</span>

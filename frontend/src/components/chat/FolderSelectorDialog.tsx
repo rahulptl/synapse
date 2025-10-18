@@ -93,7 +93,7 @@ export function FolderSelectorDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[500px] bg-slate-900 border-slate-700">
         <DialogHeader>
-          <DialogTitle className="text-white">Save to Knowledge Base</DialogTitle>
+          <DialogTitle className="text-white">Save to Memory</DialogTitle>
           <DialogDescription className="text-gray-400">
             Choose a folder and optionally customize the title
           </DialogDescription>
@@ -124,7 +124,7 @@ export function FolderSelectorDialog({
                 <div className="text-center py-8 text-gray-400">
                   <Folder className="h-12 w-12 mx-auto mb-2 opacity-50" />
                   <p className="text-sm">No folders available</p>
-                  <p className="text-xs mt-1">Create a folder in Knowledge Base first</p>
+                  <p className="text-xs mt-1">Create a folder in Memory first</p>
                 </div>
               )}
             </ScrollArea>
@@ -145,7 +145,7 @@ export function FolderSelectorDialog({
             disabled={!selectedFolderId || isProcessing}
             className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
           >
-            {isProcessing ? 'Saving...' : 'Save to Knowledge Base'}
+            {isProcessing ? 'Saving...' : 'Save to Memory'}
           </Button>
         </DialogFooter>
       </DialogContent>
