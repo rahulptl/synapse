@@ -5,6 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/hooks/useAuth';
 import { apiClient } from '@/services/apiClient';
 import { useToast } from '@/hooks/use-toast';
+import type { KnowledgeItemMetadata } from '@/types/knowledge';
 
 interface KnowledgeItem {
   id: string;
@@ -12,7 +13,7 @@ interface KnowledgeItem {
   content: string;
   content_type: string;
   source_url?: string;
-  metadata?: Record<string, unknown>;
+  metadata?: KnowledgeItemMetadata | null;
   created_at: string;
   updated_at: string;
   is_chunked?: boolean;
@@ -39,18 +40,91 @@ export function ItemDetails({ item, onDeleteItem, onBack, folderName }: ItemDeta
 
     setIsLoadingUrl(true);
     try {
-      const result = await apiClient.getContentDownloadUrl(
-        item.id,
-        { userId: user.id, accessToken },
-        1 // 1 hour expiration
-      );
+      const metadata = (item.metadata ?? {}) as KnowledgeItemMetadata;
+      const safeTitle = item.title.replace(/[^a-zA-Z0-9\s]/g, '_').trim() || 'download';
 
-      // Open the signed URL in a new tab
-      window.open(result.download_url, '_blank');
+      const inferExtension = (mimeType?: string) => {
+        const map: Record<string, string> = {
+          'application/pdf': '.pdf',
+          'text/plain': '.txt',
+          'text/markdown': '.md',
+          'text/csv': '.csv',
+          'application/json': '.json',
+          'application/zip': '.zip',
+          'application/msword': '.doc',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+          'application/vnd.ms-excel': '.xls',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+          'application/vnd.ms-powerpoint': '.ppt',
+          'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
+        };
+
+        return mimeType ? map[mimeType] : undefined;
+      };
+
+      try {
+        const download = await apiClient.downloadItemFile(item.id, { userId: user.id, accessToken });
+        const inferredExt = inferExtension(download.contentType || metadata?.mime_type);
+        const metaFilename =
+          typeof metadata?.original_filename === 'string' && metadata.original_filename.trim().length > 0
+            ? metadata.original_filename.trim()
+            : undefined;
+
+        let finalName = download.filename?.trim() || metaFilename;
+
+        if (finalName && !finalName.includes('.') && inferredExt) {
+          finalName = `${finalName}${inferredExt}`;
+        }
+
+        if (!finalName) {
+          finalName = inferredExt ? `${safeTitle}${inferredExt}` : `${safeTitle}.txt`;
+        }
+
+        apiClient.downloadBlob(download.blob, finalName);
+        return;
+      } catch (proxyError) {
+        console.warn('Direct file download failed, attempting fallback', proxyError);
+      }
+
+      try {
+        const result = await apiClient.getContentDownloadUrl(item.id, { userId: user.id, accessToken }, 1);
+
+        if (result.download_url) {
+          const link = document.createElement('a');
+          link.href = result.download_url;
+          link.download =
+            (typeof metadata?.original_filename === 'string' && metadata.original_filename) || `${safeTitle}.download`;
+          link.target = '_blank';
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          return;
+        }
+      } catch (signedUrlError) {
+        console.warn('Signed URL download failed', signedUrlError);
+      }
+
+      if (item.content) {
+        let content: string;
+        let mimeType: string;
+
+        if (item.content_type === 'url' && item.source_url) {
+          content = `Title: ${item.title}\nURL: ${item.source_url}\n\nContent:\n${item.content}`;
+          mimeType = 'text/plain';
+        } else {
+          content = item.content;
+          mimeType = 'text/plain';
+        }
+
+        const blob = new Blob([content], { type: mimeType });
+        apiClient.downloadBlob(blob, `${safeTitle}.txt`);
+      } else {
+        throw new Error('No downloadable content available');
+      }
     } catch (error) {
       toast({
         title: "Error",
-        description: "Failed to generate download link for this file",
+        description: "Failed to download this file",
         variant: "destructive",
       });
     } finally {
@@ -78,6 +152,13 @@ export function ItemDetails({ item, onDeleteItem, onBack, folderName }: ItemDeta
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString();
   };
+
+  const metadata = (item.metadata ?? {}) as KnowledgeItemMetadata;
+  const hasDownloadableFile =
+    metadata?.has_file === true ||
+    metadata?.stored_in_storage === true ||
+    (typeof metadata?.download_url === 'string' && metadata.download_url.length > 0) ||
+    (item.content && item.content.startsWith('[FILE:'));
 
   return (
     <div className="h-full flex flex-col">
@@ -125,7 +206,7 @@ export function ItemDetails({ item, onDeleteItem, onBack, folderName }: ItemDeta
             <span>Created {formatDate(item.created_at)}</span>
           </div>
           <div className="flex items-center space-x-2 flex-shrink-0">
-            {item.source_url && item.metadata?.stored_in_storage && (
+            {hasDownloadableFile && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -171,7 +252,7 @@ export function ItemDetails({ item, onDeleteItem, onBack, folderName }: ItemDeta
             </div>
 
             <TabsContent value="content" className="flex-1 mt-0 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col">
-              {item.content?.startsWith('[FILE:') && item.metadata?.storage_path ? (
+              {item.content?.startsWith('[FILE:') && hasDownloadableFile ? (
                 <div className="h-full flex items-center justify-center p-8">
                   <div className="text-center space-y-4">
                     <FileText className="h-16 w-16 mx-auto text-gray-400" />
@@ -180,7 +261,7 @@ export function ItemDetails({ item, onDeleteItem, onBack, folderName }: ItemDeta
                     </p>
                   </div>
                 </div>
-              ) : item.content_type === 'document' && item.metadata?.fileStored === 'none' ? (
+              ) : item.content_type === 'document' && metadata?.fileStored === 'none' ? (
                 <div className="h-full flex items-center justify-center p-8">
                   <div className="text-center space-y-4">
                     <FileText className="h-16 w-16 mx-auto text-gray-400" />
@@ -227,4 +308,3 @@ export function ItemDetails({ item, onDeleteItem, onBack, folderName }: ItemDeta
     </div>
   );
 }
-

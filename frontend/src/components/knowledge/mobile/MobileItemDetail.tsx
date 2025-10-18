@@ -19,6 +19,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { apiClient } from '@/services/apiClient';
+import type { KnowledgeItemMetadata } from '@/types/knowledge';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -36,7 +37,7 @@ interface KnowledgeItem {
   content: string;
   content_type: string;
   source_url?: string;
-  metadata?: Record<string, unknown>;
+  metadata?: KnowledgeItemMetadata | null;
   created_at: string;
   updated_at: string;
   is_chunked?: boolean;
@@ -73,22 +74,95 @@ export function MobileItemDetail({
 
   // Handle viewing source file stored in cloud storage
   const handleViewSource = async () => {
-    if (!user || !accessToken) return;
+    if (!item || !user || !accessToken) return;
 
     setIsLoadingUrl(true);
     try {
-      const result = await apiClient.getContentDownloadUrl(
-        item.id,
-        { userId: user.id, accessToken },
-        1 // 1 hour expiration
-      );
+      const metadata = (item.metadata ?? {}) as KnowledgeItemMetadata;
+      const safeTitle = item.title.replace(/[^a-zA-Z0-9\s]/g, '_').trim() || 'download';
 
-      // Open the signed URL in a new tab
-      window.open(result.download_url, '_blank');
+      const inferExtension = (mimeType?: string) => {
+        const map: Record<string, string> = {
+          'application/pdf': '.pdf',
+          'text/plain': '.txt',
+          'text/markdown': '.md',
+          'text/csv': '.csv',
+          'application/json': '.json',
+          'application/zip': '.zip',
+          'application/msword': '.doc',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+          'application/vnd.ms-excel': '.xls',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+          'application/vnd.ms-powerpoint': '.ppt',
+          'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
+        };
+
+        return mimeType ? map[mimeType] : undefined;
+      };
+
+      try {
+        const download = await apiClient.downloadItemFile(item.id, { userId: user.id, accessToken });
+        const inferredExt = inferExtension(download.contentType || metadata?.mime_type);
+        const metaFilename =
+          typeof metadata?.original_filename === 'string' && metadata.original_filename.trim().length > 0
+            ? metadata.original_filename.trim()
+            : undefined;
+
+        let finalName = download.filename?.trim() || metaFilename;
+
+        if (finalName && !finalName.includes('.') && inferredExt) {
+          finalName = `${finalName}${inferredExt}`;
+        }
+
+        if (!finalName) {
+          finalName = inferredExt ? `${safeTitle}${inferredExt}` : `${safeTitle}.txt`;
+        }
+
+        apiClient.downloadBlob(download.blob, finalName);
+        return;
+      } catch (proxyError) {
+        console.warn('Direct file download failed, attempting fallback', proxyError);
+      }
+
+      try {
+        const result = await apiClient.getContentDownloadUrl(item.id, { userId: user.id, accessToken }, 1);
+
+        if (result.download_url) {
+          const link = document.createElement('a');
+          link.href = result.download_url;
+          link.download =
+            (typeof metadata?.original_filename === 'string' && metadata.original_filename) || `${safeTitle}.download`;
+          link.target = '_blank';
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          return;
+        }
+      } catch (signedUrlError) {
+        console.warn('Signed URL download failed', signedUrlError);
+      }
+
+      if (item.content) {
+        let content: string;
+        let mimeType: string;
+
+        if (item.content_type === 'url' && item.source_url) {
+          content = `Title: ${item.title}\nURL: ${item.source_url}\n\nContent:\n${item.content}`;
+          mimeType = 'text/plain';
+        } else {
+          content = item.content;
+          mimeType = 'text/plain';
+        }
+
+        const blob = new Blob([content], { type: mimeType });
+        apiClient.downloadBlob(blob, `${safeTitle}.txt`);
+      } else {
+        throw new Error('No downloadable content available');
+      }
     } catch (error) {
       toast({
         title: "Error",
-        description: "Failed to generate download link for this file",
+        description: "Failed to download this file",
         variant: "destructive",
       });
     } finally {
@@ -197,6 +271,13 @@ export function MobileItemDetail({
 
   if (!isOpen) return null;
 
+  const metadata = (item.metadata ?? {}) as KnowledgeItemMetadata;
+  const hasDownloadableFile =
+    metadata?.has_file === true ||
+    metadata?.stored_in_storage === true ||
+    (typeof metadata?.download_url === 'string' && metadata.download_url.length > 0) ||
+    (item.content && item.content.startsWith('[FILE:'));
+
   return (
     <>
       {/* Overlay */}
@@ -279,7 +360,7 @@ export function MobileItemDetail({
                 <FileText className="h-4 w-4 mr-1.5" />
                 Content
               </TabsTrigger>
-              {item.source_url && (
+              {hasDownloadableFile && (
                 <TabsTrigger value="source" className="data-[state=active]:bg-green-600">
                   <ExternalLink className="h-4 w-4 mr-1.5" />
                   Source
@@ -299,15 +380,15 @@ export function MobileItemDetail({
               className="flex-1 overflow-y-auto px-4 pb-4 mt-3"
             >
               <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-4">
-                {item.content?.startsWith('[FILE:') && item.metadata?.storage_path ? (
+                {item.content?.startsWith('[FILE:') && hasDownloadableFile ? (
                   <div className="space-y-2 text-center py-8">
                     <FileText className="h-12 w-12 mx-auto text-gray-400" />
                     <p className="text-sm text-gray-400">
                       File preview not available in this version.
                     </p>
-                    {item.metadata?.original_filename && (
+                    {metadata?.original_filename && (
                       <p className="text-xs text-gray-500">
-                        Filename: {item.metadata.original_filename}
+                        Filename: {metadata.original_filename}
                       </p>
                     )}
                   </div>
@@ -320,7 +401,7 @@ export function MobileItemDetail({
             </TabsContent>
 
             {/* Source Tab */}
-            {item.source_url && item.metadata?.stored_in_storage && (
+            {hasDownloadableFile && (
               <TabsContent
                 value="source"
                 className="flex-1 overflow-y-auto px-4 pb-4 mt-3"
@@ -329,10 +410,10 @@ export function MobileItemDetail({
                   <div>
                     <h4 className="text-sm font-semibold text-white mb-2">Source File</h4>
                     <code className="text-sm text-gray-400 block mb-3 truncate">
-                      {item.metadata?.original_filename || 'Stored file'}
+                      {metadata?.original_filename || 'Stored file'}
                     </code>
                     <p className="text-xs text-gray-500">
-                      File size: {item.metadata?.file_size ? `${(item.metadata.file_size / 1024 / 1024).toFixed(2)} MB` : 'Unknown'}
+                      File size: {typeof metadata?.file_size === 'number' ? `${(metadata.file_size / 1024 / 1024).toFixed(2)} MB` : 'Unknown'}
                     </p>
                   </div>
                   <Button

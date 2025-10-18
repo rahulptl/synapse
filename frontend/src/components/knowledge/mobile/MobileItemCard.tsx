@@ -15,6 +15,7 @@ import { Badge } from '@/components/ui/badge';
 import { SwipeableItem } from './SwipeableItem';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
+import type { KnowledgeItemMetadata } from '@/types/knowledge';
 
 interface KnowledgeItem {
   id: string;
@@ -22,7 +23,7 @@ interface KnowledgeItem {
   content: string;
   content_type: string;
   source_url?: string;
-  metadata?: Record<string, unknown>;
+  metadata?: KnowledgeItemMetadata | null;
   created_at: string;
   updated_at: string;
   is_chunked?: boolean;
@@ -172,56 +173,99 @@ export function MobileItemCard({
       }
 
       const auth = { userId: user.id, accessToken };
+      const metadata = (item.metadata ?? {}) as KnowledgeItemMetadata;
+      const safeTitle = item.title.replace(/[^a-zA-Z0-9\s]/g, '_').trim() || 'download';
 
-      // Generate a safe filename from the title
-      const fileName = `${item.title.replace(/[^a-zA-Z0-9\s]/g, '_').trim()}`;
+      const inferExtension = (mimeType?: string) => {
+        const map: Record<string, string> = {
+          'application/pdf': '.pdf',
+          'text/plain': '.txt',
+          'text/markdown': '.md',
+          'text/csv': '.csv',
+          'application/json': '.json',
+          'application/zip': '.zip',
+          'application/msword': '.doc',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+          'application/vnd.ms-excel': '.xls',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+          'application/vnd.ms-powerpoint': '.ppt',
+          'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
+        };
+
+        return mimeType ? map[mimeType] : undefined;
+      };
 
       try {
-        // Try to get a signed URL from backend (for cloud storage files)
+        const download = await apiClient.downloadItemFile(item.id, auth);
+        const metaFilename =
+          typeof metadata?.original_filename === 'string' && metadata.original_filename.trim().length > 0
+            ? metadata.original_filename.trim()
+            : undefined;
+        const inferredExt = inferExtension(download.contentType || metadata?.mime_type);
+
+        let finalName = download.filename?.trim() || metaFilename;
+
+        if (finalName && !finalName.includes('.') && inferredExt) {
+          finalName = `${finalName}${inferredExt}`;
+        }
+
+        if (!finalName) {
+          finalName = inferredExt ? `${safeTitle}${inferredExt}` : `${safeTitle}.txt`;
+        }
+
+        apiClient.downloadBlob(download.blob, finalName);
+        return;
+      } catch (proxyError) {
+        console.warn('Direct file download failed, attempting fallback', proxyError);
+      }
+
+      try {
         const downloadResponse = await apiClient.getContentDownloadUrl(item.id, auth);
 
         if (downloadResponse.download_url) {
-          // For cloud storage files, redirect to signed URL
           const link = document.createElement('a');
           link.href = downloadResponse.download_url;
-          link.download = fileName;
-          link.target = '_blank'; // Open in new tab for cloud files
+          link.download =
+            (typeof metadata?.original_filename === 'string' && metadata.original_filename) || `${safeTitle}.download`;
+          link.target = '_blank';
           document.body.appendChild(link);
           link.click();
           document.body.removeChild(link);
+          return;
         }
       } catch (signedUrlError) {
-        // If signed URL fails, try downloading as zip (works for all content types)
-        try {
-          const blob = await apiClient.exportItemAsZip(item.id, auth);
-          apiClient.downloadBlob(blob, `${fileName}.zip`);
-        } catch (zipError) {
-          console.error('Both signed URL and zip download failed:', zipError);
+        console.warn('Signed URL download failed', signedUrlError);
+      }
 
-          // Final fallback: use client-side generation for text content
-          if (item.content) {
-            let content: string;
-            let mimeType: string;
+      try {
+        const blob = await apiClient.exportItemAsZip(item.id, auth);
+        apiClient.downloadBlob(blob, `${safeTitle}.zip`);
+        return;
+      } catch (zipError) {
+        console.error('Zip export failed:', zipError);
+      }
 
-            if (item.content_type === 'url' && item.source_url) {
-              content = `Title: ${item.title}\nURL: ${item.source_url}\n\nContent:\n${item.content}`;
-              mimeType = 'text/plain';
-            } else {
-              content = item.content;
-              mimeType = 'text/plain';
-            }
+      if (item.content) {
+        let content: string;
+        let mimeType: string;
 
-            const blob = new Blob([content], { type: mimeType });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = `${fileName}.txt`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-          }
+        if (item.content_type === 'url' && item.source_url) {
+          content = `Title: ${item.title}\nURL: ${item.source_url}\n\nContent:\n${item.content}`;
+          mimeType = 'text/plain';
+        } else {
+          content = item.content;
+          mimeType = 'text/plain';
         }
+
+        const blob = new Blob([content], { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${safeTitle}.txt`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
       }
     } catch (error) {
       console.error('Failed to download item:', error);

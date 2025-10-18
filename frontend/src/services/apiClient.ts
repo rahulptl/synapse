@@ -248,6 +248,28 @@ class ApiClient {
     return response.json();
   }
 
+  async downloadItemFile(
+    itemId: string,
+    auth: { userId: string; accessToken: string }
+  ): Promise<{ blob: Blob; filename?: string; contentType?: string }> {
+    const response = await fetch(this.buildUrl(`/files/download/${itemId}`), {
+      method: 'GET',
+      headers: this.getAuthHeaders(auth.userId, auth.accessToken),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => '');
+      throw new Error(errorText || `Download failed: ${response.status} ${response.statusText}`);
+    }
+
+    const contentType = response.headers.get('Content-Type') || undefined;
+    const contentDisposition = response.headers.get('Content-Disposition');
+    const filename = this.extractFilenameFromDisposition(contentDisposition);
+    const blob = await response.blob();
+
+    return { blob, filename, contentType };
+  }
+
   
   async uploadFileWithProgress(
     formData: FormData,
@@ -477,6 +499,28 @@ class ApiClient {
     link.click();
     document.body.removeChild(link);
     window.URL.revokeObjectURL(url);
+  }
+
+  private extractFilenameFromDisposition(disposition: string | null): string | undefined {
+    if (!disposition) {
+      return undefined;
+    }
+
+    const filenameStarMatch = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+    if (filenameStarMatch?.[1]) {
+      try {
+        return decodeURIComponent(filenameStarMatch[1]);
+      } catch {
+        return filenameStarMatch[1];
+      }
+    }
+
+    const filenameMatch = disposition.match(/filename=\"?([^\";]+)\"?/i);
+    if (filenameMatch?.[1]) {
+      return filenameMatch[1];
+    }
+
+    return undefined;
   }
 
   // Get signed download URL for content stored in cloud storage

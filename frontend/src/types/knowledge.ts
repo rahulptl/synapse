@@ -3,6 +3,17 @@
  * Supports both file uploads and text entries
  */
 
+// File metadata returned with knowledge items
+export interface KnowledgeItemMetadata extends Record<string, unknown> {
+  download_url?: string;
+  has_file?: boolean;
+  original_filename?: string;
+  mime_type?: string;
+  stored_in_storage?: boolean;
+  file_size?: number;
+  fileStored?: string;
+}
+
 // Base knowledge item interface
 export interface KnowledgeItem {
   id: string;
@@ -17,7 +28,7 @@ export interface KnowledgeItem {
   filename?: string | null;  // NULL for text entries
   size_bytes?: number | null;  // NULL for text entries
   tags?: string[] | null;
-  metadata?: Record<string, unknown> | null;
+  metadata?: KnowledgeItemMetadata | null;
   created_at: string;
   updated_at: string;
   is_searchable?: boolean;
@@ -40,7 +51,7 @@ export interface TextEntry {
   folder_id: string;
   description?: string;
   tags?: string[];
-  metadata?: Record<string, unknown>;
+  metadata?: KnowledgeItemMetadata;
 }
 
 // File upload specific interface
@@ -132,5 +143,5 @@ export interface LegacyKnowledgeItem {
   processing_progress: number;
   created_at: string;
   updated_at: string;
-  metadata?: Record<string, unknown>;
+  metadata?: KnowledgeItemMetadata;
 }
