@@ -100,6 +100,10 @@ class ResponsesService(OpenAIBaseService):
             file_search_tool,
             {
                 "type": "web_search_preview"
+            },
+            {
+            "type": "code_interpreter",
+            "container": {"type": "auto"}
             }
         ]
 

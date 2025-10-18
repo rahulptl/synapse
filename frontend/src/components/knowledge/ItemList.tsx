@@ -4,6 +4,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { KnowledgeItemContextMenu } from './KnowledgeItemContextMenu';
+import { useAuth } from '@/hooks/useAuth';
+import { useToast } from '@/hooks/use-toast';
 
 interface KnowledgeItem {
   id: string;
@@ -56,6 +58,8 @@ export function ItemList({
 }: ItemListProps) {
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
   const [dragOverFolder, setDragOverFolder] = useState<string | null>(null);
+  const { user, accessToken } = useAuth();
+  const { toast } = useToast();
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString();
@@ -138,16 +142,17 @@ export function ItemList({
       // Import apiClient dynamically to avoid circular dependencies
       const { apiClient } = await import('@/services/apiClient');
 
-      // Get auth from localStorage (assuming this is how auth is stored)
-      const accessToken = localStorage.getItem('accessToken');
-      const userId = localStorage.getItem('userId');
-
-      if (!accessToken || !userId) {
+      if (!user || !accessToken) {
         console.error('Authentication credentials not found');
+        toast({
+          title: 'Authentication required',
+          description: 'Please sign in again to download files.',
+          variant: 'destructive',
+        });
         return;
       }
 
-      const auth = { userId, accessToken };
+      const auth = { userId: user.id, accessToken };
 
       // Generate a safe filename from the title
       const fileName = `${item.title.replace(/[^a-zA-Z0-9\s]/g, '_').trim()}`;

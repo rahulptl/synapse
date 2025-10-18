@@ -13,6 +13,8 @@ import {
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { SwipeableItem } from './SwipeableItem';
+import { useAuth } from '@/hooks/useAuth';
+import { useToast } from '@/hooks/use-toast';
 
 interface KnowledgeItem {
   id: string;
@@ -53,6 +55,8 @@ export function MobileItemCard({
   onDownload,
 }: MobileItemCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const { user, accessToken } = useAuth();
+  const { toast } = useToast();
 
   const formatDate = (dateString: string) => {
     // Parse date - handle both ISO strings and regular date strings
@@ -157,16 +161,17 @@ export function MobileItemCard({
       // Import apiClient dynamically to avoid circular dependencies
       const { apiClient } = await import('@/services/apiClient');
 
-      // Get auth from localStorage (assuming this is how auth is stored)
-      const accessToken = localStorage.getItem('accessToken');
-      const userId = localStorage.getItem('userId');
-
-      if (!accessToken || !userId) {
+      if (!user || !accessToken) {
         console.error('Authentication credentials not found');
+        toast({
+          title: 'Authentication required',
+          description: 'Please sign in again to download files.',
+          variant: 'destructive',
+        });
         return;
       }
 
-      const auth = { userId, accessToken };
+      const auth = { userId: user.id, accessToken };
 
       // Generate a safe filename from the title
       const fileName = `${item.title.replace(/[^a-zA-Z0-9\s]/g, '_').trim()}`;
