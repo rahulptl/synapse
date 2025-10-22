@@ -56,6 +56,11 @@ class ChatService:
                 db, user_id, chat_request.conversation_id
             )
 
+            # Get user profile for personalized instructions
+            profile_stmt = select(Profile).where(Profile.user_id == user_id)
+            profile_result = await db.execute(profile_stmt)
+            user_profile = profile_result.scalar_one_or_none()
+
             # Store user message
             await self._store_message(
                 db, user_id, conversation.id, MessageRole.USER, chat_request.message
@@ -175,7 +180,8 @@ class ChatService:
                 hashtags=hashtags,
                 matched_folders=matched_folders,
                 recognized_files=recognized_files,
-                unrecognized_file_refs=unrecognized_file_refs
+                unrecognized_file_refs=unrecognized_file_refs,
+                user_profile=user_profile
             )
 
             # Get previous response ID for conversation continuity
@@ -188,7 +194,11 @@ class ChatService:
                 instructions=instructions,
                 previous_response_id=previous_response_id,  # Enable conversation continuity
                 max_num_results=20,
-                temperature=0.7,
+                temperature=settings.AI_RESPONSE_TEMPERATURE,
+                max_output_tokens=settings.AI_RESPONSE_MAX_TOKENS,  # None = no artificial limits
+                top_p=settings.AI_RESPONSE_TOP_P,
+                presence_penalty=settings.AI_PRESENCE_PENALTY,
+                frequency_penalty=settings.AI_FREQUENCY_PENALTY,
                 filters=search_filters  # Apply folder/file filtering via OpenAI metadata
             )
 
@@ -268,6 +278,11 @@ class ChatService:
             conversation = await self._get_or_create_conversation(
                 db, user_id, chat_request.conversation_id
             )
+
+            # Get user profile for personalized instructions
+            profile_stmt = select(Profile).where(Profile.user_id == user_id)
+            profile_result = await db.execute(profile_stmt)
+            user_profile = profile_result.scalar_one_or_none()
 
             if chat_request.conversation_id != conversation.id:
                 yield {
@@ -417,7 +432,8 @@ class ChatService:
                 hashtags=hashtags,
                 matched_folders=matched_folders,
                 recognized_files=recognized_files,
-                unrecognized_file_refs=[]  # Not tracking unrecognized in streaming
+                unrecognized_file_refs=[],  # Not tracking unrecognized in streaming
+                user_profile=user_profile
             )
 
             # Get previous response ID for conversation continuity
@@ -430,7 +446,11 @@ class ChatService:
                 instructions=instructions,
                 previous_response_id=previous_response_id,
                 max_num_results=20,
-                temperature=0.7,
+                temperature=settings.AI_RESPONSE_TEMPERATURE,
+                max_output_tokens=settings.AI_RESPONSE_MAX_TOKENS,  # None = no artificial limits
+                top_p=settings.AI_RESPONSE_TOP_P,
+                presence_penalty=settings.AI_PRESENCE_PENALTY,
+                frequency_penalty=settings.AI_FREQUENCY_PENALTY,
                 filters=search_filters
             )
 
@@ -708,20 +728,68 @@ class ChatService:
         hashtags: List[str],
         matched_folders: List[Dict[str, Any]],
         recognized_files: List[Dict[str, Any]],
-        unrecognized_file_refs: List[str]
+        unrecognized_file_refs: List[str],
+        user_profile = None
     ) -> str:
-        """Build system instructions for OpenAI Responses API."""
-        instructions = (
+        """Build structured system instructions for OpenAI Responses API."""
+        base_instructions = (
             "You are a helpful assistant with access to the user's personal knowledge base. "
-            "Based on the user's question, provide a detailed and accurate answer using proper GitHub Flavored Markdown (GFM) formatting. "
-            "The answer should be conversational and informative.\n\n"
+            "Provide clear, well-structured answers using proper markdown formatting. "
+            "Focus on completeness and organization.\n\n"
             "## Formatting Requirements:\n"
-            "- Use proper markdown tables with headers and alignment when presenting tabular data\n"
+            "- Use proper markdown tables with headers and alignment\n"
             "- Use code blocks with language specification (```python, ```javascript, etc.)\n"
             "- Use headings (##, ###) to structure longer responses\n"
             "- Use lists (-, *, 1.) for enumerations\n"
             "- Do NOT use inline citation markers - file citations will be automatically extracted\n"
         )
+
+        # Add user context if profile is available
+        if user_profile and user_profile.profile_completed:
+            user_context = "\n\n## User Context:\n"
+
+            if user_profile.full_name:
+                user_context += f"- **Name:** {user_profile.full_name}\n"
+
+            if user_profile.job_title or user_profile.company:
+                job_info = []
+                if user_profile.job_title:
+                    job_info.append(user_profile.job_title)
+                if user_profile.company:
+                    job_info.append(f"at {user_profile.company}")
+                if job_info:
+                    user_context += f"- **Professional Background:** {' '.join(job_info)}\n"
+
+            if user_profile.industry:
+                user_context += f"- **Industry:** {user_profile.industry}\n"
+
+            if user_profile.interests and len(user_profile.interests) > 0:
+                interests_str = ', '.join(user_profile.interests[:5])  # Limit to first 5
+                user_context += f"- **Interests:** {interests_str}\n"
+
+            if user_profile.primary_goals and len(user_profile.primary_goals) > 0:
+                goals_str = ', '.join(user_profile.primary_goals[:3])  # Limit to first 3
+                user_context += f"- **Goals:** {goals_str}\n"
+
+            if user_profile.communication_style:
+                style_instructions = {
+                    "formal": "Maintain a professional, formal tone.",
+                    "casual": "Use a friendly, conversational tone.",
+                    "technical": "Use technical language and be precise with terminology."
+                }
+                user_context += f"- **Communication Style:** {style_instructions.get(user_profile.communication_style, '')}\n"
+
+            if user_profile.preferred_response_length:
+                length_instructions = {
+                    "brief": "Keep responses extremely concise - typically 2-3 sentences or bullet points.",
+                    "medium": "Provide balanced responses - comprehensive but not excessive.",
+                    "detailed": "Provide thorough, detailed explanations when appropriate."
+                }
+                user_context += f"- **Response Length:** {length_instructions.get(user_profile.preferred_response_length, '')}\n"
+
+            base_instructions += user_context
+
+        instructions = base_instructions
 
         if hashtags and matched_folders:
             folder_names = [f["name"] for f in matched_folders]
@@ -749,11 +817,10 @@ class ChatService:
             )
 
         if not recognized_files:
-            # Only add this generic instruction if no specific files were referenced
             instructions += (
                 "\n## General Guidance:\n"
                 "Answer based primarily on the provided context documents. "
-                "Be conversational and helpful. "
+                "Be conversational and informative. "
                 "If the context is insufficient, clearly state your limitations.\n"
             )
 

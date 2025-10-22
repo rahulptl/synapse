@@ -17,7 +17,9 @@ from app.models.auth_schemas import (
     PasswordResetConfirm,
     PasswordChange,
     EmailVerification,
-    UserResponse
+    UserResponse,
+    UserProfileUpdate,
+    UserProfileResponse
 )
 from app.core.security import validate_jwt_token
 
@@ -280,3 +282,99 @@ async def get_current_user(
         )
 
     return UserResponse.model_validate(user)
+
+
+@router.get("/profile", response_model=UserProfileResponse)
+async def get_profile(
+    auth_data: dict = Depends(validate_jwt_token),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get user profile information.
+    """
+    from app.models.database import Profile
+    from sqlalchemy import select
+
+    user_id = auth_data["user_id"]
+
+    stmt = select(Profile).where(Profile.user_id == user_id)
+    result = await db.execute(stmt)
+    profile = result.scalars().first()
+
+    if not profile:
+        # Create profile if it doesn't exist
+        profile = Profile(
+            user_id=user_id,
+            email=auth_data.get("email", ""),
+            full_name=None
+        )
+        db.add(profile)
+        await db.commit()
+        await db.refresh(profile)
+
+    return UserProfileResponse.model_validate(profile)
+
+
+@router.put("/profile", response_model=dict)
+async def update_profile(
+    profile_data: UserProfileUpdate,
+    auth_data: dict = Depends(validate_jwt_token),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Update user profile information.
+    """
+    from app.models.database import Profile
+    from sqlalchemy import select
+    from datetime import datetime, timezone
+
+    logger.info(f"🔵 Profile update request for user {auth_data.get('user_id')}")
+    logger.info(f"📝 Profile data received: {profile_data.model_dump(exclude_unset=True)}")
+
+    user_id = auth_data["user_id"]
+
+    stmt = select(Profile).where(Profile.user_id == user_id)
+    result = await db.execute(stmt)
+    profile = result.scalars().first()
+
+    if not profile:
+        logger.info(f"📋 Creating new profile for user {user_id}")
+        # Create profile if it doesn't exist
+        profile = Profile(
+            user_id=user_id,
+            email=auth_data.get("email", "")
+        )
+        db.add(profile)
+
+    # Update profile fields
+    update_data = profile_data.model_dump(exclude_unset=True)
+    logger.info(f"🔄 Updating profile fields: {list(update_data.keys())}")
+
+    for field, value in update_data.items():
+        setattr(profile, field, value)
+
+    # Mark profile as completed if it wasn't already
+    if not profile.profile_completed:
+        logger.info("✅ Marking profile as completed")
+        profile.profile_completed = True
+        profile.profile_completed_at = datetime.utcnow()
+
+    profile.updated_at = datetime.utcnow()
+
+    try:
+        await db.commit()
+        await db.refresh(profile)
+        logger.info(f"✅ Profile updated successfully for user {user_id}")
+    except Exception as e:
+        logger.error(f"❌ Failed to commit profile changes: {e}")
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to save profile changes"
+        )
+
+    return {
+        "success": True,
+        "message": "Profile updated successfully",
+        "profile": UserProfileResponse.model_validate(profile)
+    }

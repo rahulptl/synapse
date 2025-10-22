@@ -31,6 +31,29 @@ class Profile(Base):
     openai_vector_store_status: Mapped[Optional[str]] = mapped_column(Text)  # active, expired, failed
     openai_vector_store_created_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
 
+    # Enhanced Profile Information
+    # Professional Information
+    job_title: Mapped[Optional[str]] = mapped_column(Text)
+    company: Mapped[Optional[str]] = mapped_column(Text)
+    industry: Mapped[Optional[str]] = mapped_column(Text)
+
+    # Personal Information
+    interests: Mapped[Optional[list]] = mapped_column(JSON)  # List of interests
+    communication_style: Mapped[Optional[str]] = mapped_column(Text)  # "formal", "casual", "technical"
+    timezone: Mapped[Optional[str]] = mapped_column(Text)  # User's timezone
+
+    # Platform Goals
+    primary_goals: Mapped[Optional[list]] = mapped_column(JSON)  # List of goals
+    use_cases: Mapped[Optional[list]] = mapped_column(JSON)  # How they plan to use the platform
+
+    # AI Preferences
+    preferred_response_length: Mapped[Optional[str]] = mapped_column(Text, default="medium")  # "brief", "medium", "detailed"
+    topics_of_interest: Mapped[Optional[list]] = mapped_column(JSON)  # Topics they care about
+
+    # Profile Completion
+    profile_completed: Mapped[bool] = mapped_column(Boolean, default=False)
+    profile_completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+
     # Relationships
     api_keys = relationship("ApiKey", back_populates="user", cascade="all, delete-orphan", foreign_keys="[ApiKey.user_id]")
     folders = relationship("Folder", back_populates="user", cascade="all, delete-orphan", foreign_keys="[Folder.user_id]")

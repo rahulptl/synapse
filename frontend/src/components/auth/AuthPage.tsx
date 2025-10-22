@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -13,11 +13,36 @@ export function AuthPage() {
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [loading, setLoading] = useState(false);
-  
-  const { user, signIn, signUp } = useAuth();
-  const { toast } = useToast();
+  const [redirecting, setRedirecting] = useState(false);
 
-  if (user) {
+  const { user, signIn, signUp, loading: authLoading } = useAuth();
+  const { toast } = useToast();
+  const navigate = useNavigate();
+
+  // Handle redirect after user is set
+  useEffect(() => {
+    if (user && redirecting) {
+      // Small delay to ensure state is fully updated
+      setTimeout(() => {
+        navigate('/knowledge', { replace: true });
+      }, 100);
+    }
+  }, [user, redirecting, navigate]);
+
+  // Show loading state while auth is processing
+  if (authLoading && redirecting) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-center space-y-4">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
+          <p className="text-muted-foreground">Setting up your account...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Redirect if already logged in (not during signup flow)
+  if (user && !redirecting) {
     return <Navigate to="/knowledge" replace />;
   }
 
@@ -26,7 +51,7 @@ export function AuthPage() {
     setLoading(true);
 
     try {
-      const { error } = isLogin 
+      const { error } = isLogin
         ? await signIn(email, password)
         : await signUp(email, password, fullName);
 
@@ -36,20 +61,42 @@ export function AuthPage() {
           description: error.message,
           variant: "destructive",
         });
-      } else if (!isLogin) {
-        toast({
-          title: "Success",
-          description: "Account created! Please check your email to verify your account.",
-        });
+        setLoading(false);
+        setRedirecting(false);
+      } else {
+        // Success!
+        if (!isLogin) {
+          // Signup successful
+          toast({
+            title: "Welcome!",
+            description: "Your account has been created successfully.",
+            duration: 3000,
+          });
+
+          // Set redirecting flag
+          setRedirecting(true);
+
+          // Note: useEffect will handle redirect once user is set
+        } else {
+          // Login successful
+          toast({
+            title: "Welcome back!",
+            description: "You've been signed in successfully.",
+            duration: 2000,
+          });
+
+          setRedirecting(true);
+        }
       }
     } catch (error) {
+      console.error('Auth error:', error);
       toast({
         title: "Error",
-        description: "An unexpected error occurred",
+        description: "An unexpected error occurred. Please try again.",
         variant: "destructive",
       });
-    } finally {
       setLoading(false);
+      setRedirecting(false);
     }
   };
 

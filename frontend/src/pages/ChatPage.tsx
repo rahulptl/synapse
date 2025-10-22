@@ -4,6 +4,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useChatWebSocket } from '@/hooks/useChatWebSocket';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useChatStore } from '@/stores/chatStore';
+import { useSidebarState } from '@/hooks/useSidebarState';
 import { getChatWebSocket } from '@/services/chatWebSocket';
 import type { ChatEvent } from '@/services/chatWebSocket';
 import { Button } from '@/components/ui/button';
@@ -14,12 +15,14 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
-import { Send, MessageSquare, Plus, Folder, Bot, Search, Brain, Sparkles, ExternalLink, AlertTriangle, Trash2, Menu, FileText, Bookmark, Upload } from 'lucide-react';
+import { Send, MessageSquare, Plus, Folder, Bot, Search, Brain, Sparkles, ExternalLink, AlertTriangle, Trash2, Menu, FileText, Bookmark, Upload, ChevronRight } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
 import { apiClient } from '@/services/apiClient';
 import { FolderSelectorDialog } from '@/components/chat/FolderSelectorDialog';
 import { StatusTilesContainer } from '@/components/chat/StatusTilesContainer';
 import { StatusType } from '@/components/chat/StatusTile';
+import { ModernConversationList } from '@/components/chat/ModernConversationList';
 
 // Lazy load MarkdownMessage to prevent highlight.js initialization issues
 const MarkdownMessage = lazy(() => import('@/components/chat/MarkdownMessage').then(module => ({ default: module.MarkdownMessage })));
@@ -76,6 +79,9 @@ export default function ChatPage() {
   const chatStore = useChatStore();
   const { requestPermission, showNotification, isGranted } = useNotifications();
   const hasRequestedNotifications = useRef(false);
+
+  // Sidebar state for toggle functionality (create chat-specific instance)
+  const { collapsed, toggleCollapsed } = useSidebarState('chat');
 
   // Add custom CSS animations and chat tail styles
   useEffect(() => {
@@ -497,6 +503,19 @@ export default function ChatPage() {
     };
   }, [selectedConversation, chatStore, toast]);
 
+  // Keyboard shortcut for toggling sidebar (Cmd/Ctrl + B)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'b') {
+        e.preventDefault();
+        toggleCollapsed();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [toggleCollapsed]);
+
   // Create a wrapper for setSelectedConversation that saves draft first
   const handleConversationSelect = (conversationId: string | null) => {
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -890,8 +909,10 @@ export default function ChatPage() {
     }
   };
 
-  const initiateDeleteConversation = (conversationId: string, e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent selecting the conversation when clicking delete
+  const initiateDeleteConversation = (conversationId: string, e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation(); // Prevent selecting the conversation when clicking delete
+    }
     setConversationToDelete(conversationId);
   };
 
@@ -925,6 +946,99 @@ export default function ChatPage() {
       });
     } finally {
       setConversationToDelete(null);
+    }
+  };
+
+  const handleRenameConversation = async (conversationId: string, currentTitle: string) => {
+    const newTitle = prompt('Enter new conversation title:', currentTitle);
+    if (!newTitle || !newTitle.trim() || newTitle === currentTitle) return;
+
+    if (!user || !accessToken) {
+      toast({
+        title: "Error",
+        description: "Authentication required",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      await apiClient.updateConversation(conversationId, { title: newTitle.trim() }, {
+        userId: user.id,
+        accessToken: accessToken
+      });
+
+      // Update local state
+      setConversations(prev => prev.map(conv =>
+        conv.id === conversationId ? { ...conv, title: newTitle.trim() } : conv
+      ));
+
+      toast({
+        title: "Renamed",
+        description: `Conversation renamed to "${newTitle.trim()}"`,
+      });
+    } catch (error) {
+      console.error('Failed to rename conversation:', error);
+      toast({
+        title: "Error",
+        description: "Failed to rename conversation",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleExportConversation = async (conversationId: string, title: string) => {
+    // Export the conversation transcript as a text file
+    try {
+      // Get the conversation's messages
+      const conversation = conversations.find(c => c.id === conversationId);
+      if (!conversation) return;
+
+      // If this is the currently selected conversation, use current messages
+      // Otherwise, we'd need to fetch them
+      let messagesToExport = conversationId === selectedConversation ? messages : [];
+
+      if (messagesToExport.length === 0) {
+        toast({
+          title: "Export",
+          description: "Please select the conversation first to export it",
+        });
+        return;
+      }
+
+      // Build transcript
+      const transcript = messagesToExport
+        .map((msg) => {
+          const roleLabel = msg.role === 'assistant' ? 'Assistant' : msg.role === 'system' ? 'System' : 'You';
+          const timestamp = new Date(msg.created_at).toLocaleString();
+          return `${roleLabel} (${timestamp})\n${msg.content}\n`;
+        })
+        .join('\n---\n\n');
+
+      const fullTranscript = `${title}\n${'='.repeat(title.length)}\n\n${transcript}`;
+
+      // Create and download file
+      const blob = new Blob([fullTranscript], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${title.replace(/[^a-zA-Z0-9\s]/g, '_')}.txt`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      toast({
+        title: "Exported",
+        description: "Conversation transcript downloaded",
+      });
+    } catch (error) {
+      console.error('Failed to export conversation:', error);
+      toast({
+        title: "Error",
+        description: "Failed to export conversation",
+        variant: "destructive",
+      });
     }
   };
 
@@ -1393,115 +1507,89 @@ export default function ChatPage() {
     return <Navigate to="/auth" replace />;
   }
 
-  // Conversation sidebar content component
-  const ConversationSidebar = () => (
-    <>
-      <div className="p-6 border-b border-white/10">
-        <Button
-          onClick={createNewConversation}
-          className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-400 hover:to-purple-500 text-white shadow-xl hover:shadow-2xl transition-all duration-500 hover:scale-[1.03] border-0 h-12 font-semibold rounded-xl"
-        >
-          <Plus className="h-5 w-5 mr-3" />
-          New Conversation
-        </Button>
-      </div>
-
-      <ScrollArea className="h-[calc(100%-5rem)]">
-        <div className="p-5 space-y-3">
-          {conversations.map((conversation) => (
-            <Card
-              key={conversation.id}
-              className={`group cursor-pointer transition-all duration-500 hover:shadow-2xl hover:-translate-y-1 border-0 backdrop-blur-lg ${
-                selectedConversation === conversation.id
-                  ? 'bg-gradient-to-r from-blue-500/25 to-purple-500/25 shadow-xl ring-2 ring-blue-400/40 scale-[1.02]'
-                  : 'bg-white/8 hover:bg-white/12 shadow-lg hover:shadow-xl'
-              }`}
-              onClick={() => handleConversationSelect(conversation.id)}
-            >
-              <CardContent className="p-5">
-                <div className="flex items-start space-x-3">
-                  <div className={`flex-shrink-0 p-2.5 rounded-lg transition-all duration-300 ${
-                    selectedConversation === conversation.id
-                      ? 'bg-gradient-to-br from-blue-400/30 to-purple-400/30 text-white shadow-lg'
-                      : 'bg-white/10 text-gray-300 group-hover:bg-white/20 group-hover:text-white'
-                  }`}>
-                    <MessageSquare className="h-4 w-4" />
-                  </div>
-                  <div className="flex-1 min-w-0 overflow-hidden">
-                    <div className="flex items-center space-x-2">
-                      <h3 className={`text-sm font-semibold leading-tight transition-colors duration-300 ${
-                        selectedConversation === conversation.id
-                          ? 'text-white'
-                          : 'text-gray-200 group-hover:text-white'
-                      }`}
-                      title={conversation.title}
-                      style={{
-                        display: '-webkit-box',
-                        WebkitLineClamp: 2,
-                        WebkitBoxOrient: 'vertical',
-                        overflow: 'hidden',
-                        wordBreak: 'break-word',
-                        hyphens: 'auto'
-                      }}>
-                        {conversation.title}
-                      </h3>
-
-                      {/* Pending response badge */}
-                      {chatStore.getHasPendingResponse(conversation.id) && (
-                        <span className="flex h-2 w-2">
-                          <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-green-400 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-gray-400 mt-2 font-medium">
-                      {new Date(conversation.updated_at).toLocaleDateString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
-                    </p>
-                  </div>
-                  <button
-                    onClick={(e) => initiateDeleteConversation(conversation.id, e)}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 p-2 rounded-lg hover:bg-red-500/20 text-gray-400 hover:text-red-400"
-                    title="Delete conversation"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </ScrollArea>
-    </>
+  // Conversation sidebar content component - now using ModernConversationList
+  const ConversationSidebar = ({ collapsed }: { collapsed: boolean }) => (
+    <ModernConversationList
+      conversations={conversations}
+      selectedConversation={selectedConversation}
+      onConversationSelect={handleConversationSelect}
+      onNewConversation={createNewConversation}
+      onRenameConversation={handleRenameConversation}
+      onExportConversation={handleExportConversation}
+      onDeleteConversation={(conversationId) => initiateDeleteConversation(conversationId)}
+      hasPendingResponse={(conversationId) => chatStore.getHasPendingResponse(conversationId)}
+      collapsed={collapsed}
+    />
   );
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] bg-gradient-to-br from-slate-950 via-gray-900 to-slate-800">
+    <div className="flex h-[calc(100vh-4rem)] bg-background">
       {/* Desktop Left Sidebar - Conversations */}
-      <div className="hidden md:block w-96 bg-white/5 backdrop-blur-2xl border-r border-white/10 shadow-2xl">
-        <ConversationSidebar />
+      <div
+        className={cn(
+          'hidden md:flex transition-all duration-300 ease-in-out flex-shrink-0',
+          'bg-sidebar/95 backdrop-blur-xl border-r border-sidebar-border',
+          collapsed ? 'w-0 overflow-hidden' : 'w-80'
+        )}
+      >
+        {!collapsed && <ConversationSidebar collapsed={collapsed} />}
+      </div>
+
+      {/* Floating Toggle Button - Desktop */}
+      <div
+        className={cn(
+          'hidden md:flex fixed top-1/2 -translate-y-1/2 z-50',
+          'transition-all duration-300 ease-in-out',
+          collapsed ? 'left-[-24px]' : 'left-[296px]' // Peeking from screen edge / sidebar edge
+        )}
+      >
+        <Button
+          onClick={toggleCollapsed}
+          variant="ghost"
+          size="lg"
+          className={cn(
+            'w-12 h-12 rounded-full bg-sidebar/90 backdrop-blur-xl',
+            'border border-sidebar-border transition-all duration-300',
+            'hover:bg-sidebar hover:scale-110 active:scale-95',
+            'text-sidebar-foreground flex items-center justify-center',
+            // Enhanced shadows for depth
+            collapsed
+              ? 'shadow-[2px_0_8px_rgba(0,0,0,0.1)] shadow-[4px_0_16px_rgba(0,0,0,0.05)]' // Shadow extending right when attached to screen
+              : 'shadow-[-2px_0_8px_rgba(0,0,0,0.1)] shadow-[-4px_0_16px_rgba(0,0,0,0.05)]', // Shadow extending left when attached to sidebar
+            // Directional styling for attachment
+            collapsed
+              ? 'border-r-2 border-r-sidebar-border/60 hover:border-r-sidebar-border' // Right edge highlight when attached to screen
+              : 'border-l-2 border-l-sidebar-border/60 hover:border-l-sidebar-border',   // Left edge highlight when attached to sidebar
+            // Hover glow effect
+            'hover:shadow-xl'
+          )}
+          title={collapsed ? "Open sidebar (⌘B)" : "Close sidebar (⌘B)"}
+        >
+          <ChevronRight
+            className={cn(
+              'h-5 w-5 transition-transform duration-300',
+              !collapsed && 'rotate-180'
+            )}
+          />
+        </Button>
       </div>
 
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col bg-background">
+      <div className="flex-1 flex flex-col">
         {/* Mobile Menu Button */}
-        <div className="md:hidden flex items-center justify-between p-4 border-b border-white/10 bg-slate-900/80">
+        <div className="md:hidden flex items-center justify-between p-4">
           <Sheet>
             <SheetTrigger asChild>
               <Button
                 variant="ghost"
                 size="sm"
-                className="text-gray-400 hover:text-white hover:bg-white/10"
+                className="text-sidebar-muted hover:text-sidebar-foreground hover:bg-sidebar-accent"
               >
                 <Menu className="h-5 w-5 mr-2" />
                 Conversations
               </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="w-80 bg-slate-900/95 backdrop-blur-2xl border-white/10 p-0">
+            <SheetContent side="left" className="w-80 bg-sidebar/95 backdrop-blur-xl border-sidebar-border p-0">
               <ConversationSidebar />
             </SheetContent>
           </Sheet>
@@ -1511,37 +1599,37 @@ export default function ChatPage() {
           <>
             {/* Messages Area */}
             <ScrollArea className="flex-1 p-4 md:p-8">
-              <div className="space-y-8 max-w-4xl mx-auto">
+              <div className="space-y-4 max-w-4xl mx-auto">
                 {/* WebSocket Connection Status */}
                 {isConnecting && (
-                  <div className="flex items-center justify-center space-x-3 text-amber-300 bg-amber-900/20 border border-amber-600/30 rounded-xl px-4 py-3 backdrop-blur-sm">
+                  <div className="flex items-center justify-center space-x-2 text-sidebar-muted bg-sidebar-accent/50 border border-sidebar-border rounded-lg px-3 py-2">
                     <div className="animate-spin">
-                      <Brain className="h-4 w-4" />
+                      <Brain className="h-3.5 w-3.5" />
                     </div>
-                    <span className="text-sm font-medium">Connecting to chat...</span>
+                    <span className="text-xs">Connecting...</span>
                   </div>
                 )}
 
                 {isConnected && (
-                  <div className="flex items-center justify-center space-x-2 text-emerald-300 bg-emerald-900/10 border border-emerald-600/20 rounded-xl px-3 py-2 backdrop-blur-sm">
-                    <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></div>
-                    <span className="text-xs font-medium">Live chat connected</span>
+                  <div className="flex items-center justify-center space-x-2 text-sidebar-muted bg-sidebar-accent/30 border border-sidebar-border rounded-lg px-3 py-1.5">
+                    <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
+                    <span className="text-xs">Connected</span>
                   </div>
                 )}
 
                 {messages.map((message) => (
                   <div key={message.id} className="group message-appear">
                     {message.role === 'user' ? (
-                      // User message layout - modern bubble design
+                      // User message layout - minimal design
                       <div className="flex justify-end group">
-                        <div className="flex flex-row-reverse items-start space-x-reverse space-x-5 max-w-[80%]">
+                        <div className="flex flex-row-reverse items-start space-x-reverse space-x-4 max-w-[80%]">
                           {/* Avatar */}
-                          <div className="flex-shrink-0 w-12 h-12 rounded-2xl flex items-center justify-center bg-gradient-to-br from-blue-500 to-purple-600 shadow-xl ring-2 ring-blue-400/30 backdrop-blur-sm">
-                            <span className="text-sm font-bold text-white">You</span>
+                          <div className="flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center bg-sidebar-primary text-white">
+                            <span className="text-xs font-semibold">You</span>
                           </div>
 
-                          <div className="space-y-3 flex-1 min-w-0">
-                            <div className="relative bg-gradient-to-br from-blue-500 via-blue-600 to-purple-600 text-white rounded-3xl rounded-tr-lg shadow-2xl px-6 py-4 transition-all duration-300 hover:shadow-3xl backdrop-blur-sm group-hover:scale-[1.02]">
+                          <div className="space-y-2 flex-1 min-w-0">
+                            <div className="relative bg-sidebar-primary text-white rounded-2xl rounded-tr-md shadow-md px-5 py-3 transition-opacity duration-200 hover:opacity-90">
                               <div className="text-sm leading-relaxed whitespace-pre-wrap break-words font-medium">
                                 {hashtagInfo
                                   ? renderMessageWithHashtags(message.content, hashtagInfo)
@@ -1551,13 +1639,13 @@ export default function ChatPage() {
 
                               {/* Display context items if present in metadata */}
                               {message.metadata?.context_items && message.metadata.context_items.length > 0 && (
-                                <div className="mt-3 pt-3 border-t border-white/20">
-                                  <div className="flex flex-wrap gap-2">
+                                <div className="mt-2 pt-2 border-t border-white/20">
+                                  <div className="flex flex-wrap gap-1.5">
                                     {message.metadata.context_items.map((item: any, idx: number) => (
                                       <Badge
                                         key={idx}
                                         variant="secondary"
-                                        className="text-xs bg-white/20 text-white border-white/30 hover:bg-white/30"
+                                        className="text-xs bg-white/15 text-white/90 border-white/20"
                                       >
                                         {item.type === 'folder' ? <Folder className="h-3 w-3 mr-1" /> : <FileText className="h-3 w-3 mr-1" />}
                                         @{item.id}
@@ -1567,16 +1655,16 @@ export default function ChatPage() {
                                 </div>
                               )}
 
-                              <div className="flex items-center justify-between mt-3 pt-2 border-t border-white/20">
+                              <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/15">
                                 <button
                                   onClick={() => initiateSaveMessage(message)}
-                                  className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center space-x-1.5 text-xs text-blue-400 hover:text-blue-300 bg-blue-900/30 hover:bg-blue-900/50 px-2.5 py-1.5 rounded-lg"
+                                  className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center space-x-1 text-xs text-white/70 hover:text-white bg-white/10 hover:bg-white/20 px-2 py-1 rounded"
                                   title="Save to Memory"
                                 >
-                                  <Bookmark className="h-3.5 w-3.5" />
-                                  <span className="font-medium">Save</span>
+                                  <Bookmark className="h-3 w-3" />
+                                  <span>Save</span>
                                 </button>
-                                <p className="text-xs opacity-90 font-medium">
+                                <p className="text-xs opacity-70">
                                   {new Date(message.created_at).toLocaleTimeString([], {
                                     hour: '2-digit',
                                     minute: '2-digit'
@@ -1588,24 +1676,24 @@ export default function ChatPage() {
                         </div>
                       </div>
                     ) : (
-                      // AI message layout - modern bubble design
+                      // AI message layout - minimal design
                       <div className="flex justify-start group">
-                        <div className="flex items-start space-x-5 max-w-[85%]">
+                        <div className="flex items-start space-x-4 max-w-[85%]">
                           {/* Avatar */}
-                          <div className="flex-shrink-0 w-12 h-12 rounded-2xl flex items-center justify-center bg-gradient-to-br from-emerald-500 to-cyan-600 shadow-xl ring-2 ring-emerald-400/30 backdrop-blur-sm">
-                            <Bot className="h-6 w-6 text-white" />
+                          <div className="flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center bg-sidebar-accent text-sidebar-foreground">
+                            <Bot className="h-5 w-5" />
                           </div>
 
-                          <div className="space-y-4 flex-1 min-w-0">
-                            <div className="relative bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl rounded-tl-lg shadow-2xl px-6 py-5 transition-all duration-300 hover:shadow-3xl group-hover:bg-white/15">
+                          <div className="space-y-3 flex-1 min-w-0">
+                            <div className="relative bg-sidebar-accent/50 border border-sidebar-border rounded-2xl rounded-tl-md shadow-sm px-5 py-4 transition-colors duration-200 hover:bg-sidebar-accent/60">
                               <div className="text-sm leading-7 text-gray-100">
                                 <Suspense fallback={<div className="text-gray-400">Loading...</div>}>
                                   <MarkdownMessage content={message.content} />
                                 </Suspense>
                               </div>
-                              <div className="flex items-center justify-between mt-4 pt-3 border-t border-white/10">
-                                <div className="flex items-center space-x-3">
-                                  <p className="text-xs text-gray-400 font-medium">
+                              <div className="flex items-center justify-between mt-3 pt-2 border-t border-sidebar-border">
+                                <div className="flex items-center space-x-2">
+                                  <p className="text-xs text-sidebar-muted">
                                     {new Date(message.created_at).toLocaleTimeString([], {
                                       hour: '2-digit',
                                       minute: '2-digit'
@@ -1613,56 +1701,52 @@ export default function ChatPage() {
                                   </p>
                                   <button
                                     onClick={() => initiateSaveMessage(message)}
-                                    className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center space-x-1.5 text-xs text-blue-400 hover:text-blue-300 bg-blue-900/30 hover:bg-blue-900/50 px-2.5 py-1.5 rounded-lg"
+                                    className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center space-x-1 text-xs text-sidebar-muted hover:text-sidebar-foreground bg-sidebar-accent hover:bg-sidebar-accent/80 px-2 py-1 rounded"
                                     title="Save to Memory"
                                   >
-                                    <Bookmark className="h-3.5 w-3.5" />
-                                    <span className="font-medium">Save</span>
+                                    <Bookmark className="h-3 w-3" />
+                                    <span>Save</span>
                                   </button>
                                 </div>
                               </div>
                                                           </div>
 
-                            {/* Sources for AI messages - Modern design */}
+                            {/* Sources for AI messages - Minimal design */}
                             {message.metadata?.sources && message.metadata.sources.length > 0 && (
-                              <div className="bg-gradient-to-br from-blue-500/15 to-purple-500/15 backdrop-blur-xl border border-blue-400/30 rounded-2xl px-5 py-4 shadow-xl">
-                                <div className="flex items-center space-x-3 mb-4">
-                                  <div className="p-2 bg-gradient-to-br from-blue-500/30 to-purple-500/30 rounded-xl backdrop-blur-sm">
-                                    <Search className="h-5 w-5 text-blue-300" />
-                                  </div>
-                                  <h4 className="text-sm font-bold text-blue-200">Knowledge Sources ({message.metadata.sources.length})</h4>
+                              <div className="bg-sidebar-accent/30 border border-sidebar-border rounded-xl px-4 py-3">
+                                <div className="flex items-center space-x-2 mb-3">
+                                  <Search className="h-4 w-4 text-sidebar-muted" />
+                                  <h4 className="text-sm font-semibold text-sidebar-foreground">Knowledge Sources ({message.metadata.sources.length})</h4>
                                 </div>
-                                <div className="space-y-3 max-h-64 overflow-y-auto">
+                                <div className="space-y-2 max-h-64 overflow-y-auto">
                                   {message.metadata.sources.slice(0, 3).map((source, idx) => (
                                     <div
                                       key={idx}
-                                      className="group bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-4 hover:bg-white/15 hover:shadow-lg transition-all duration-300 cursor-pointer transform hover:scale-[1.02]"
+                                      className="group bg-sidebar-accent/50 border border-sidebar-border rounded-lg p-3 hover:bg-sidebar-accent transition-colors duration-200 cursor-pointer"
                                       onClick={() => viewSource(source)}
                                     >
-                                      <div className="flex items-start justify-between">
-                                        <div className="flex-1 min-w-0 space-y-2">
+                                      <div className="flex items-start justify-between gap-3">
+                                        <div className="flex-1 min-w-0 space-y-1">
                                           <div className="flex items-center space-x-2">
-                                            <span className="text-sm font-semibold text-white truncate">{source.title}</span>
-                                            <ExternalLink className="h-4 w-4 text-blue-400 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-all duration-300 transform group-hover:scale-110" />
+                                            <span className="text-sm font-medium text-sidebar-foreground truncate">{source.title}</span>
+                                            <ExternalLink className="h-3.5 w-3.5 text-sidebar-muted flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
                                           </div>
                                           {source.source && (
-                                            <div className="flex items-center space-x-2 text-xs text-gray-300">
-                                              <Folder className="h-3.5 w-3.5" />
-                                              <span className="font-medium">{source.source}</span>
+                                            <div className="flex items-center space-x-1.5 text-xs text-sidebar-muted">
+                                              <Folder className="h-3 w-3" />
+                                              <span>{source.source}</span>
                                             </div>
                                           )}
                                         </div>
-                                        <div className="flex items-center space-x-2 ml-3">
-                                          <Badge className="bg-gradient-to-r from-emerald-500/20 to-green-500/20 text-emerald-300 hover:from-emerald-500/30 hover:to-green-500/30 text-xs px-3 py-1 border border-emerald-500/30 rounded-full font-semibold">
-                                            {Math.round(source.similarity * 100)}%
-                                          </Badge>
-                                        </div>
+                                        <Badge variant="outline" className="text-xs flex-shrink-0">
+                                          {Math.round(source.similarity * 100)}%
+                                        </Badge>
                                       </div>
                                     </div>
                                   ))}
                                   {message.metadata.sources.length > 3 && (
-                                    <div className="text-xs text-blue-300 font-semibold text-center py-2 bg-blue-900/20 rounded-lg border border-blue-700/30">
-                                      +{message.metadata.sources.length - 3} more sources available
+                                    <div className="text-xs text-sidebar-muted text-center py-1.5 bg-sidebar-accent/30 rounded border border-sidebar-border">
+                                      +{message.metadata.sources.length - 3} more sources
                                     </div>
                                   )}
                                 </div>
@@ -1678,13 +1762,13 @@ export default function ChatPage() {
                 {/* Streaming message indicator */}
                 {isStreaming && streamingConversationId === selectedConversation && (
                   <div className="flex justify-start group">
-                    <div className="flex items-start space-x-5 max-w-[85%]">
-                      <div className="flex-shrink-0 w-12 h-12 rounded-2xl flex items-center justify-center bg-gradient-to-br from-emerald-500 to-cyan-600 shadow-xl ring-2 ring-emerald-400/30 backdrop-blur-sm">
-                        <Bot className="h-6 w-6 text-white" />
+                    <div className="flex items-start space-x-4 max-w-[85%]">
+                      <div className="flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center bg-sidebar-accent text-sidebar-foreground">
+                        <Bot className="h-5 w-5" />
                       </div>
 
-                      <div className="space-y-4 flex-1 min-w-0">
-                        <div className="relative bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl rounded-tl-lg shadow-2xl px-6 py-5">
+                      <div className="space-y-3 flex-1 min-w-0">
+                        <div className="relative bg-sidebar-accent/50 border border-sidebar-border rounded-2xl rounded-tl-md shadow-sm px-5 py-4">
                           {streamingMessage ? (
                             // Show actual streaming text
                             <div className="text-sm leading-7 text-gray-100 break-words">
@@ -1694,14 +1778,14 @@ export default function ChatPage() {
                               <span className="animate-pulse">▊</span>
                             </div>
                           ) : currentStatus ? (
-                            // Show current status while waiting for text - combined message
-                            <div className="flex items-center space-x-3 text-sm text-gray-300">
+                            // Show current status while waiting for text
+                            <div className="flex items-center space-x-2 text-sm text-sidebar-muted">
                               <div className="flex space-x-1">
-                                <div className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                                <div className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                                <div className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                                <div className="w-2 h-2 bg-sidebar-primary rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                                <div className="w-2 h-2 bg-sidebar-primary rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                                <div className="w-2 h-2 bg-sidebar-primary rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
                               </div>
-                              <div className="font-medium">
+                              <div>
                                 {currentStatus.details
                                   ? `${currentStatus.message} ${currentStatus.details}`
                                   : currentStatus.message
@@ -1710,11 +1794,11 @@ export default function ChatPage() {
                             </div>
                           ) : (
                             // Fallback: just show loading dots
-                            <div className="flex items-center space-x-2 text-sm text-gray-300">
+                            <div className="flex items-center space-x-2 text-sm text-sidebar-muted">
                               <div className="flex space-x-1">
-                                <div className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                                <div className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                                <div className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                                <div className="w-2 h-2 bg-sidebar-primary rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                                <div className="w-2 h-2 bg-sidebar-primary rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                                <div className="w-2 h-2 bg-sidebar-primary rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
                               </div>
                               <span>Thinking...</span>
                             </div>
@@ -1730,20 +1814,20 @@ export default function ChatPage() {
             </ScrollArea>
 
             {/* Input Area */}
-            <div className="border-t border-white/10 bg-slate-900/80 backdrop-blur-xl p-4 md:p-6">
-              <div className="max-w-4xl mx-auto space-y-4 md:space-y-6">
+            <div className="border-t border-sidebar-border bg-sidebar/80 backdrop-blur-xl p-4 md:p-6">
+              <div className="max-w-4xl mx-auto space-y-3">
                 {/* Unified Autocomplete Dropdown - Above input */}
                 {showAutocomplete && autocompleteType === 'unified' && (
-                  <div className="bg-white/10 backdrop-blur-2xl border border-white/20 rounded-2xl shadow-2xl max-h-64 overflow-y-auto animate-fade-in">
+                  <div className="bg-sidebar-accent/95 backdrop-blur-xl border border-sidebar-border rounded-xl shadow-lg max-h-64 overflow-y-auto">
                     {unifiedSuggestions.length > 0 ? (
                       unifiedSuggestions.map((suggestion, index) => (
                         <div
                           key={`${suggestion.type}-${suggestion.id}`}
                           data-suggestion-index={index}
-                          className={`px-4 py-3 cursor-pointer flex items-center transition-all duration-200 ${
+                          className={`px-4 py-2.5 cursor-pointer flex items-center transition-colors ${
                             index === selectedAutocompleteIndex
-                              ? 'bg-gradient-to-r from-blue-500/30 to-purple-500/30 text-blue-200 scale-[1.02]'
-                              : 'hover:bg-white/10 text-gray-300 hover:text-white'
+                              ? 'bg-sidebar-primary text-white'
+                              : 'hover:bg-sidebar-accent text-sidebar-foreground'
                           }`}
                           style={{ paddingLeft: `${12 + suggestion.depth * 20}px` }}
                           onClick={() => selectUnifiedSuggestion(suggestion)}
@@ -1786,7 +1870,7 @@ export default function ChatPage() {
                         </div>
                       ))
                     ) : (
-                      <div className="px-4 py-3 text-sm text-gray-400">
+                      <div className="px-4 py-3 text-sm text-sidebar-muted">
                         {autocompleteQuery
                           ? `No items found matching "${autocompleteQuery}"`
                           : "No folders or files available"
@@ -1795,30 +1879,25 @@ export default function ChatPage() {
                     )}
 
                     {/* Instructions */}
-                    <div className="px-4 py-2 text-xs text-gray-400 border-t border-white/10 bg-black/20 rounded-b-2xl">
-                      ↑↓ Navigate • Tab/Enter Select • Esc Close • Folders and files are shown hierarchically
+                    <div className="px-4 py-2 text-xs text-sidebar-muted border-t border-sidebar-border bg-sidebar-accent/50 rounded-b-xl">
+                      ↑↓ Navigate • Tab/Enter Select • Esc Close
                     </div>
                   </div>
                 )}
 
-                {/* @ References Preview with Type Indicators */}
+                {/* @ References Preview */}
                 {selectedContextItems.length > 0 && (
-                  <div className="p-5 bg-gradient-to-r from-purple-500/20 to-blue-500/20 border border-purple-400/40 rounded-2xl animate-fade-in backdrop-blur-xl">
-                    <div className="flex items-center space-x-3 text-sm text-gray-200 mb-3">
-                      <div className="p-1.5 bg-purple-500/30 rounded-lg">
-                        <Search className="h-4 w-4 text-purple-300" />
-                      </div>
-                      <span className="font-semibold">Context ({selectedContextItems.length} {selectedContextItems.length === 1 ? 'item' : 'items'}):</span>
+                  <div className="p-3 bg-sidebar-accent/50 border border-sidebar-border rounded-xl">
+                    <div className="flex items-center space-x-2 text-sm text-sidebar-foreground mb-2">
+                      <Search className="h-3.5 w-3.5 text-sidebar-muted" />
+                      <span className="font-medium">Context ({selectedContextItems.length}):</span>
                     </div>
-                    <div className="flex flex-wrap gap-3">
+                    <div className="flex flex-wrap gap-2">
                       {selectedContextItems.map((item, index) => (
                         <Badge
                           key={index}
-                          className={`${
-                            item.type === 'folder'
-                              ? 'bg-gradient-to-r from-blue-500/30 to-cyan-500/30 text-blue-200 hover:from-blue-500/40 hover:to-cyan-500/40 border-blue-400/30'
-                              : 'bg-gradient-to-r from-purple-500/30 to-pink-500/30 text-purple-200 hover:from-purple-500/40 hover:to-pink-500/40 border-purple-400/30'
-                          } text-sm px-3 py-1 border rounded-full font-semibold flex items-center gap-2`}
+                          variant="outline"
+                          className="text-xs flex items-center gap-1.5"
                         >
                           {item.type === 'folder' ? (
                             <Folder className="h-3 w-3" />
@@ -1833,101 +1912,89 @@ export default function ChatPage() {
                 )}
 
                 {/* Input Bar */}
-                <div className="relative flex items-end space-x-4">
+                <div className="relative flex items-end space-x-3">
                   {/* Upload Button */}
                   <Button
                     onClick={handleUploadClick}
-                    className="h-14 w-14 rounded-2xl border-0 bg-white/10 text-gray-400 hover:bg-white/20 hover:text-white shadow-xl transition-all duration-300 hover:scale-110"
+                    variant="ghost"
+                    className="h-12 w-12 rounded-lg bg-sidebar-accent hover:bg-sidebar-accent/80 text-sidebar-icon hover:text-sidebar-foreground transition-colors"
                     title="Upload files to Memory"
                   >
-                    <Upload className="h-5 w-5" />
+                    <Upload className="h-4 w-4" />
                   </Button>
 
                   <div className="relative flex-1">
-                    <div className="relative">
-                      <Input
-                        ref={inputRef}
-                        value={inputMessage}
-                        onChange={handleInputChange}
-                        onKeyDown={handleKeyPress}
-                        placeholder={placeholder}
-                        className="chat-input w-full h-14 px-6 py-4 text-sm bg-white/10 backdrop-blur-xl border-2 border-white/20 rounded-2xl shadow-xl hover:shadow-2xl focus:shadow-2xl transition-all duration-500 focus:border-blue-400/60 focus:outline-none focus:ring-0 placeholder:text-gray-400 text-white font-medium hover:bg-white/15 focus:bg-white/15"
-                        disabled={isLoading}
-                      />
-                      {/* Floating label effect */}
-                      <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-blue-500/20 via-purple-500/20 to-blue-500/20 opacity-0 hover:opacity-100 transition-opacity duration-500 -z-10 blur-sm"></div>
-                    </div>
+                    <Input
+                      ref={inputRef}
+                      value={inputMessage}
+                      onChange={handleInputChange}
+                      onKeyDown={handleKeyPress}
+                      placeholder={placeholder}
+                      className="chat-input w-full h-12 px-4 py-3 text-sm bg-sidebar-accent/50 border border-sidebar-border rounded-lg shadow-sm hover:bg-sidebar-accent/60 focus:bg-sidebar-accent/60 transition-colors focus:border-sidebar-primary focus:outline-none focus:ring-0 placeholder:text-sidebar-muted text-sidebar-foreground"
+                      disabled={isLoading}
+                    />
                   </div>
 
                   <Button
                     onClick={sendMessage}
                     disabled={!inputMessage.trim() || isLoading}
-                    className={`h-14 w-14 rounded-2xl border-0 shadow-xl transition-all duration-500 transform ${
+                    className={`h-12 w-12 rounded-lg transition-colors ${
                       inputMessage.trim() && !isLoading
-                        ? 'bg-gradient-to-br from-blue-500 via-purple-600 to-blue-500 hover:from-blue-400 hover:via-purple-500 hover:to-blue-400 hover:shadow-2xl hover:scale-110 text-white animate-pulse'
-                        : 'bg-white/10 text-gray-400 hover:bg-white/20 hover:text-gray-300'
+                        ? 'bg-sidebar-primary hover:bg-sidebar-primary/90 text-white'
+                        : 'bg-sidebar-accent text-sidebar-muted hover:bg-sidebar-accent/80'
                     }`}
                   >
                     {isLoading ? (
                       <div className="animate-spin">
-                        <Brain className="h-5 w-5" />
+                        <Brain className="h-4 w-4" />
                       </div>
                     ) : (
-                      <Send className="h-5 w-5" />
+                      <Send className="h-4 w-4" />
                     )}
                   </Button>
                 </div>
 
                 {/* Filter Hint */}
-                <div className="flex items-center justify-center space-x-2 text-xs text-blue-200/70">
-                  <span>💡 Use</span>
-                  <code className="bg-purple-900/30 text-purple-300 px-2 py-0.5 rounded font-mono">@</code>
-                  <span>to reference specific files and folders</span>
+                <div className="flex items-center justify-center space-x-1.5 text-xs text-sidebar-muted">
+                  <span>Use</span>
+                  <code className="bg-sidebar-accent text-sidebar-foreground px-1.5 py-0.5 rounded font-mono">@</code>
+                  <span>to reference files and folders</span>
                 </div>
 
                 {/* AI Disclaimer */}
-                <div className="flex items-center justify-center space-x-3 text-xs text-amber-200 bg-gradient-to-r from-amber-900/20 to-yellow-900/20 border border-amber-600/30 rounded-xl px-4 py-3 backdrop-blur-sm">
-                  <AlertTriangle className="h-4 w-4 text-amber-400" />
-                  <span className="font-medium">AI can hallucinate. Please verify important findings and check original sources.</span>
+                <div className="flex items-center justify-center space-x-2 text-xs text-sidebar-muted bg-sidebar-accent/30 border border-sidebar-border rounded-lg px-3 py-2">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  <span>AI responses may contain inaccuracies. Verify important information.</span>
                 </div>
               </div>
             </div>
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center">
-            <div className="text-center space-y-8 animate-fade-in px-6">
-              <div className="relative">
-                <div className="absolute inset-0 bg-gradient-to-r from-blue-400/30 via-emerald-400/30 to-indigo-400/30 rounded-full blur-2xl animate-pulse"></div>
-                <div className="relative bg-gradient-to-br from-blue-600 via-emerald-500 to-indigo-600 p-8 rounded-4xl mx-auto w-fit shadow-2xl">
-                  <Bot className="h-16 w-16 text-white drop-shadow-lg" />
-                </div>
+            <div className="text-center space-y-6 px-6">
+              <div className="p-8 rounded-2xl bg-sidebar-accent/30 w-fit mx-auto">
+                <Bot className="h-16 w-16 text-sidebar-icon" />
               </div>
-              <div className="space-y-4">
-                <h3 className="text-2xl font-bold bg-gradient-to-r from-blue-400 via-emerald-400 to-indigo-400 bg-clip-text text-transparent">
-                  Ready to explore your knowledge?
+              <div className="space-y-3">
+                <h3 className="text-xl font-semibold text-sidebar-foreground">
+                  Start a conversation
                 </h3>
-                <p className="text-gray-300 max-w-lg mx-auto text-lg leading-relaxed">
-                  Start a conversation with your AI assistant. Use <code className="bg-purple-900/50 text-purple-300 px-2 py-1 rounded-md font-mono text-sm">@symbol</code> to reference both folders and files, with hierarchical suggestions showing your knowledge base structure.
+                <p className="text-sidebar-muted max-w-md mx-auto">
+                  Chat with your AI assistant about your knowledge base. Use <code className="bg-sidebar-accent text-sidebar-foreground px-1.5 py-0.5 rounded font-mono text-xs">@</code> to reference files and folders.
                 </p>
               </div>
-              <div className="flex flex-wrap justify-center gap-3">
-                <div className="flex items-center space-x-2 bg-gray-800/80 backdrop-blur-sm border border-blue-700/40 px-4 py-2 rounded-xl shadow-sm">
-                  <div className="p-1 bg-blue-900/50 rounded-md">
-                    <Sparkles className="h-4 w-4 text-blue-400" />
-                  </div>
-                  <span className="text-sm font-medium text-blue-300">AI-powered</span>
+              <div className="flex flex-wrap justify-center gap-2">
+                <div className="flex items-center space-x-1.5 bg-sidebar-accent/50 border border-sidebar-border px-3 py-1.5 rounded-lg">
+                  <Sparkles className="h-3.5 w-3.5 text-sidebar-icon" />
+                  <span className="text-xs text-sidebar-muted">AI-powered</span>
                 </div>
-                <div className="flex items-center space-x-2 bg-gray-800/80 backdrop-blur-sm border border-emerald-700/40 px-4 py-2 rounded-xl shadow-sm">
-                  <div className="p-1 bg-emerald-900/50 rounded-md">
-                    <Search className="h-4 w-4 text-emerald-400" />
-                  </div>
-                  <span className="text-sm font-medium text-emerald-300">Semantic search</span>
+                <div className="flex items-center space-x-1.5 bg-sidebar-accent/50 border border-sidebar-border px-3 py-1.5 rounded-lg">
+                  <Search className="h-3.5 w-3.5 text-sidebar-icon" />
+                  <span className="text-xs text-sidebar-muted">Semantic search</span>
                 </div>
-                <div className="flex items-center space-x-2 bg-gray-800/80 backdrop-blur-sm border border-indigo-700/40 px-4 py-2 rounded-xl shadow-sm">
-                  <div className="p-1 bg-indigo-900/50 rounded-md">
-                    <Folder className="h-4 w-4 text-indigo-400" />
-                  </div>
-                  <span className="text-sm font-medium text-indigo-300">Folder filtering</span>
+                <div className="flex items-center space-x-1.5 bg-sidebar-accent/50 border border-sidebar-border px-3 py-1.5 rounded-lg">
+                  <Folder className="h-3.5 w-3.5 text-sidebar-icon" />
+                  <span className="text-xs text-sidebar-muted">Folder filtering</span>
                 </div>
               </div>
             </div>

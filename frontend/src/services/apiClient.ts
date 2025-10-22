@@ -557,6 +557,43 @@ class ApiClient {
     }
   }
 
+  // Profile operations
+  async getProfile(auth: { userId: string; accessToken: string }) {
+    console.log('📡 API Client: Fetching profile...', auth);
+    try {
+      const result = await this.request('/cloud-auth/profile', { auth });
+      console.log('✅ API Client: Profile fetched successfully:', result);
+      return result;
+    } catch (error) {
+      console.error('❌ API Client: Profile fetch error:', error);
+      throw error;
+    }
   }
+
+  async updateProfile(
+    profileData: Record<string, unknown>,
+    auth: { userId: string; accessToken: string }
+  ) {
+    console.log('🔄 API Client: Updating profile...', { profileData, auth });
+    try {
+      const result = await this.request('/cloud-auth/profile', {
+        method: 'PUT',
+        body: JSON.stringify(profileData),
+        auth,
+      });
+      console.log('✅ API Client: Profile updated successfully:', result);
+      return result;
+    } catch (error) {
+      console.error('❌ API Client: Profile update error:', error);
+      console.error('Error details:', {
+        message: error.message,
+        stack: error.stack,
+        profileData: profileData
+      });
+      throw error;
+    }
+  }
+
+}
 
 export const apiClient = new ApiClient();

@@ -2,14 +2,14 @@ import { useState, useEffect } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { apiClient } from '@/services/apiClient';
-import { FolderTree } from '@/components/knowledge/FolderTree';
-import { ItemList } from '@/components/knowledge/ItemList';
+import { ModernSidebar } from '@/components/sidebar';
+import { ModernItemList } from '@/components/knowledge/ModernItemList';
 import { ItemDetails } from '@/components/knowledge/ItemDetails';
 import { UploadDialog } from '@/components/knowledge/UploadDialog';
-import { StorageUsageIndicator } from '@/components/knowledge/StorageUsageIndicator';
 import { useToast } from '@/hooks/use-toast';
+import { useStorageUsage } from '@/hooks/useStorageUsage';
 import { KnowledgeItem, Folder } from '@/types/knowledge';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Menu, FolderOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -17,12 +17,14 @@ import { Button } from '@/components/ui/button';
 export default function KnowledgePage() {
   const { user, accessToken, loading } = useAuth();
   const navigate = useNavigate();
+  const { storage } = useStorageUsage();
   const [folders, setFolders] = useState<Folder[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [folderItems, setFolderItems] = useState<KnowledgeItem[]>([]);
   const [selectedItem, setSelectedItem] = useState<string | null>(null);
   const [selectedItemData, setSelectedItemData] = useState<KnowledgeItem | null>(null);
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
+  const [uploadTrigger, setUploadTrigger] = useState(0);
   const { toast } = useToast();
 
   const getAuthData = () => {
@@ -341,12 +343,6 @@ export default function KnowledgePage() {
     return <Navigate to="/auth" replace />;
   }
 
-  // Handle mobile folder selection
-  const handleMobileFolderSelect = (folderId: string) => {
-    setSelectedFolder(folderId);
-    setIsMobileDrawerOpen(false); // Close drawer after selection
-  };
-
   // Get currently selected folder name for mobile header
   const getSelectedFolderName = (): string | null => {
     if (!selectedFolder) return null;
@@ -366,54 +362,70 @@ export default function KnowledgePage() {
     return folder?.name || null;
   };
 
-  return (
-    <div className="flex h-[calc(100vh-4rem)] ">
-      {/* Desktop Sidebar - Folder Tree */}
-      <div className="hidden md:block w-72 lg:w-96 flex-shrink-0 bg-white/5 backdrop-blur-2xl border-r border-white/10 shadow-2xl">
-        <div className="h-full flex flex-col">
-          {/* Storage Usage Indicator */}
-          <div className="p-4 border-b border-white/10">
-            <StorageUsageIndicator />
-          </div>
+  const handleUpload = () => {
+    // Trigger upload dialog by incrementing counter
+    setUploadTrigger(prev => prev + 1);
+  };
 
-          {/* Folder Tree */}
-          <div className="flex-1 overflow-hidden">
-            <FolderTree
-              folders={folders}
-              selectedFolder={selectedFolder}
-              onFolderSelect={setSelectedFolder}
-              onCreateFolder={createFolder}
-              onDeleteFolder={deleteFolder}
-              onRenameFolder={renameFolder}
-            />
-          </div>
-        </div>
+  const handleUpgrade = () => {
+    navigate('/settings?tab=billing');
+  };
+
+  return (
+    <div className="flex h-[calc(100vh-4rem)]">
+      {/* Desktop Modern Sidebar */}
+      <div className="hidden md:block">
+        <ModernSidebar
+          folders={folders}
+          selectedFolder={selectedFolder}
+          onFolderSelect={setSelectedFolder}
+          onCreateFolder={createFolder}
+          onDeleteFolder={deleteFolder}
+          onRenameFolder={renameFolder}
+          onUpload={handleUpload}
+          onUpgrade={handleUpgrade}
+          storageUsed={storage.used_bytes}
+          storageTotal={storage.total_bytes}
+        />
       </div>
 
-      {/* Mobile Drawer - Folder Tree */}
+      {/* Mobile Drawer - Simplified */}
       <Sheet open={isMobileDrawerOpen} onOpenChange={setIsMobileDrawerOpen}>
-        <SheetContent side="left" className="w-96 p-0 border-r border-white/10">
-          <SheetHeader className="p-5 border-b border-white/10">
+        <SheetContent side="left" className="w-80 p-0 border-r border-white/10">
+          <SheetHeader className="p-4 border-b border-white/10">
             <SheetTitle className="text-white">Folders</SheetTitle>
           </SheetHeader>
-
-          {/* Storage Usage for Mobile */}
-          <div className="p-4 border-b border-white/10">
-            <StorageUsageIndicator />
-          </div>
-
-          <div className="h-[calc(100%-9rem)] overflow-hidden">
-            <FolderTree
+          <div className="h-[calc(100%-5rem)]">
+            <ModernSidebar
               folders={folders}
               selectedFolder={selectedFolder}
-              onFolderSelect={handleMobileFolderSelect}
+              onFolderSelect={(folderId) => {
+                setSelectedFolder(folderId);
+                setIsMobileDrawerOpen(false);
+              }}
               onCreateFolder={createFolder}
               onDeleteFolder={deleteFolder}
               onRenameFolder={renameFolder}
+              onUpload={handleUpload}
+              onUpgrade={handleUpgrade}
+              storageUsed={storage.used_bytes}
+              storageTotal={storage.total_bytes}
             />
           </div>
         </SheetContent>
       </Sheet>
+
+      {/* Upload Dialog - Triggered from sidebar */}
+      {selectedFolder && uploadTrigger > 0 && (
+        <UploadDialog
+          folderId={selectedFolder}
+          onUploadComplete={() => {
+            loadFolderItems(selectedFolder);
+            setUploadTrigger(0);
+          }}
+          showButton={false}
+        />
+      )}
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col bg-background">
@@ -444,17 +456,17 @@ export default function KnowledgePage() {
             {/* Item List and Details Container */}
             <div className="flex-1 flex flex-row overflow-hidden">
               {/* Item List - Hidden on mobile when item selected */}
-              <div className={`w-full md:w-80 lg:w-96 flex-shrink-0 bg-white/5 backdrop-blur-xl md:border-r border-white/10 shadow-xl overflow-y-auto ${
+              <div className={`w-full md:w-80 lg:w-96 flex-shrink-0 bg-sidebar/30 backdrop-blur-xl md:border-r border-sidebar-border overflow-hidden ${
                 selectedItem ? 'hidden lg:flex lg:flex-col' : 'flex flex-col'
               }`}>
                 {/* Desktop Header */}
-                <div className="hidden md:flex px-4 py-3 border-b border-white/10 items-center justify-center">
+                <div className="hidden md:flex px-4 py-3 border-b border-sidebar-border items-center justify-center">
                   <UploadDialog
                     folderId={selectedFolder}
                     onUploadComplete={() => loadFolderItems(selectedFolder)}
                   />
                 </div>
-                <ItemList
+                <ModernItemList
                   items={folderItems}
                   selectedItem={selectedItem}
                   currentFolderId={selectedFolder}

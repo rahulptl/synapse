@@ -107,7 +107,9 @@
       "Bash(gcloud builds log:*)",
       "Bash(/dev/null)",
       "Bash(sips:*)",
-      "Bash(npx madge:*)"
+      "Bash(npx madge:*)",
+      "Bash(alembic revision:*)",
+      "Bash(kill:*)"
     ],
     "deny": [],
     "ask": []

@@ -13,52 +13,37 @@ from .base import OpenAIBaseService
 
 logger = logging.getLogger(__name__)
 
-# Default system instructions - same as main.ipynb
-DEFAULT_INSTRUCTIONS = """
-You are an intelligent knowledge retrieval assistant with access to multiple information sources.
+# Default system instructions - structured response focused
+DEFAULT_INSTRUCTIONS = """You are a helpful AI assistant specialized in providing clear, well-structured responses.
 
-## Query Classification & Response Strategy:
+RESPONSE GUIDELINES:
+1. **Be Complete**: Answer the user's question fully and thoroughly
+2. **Use Structure**: Organize information with clear headings, bullet points, or tables
+3. **Prioritize Clarity**: Use proper formatting to enhance readability
+4. **Stay Relevant**: Focus on information directly related to the user's question
+5. **Avoid Fluff**: Be direct without unnecessary elaboration, but don't sacrifice completeness
+6. **Use Examples**: Include examples when they help clarify concepts
 
-1. **Knowledge Base Queries**: If the query relates to information that could be in the user's knowledge base (documents, personal data, organizational content), FIRST search the provided sources.
+SEARCH STRATEGY:
+- Knowledge Base First: Search provided sources for personal/relevant information
+- Web Search: Use for real-time data (news, current events, latest information)
+- General Knowledge: Apply to retrieved data or for educational questions
 
-2. **Real-time Information**: If the query requires current data (weather, news, stock prices, today's events), use web search tools.
-
-3. **Hybrid Queries**: If the query combines personal context with creative/general tasks:
-   - First, search the knowledge base for relevant personal information
-   - Then, use that context combined with general knowledge to generate a personalized response
-
-4. **General Knowledge**: If the query is educational or creative without personal context, use your general knowledge directly.
-
-## Contextual Intelligence:
-- **Apply knowledge to retrieved data**: When you have specific information from the knowledge base and the user asks about it, analyze THAT specific data using your general knowledge
-- **Recognize follow-up questions**: References like "my", "those", "this", "that" indicate the user wants you to explain or work with previously retrieved information
-- **Don't just describe - analyze**: If the user asks about specific data you've already retrieved, provide insights about THAT data, not just generic explanations of what such data could mean
-- **Use the actual values**: When explaining concepts related to retrieved data, reference and work with the actual values, formats, and patterns present in the user's specific information
-
-## Response Guidelines:
-- Be precise and concise in your answers
-- Clearly cite sources when using knowledge base information
-- When combining KB data with general knowledge, explicitly show how the general knowledge applies to their specific data
-- **Always ground your explanations in the actual data retrieved** - don't give abstract possibilities when you have concrete information
-- State your reasoning when making inferences (e.g., "Looking at your specific [data], this indicates...")
-- If information is not available in expected sources, explain this and use the most appropriate alternative source
-
-## Formatting Guidelines:
-- **ALWAYS use proper GitHub Flavored Markdown (GFM)** for all responses
-- **Tables**: Use proper markdown table syntax with headers and alignment:
-  ```
-  | Header 1 | Header 2 | Header 3 |
-  |----------|----------|----------|
-  | Cell 1   | Cell 2   | Cell 3   |
-  ```
+FORMATTING REQUIREMENTS:
+- **ALWAYS use proper GitHub Flavored Markdown (GFM)**
+- **Headings**: Use ## and ### to structure responses logically
+- **Tables**: Use proper markdown table syntax with headers and alignment
 - **Code blocks**: Use triple backticks with language specification (```python, ```javascript, etc.)
 - **Lists**: Use `-` or `*` for unordered lists, `1.` for ordered lists
 - **Emphasis**: Use `**bold**` for bold, `*italic*` for italic
-- **Citations**: Do NOT use inline citation markers. File citations will be automatically extracted and shown to the user in a separate sources section.
+- **Citations**: Do NOT use inline citation markers - file citations will be automatically extracted
 
-## Priority Order:
-Knowledge Base (if relevant) → Apply General Knowledge to Retrieved Data → Web Search (if real-time) → General Knowledge
-"""
+TONE:
+- Professional yet approachable
+- Confident and authoritative
+- Clear and educational
+
+Remember: Structure and clarity over brevity. Your goal is to provide well-organized, complete answers using proper markdown formatting."""
 
 
 class ResponsesService(OpenAIBaseService):
@@ -73,6 +58,10 @@ class ResponsesService(OpenAIBaseService):
         previous_response_id: Optional[str] = None,
         max_num_results: int = 20,
         temperature: float = 0.7,
+        max_output_tokens: Optional[int] = None,
+        top_p: Optional[float] = None,
+        presence_penalty: Optional[float] = None,
+        frequency_penalty: Optional[float] = None,
         filters: Optional[Dict[str, Any]] = None,
     ) -> Response:
         """Create a response with both file search and web search enabled.
@@ -87,6 +76,10 @@ class ResponsesService(OpenAIBaseService):
             previous_response_id: Previous response ID for conversation continuity
             max_num_results: Maximum number of file search results (1-50)
             temperature: Sampling temperature (0.0 to 2.0, default 0.7). Note: Ignored for reasoning models (o1, gpt-5)
+            max_output_tokens: Maximum output tokens for response conciseness
+            top_p: Nucleus sampling parameter (0.0 to 1.0)
+            presence_penalty: Penalty for new topics (-2.0 to 2.0)
+            frequency_penalty: Penalty for repetition (-2.0 to 2.0)
             filters: OpenAI file search filters for narrowing search results
 
         Returns:
@@ -132,6 +125,13 @@ class ResponsesService(OpenAIBaseService):
         if not (model.startswith('o1') or model.startswith('gpt-5')):
             kwargs['temperature'] = temperature
 
+        # Add conciseness parameters if provided
+        if max_output_tokens is not None:
+            kwargs['max_output_tokens'] = max_output_tokens
+        if top_p is not None:
+            kwargs['top_p'] = top_p
+        if frequency_penalty is not None:
+            kwargs['frequency_penalty'] = frequency_penalty
         if previous_response_id is not None:
             kwargs['previous_response_id'] = previous_response_id
 
@@ -155,6 +155,10 @@ class ResponsesService(OpenAIBaseService):
         previous_response_id: Optional[str] = None,
         max_num_results: int = 20,
         temperature: float = 0.7,
+        max_output_tokens: Optional[int] = None,
+        top_p: Optional[float] = None,
+        presence_penalty: Optional[float] = None,
+        frequency_penalty: Optional[float] = None,
         filters: Optional[Dict[str, Any]] = None,
     ):
         """Create a streaming response with both file search and web search enabled.
@@ -164,11 +168,15 @@ class ResponsesService(OpenAIBaseService):
         Args:
             query: The user's query
             vector_store_ids: List of vector store IDs to search
-            model: The model to use (default: "gpt-4-turbo-preview")
+            model: The model to use (default: "gpt-5")
             instructions: System instructions (uses DEFAULT_INSTRUCTIONS if not provided)
             previous_response_id: Previous response ID for conversation continuity
             max_num_results: Maximum number of file search results (1-50)
             temperature: Sampling temperature (0.0 to 2.0, default 0.7)
+            max_output_tokens: Maximum output tokens for response conciseness
+            top_p: Nucleus sampling parameter (0.0 to 1.0)
+            presence_penalty: Penalty for new topics (-2.0 to 2.0)
+            frequency_penalty: Penalty for repetition (-2.0 to 2.0)
             filters: OpenAI file search filters for narrowing search results
 
         Yields:
@@ -215,6 +223,9 @@ class ResponsesService(OpenAIBaseService):
         if not (model.startswith('o1') or model.startswith('gpt-5')):
             kwargs['temperature'] = temperature
 
+        # Add conciseness parameters if provided
+        if max_output_tokens is not None:
+            kwargs['max_output_tokens'] = max_output_tokens
         if previous_response_id is not None:
             kwargs['previous_response_id'] = previous_response_id
 

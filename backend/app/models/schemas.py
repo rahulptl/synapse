@@ -46,6 +46,7 @@ class BaseSchema(BaseModel):
     class Config:
         from_attributes = True
         use_enum_values = True
+        populate_by_name = True
 
 
 # User schemas
@@ -280,6 +281,7 @@ class Message(MessageBase):
     conversation_id: UUID
     user_id: UUID
     created_at: datetime
+    metadata: Optional[Dict[str, Any]] = Field(None, alias='message_metadata')
 
 
 # Delete schemas

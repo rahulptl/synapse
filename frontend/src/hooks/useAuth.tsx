@@ -115,17 +115,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (response.ok) {
         const data = await response.json();
+
+        // Validate response data
+        if (!data.access_token || !data.refresh_token || !data.user) {
+          console.error('Invalid login response:', data);
+          return {
+            error: {
+              message: 'Invalid response from server. Please try again.'
+            }
+          };
+        }
+
+        // Ensure user object has required fields
+        if (!data.user.id || !data.user.email) {
+          console.error('Invalid user object:', data.user);
+          return {
+            error: {
+              message: 'Invalid user data received. Please contact support.'
+            }
+          };
+        }
+
+        // Store tokens
         localStorage.setItem('access_token', data.access_token);
         localStorage.setItem('refresh_token', data.refresh_token);
+
+        // Update state
         setAccessToken(data.access_token);
         setUser(data.user);
+
+        console.log('Login successful, user set:', data.user);
+
         return { error: null };
       } else {
         const errorData = await response.json();
-        return { error: { message: errorData.detail || 'Login failed' } };
+        return {
+          error: {
+            message: errorData.detail || 'Login failed'
+          }
+        };
       }
     } catch (error) {
-      return { error: { message: error instanceof Error ? error.message : 'Network error' } };
+      console.error('Login error:', error);
+      return {
+        error: {
+          message: error instanceof Error ? error.message : 'Network error'
+        }
+      };
     }
   };
 
@@ -145,17 +181,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (response.ok) {
         const data = await response.json();
+
+        // Validate response data
+        if (!data.access_token || !data.refresh_token || !data.user) {
+          console.error('Invalid signup response:', data);
+          return {
+            error: {
+              message: 'Invalid response from server. Please try again.'
+            }
+          };
+        }
+
+        // Ensure user object has required fields
+        if (!data.user.id || !data.user.email) {
+          console.error('Invalid user object:', data.user);
+          return {
+            error: {
+              message: 'Invalid user data received. Please contact support.'
+            }
+          };
+        }
+
+        // Store tokens
         localStorage.setItem('access_token', data.access_token);
         localStorage.setItem('refresh_token', data.refresh_token);
+
+        // Update state
         setAccessToken(data.access_token);
         setUser(data.user);
+
+        console.log('Signup successful, user set:', data.user);
+
         return { error: null };
       } else {
         const errorData = await response.json();
-        return { error: { message: errorData.detail || 'Signup failed' } };
+        return {
+          error: {
+            message: errorData.detail || 'Signup failed'
+          }
+        };
       }
     } catch (error) {
-      return { error: { message: error instanceof Error ? error.message : 'Network error' } };
+      console.error('Signup error:', error);
+      return {
+        error: {
+          message: error instanceof Error ? error.message : 'Network error'
+        }
+      };
     }
   };
 

@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -12,24 +13,41 @@ import ChatPage from "./pages/ChatPage";
 import SettingsPage from "./pages/SettingsPage";
 import DocsPage from "./pages/DocsPage";
 import NotFound from "./pages/NotFound";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 const queryClient = new QueryClient();
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
-  
-  if (loading) {
+  const [loadingTimeout, setLoadingTimeout] = useState(false);
+
+  useEffect(() => {
+    // If loading takes more than 5 seconds, something is wrong
+    const timer = setTimeout(() => {
+      if (loading) {
+        console.error('Auth loading timeout - forcing redirect');
+        setLoadingTimeout(true);
+      }
+    }, 5000);
+
+    return () => clearTimeout(timer);
+  }, [loading]);
+
+  if (loading && !loadingTimeout) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-muted-foreground">Loading...</div>
+        <div className="space-y-4 text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
+          <div className="text-muted-foreground">Loading your account...</div>
+        </div>
       </div>
     );
   }
-  
-  if (!user) {
+
+  if (!user || loadingTimeout) {
     return <Navigate to="/auth" replace />;
   }
-  
+
   return <>{children}</>;
 }
 
@@ -82,7 +100,9 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
-          <AppContent />
+          <ErrorBoundary>
+            <AppContent />
+          </ErrorBoundary>
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>

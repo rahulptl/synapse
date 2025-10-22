@@ -2,8 +2,16 @@ import { Link, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
 import { useChatStore } from '@/stores/chatStore';
-import { LogOut, User, Sparkles, Menu, X, MessageSquare } from 'lucide-react';
+import { LogOut, User, HardDrive, Menu, X, MessageSquare, Settings } from 'lucide-react';
 import { useState } from 'react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { cn } from '@/lib/utils';
 
 export function Header() {
   const location = useLocation();
@@ -21,80 +29,103 @@ export function Header() {
   const isActive = (href: string) => location.pathname.startsWith(href);
 
   return (
-    <header className="border-b border-white/10 bg-background/95 backdrop-blur-2xl sticky top-0 z-50 shadow-2xl">
-
-      <div className="relative flex h-16 items-center justify-between px-4 md:px-8">
-        <div className="flex items-center space-x-4 md:space-x-12">
-          {/* Logo */}
+    <header className="border-b border-sidebar-border bg-sidebar/95 backdrop-blur-sm sticky top-0 z-50">
+      <div className="relative flex h-14 items-center justify-between px-6">
+        <div className="flex items-center gap-8">
+          {/* Logo - Clean & Minimal */}
           <Link
             to="/"
-            className="group flex items-center space-x-2.5 hover:scale-105 transition-all duration-300"
+            className="group flex items-center gap-2.5 transition-transform duration-200 hover:scale-[1.02]"
           >
-            <div className="relative">
-              <div className="absolute -inset-1 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-lg blur opacity-30 group-hover:opacity-60 transition duration-300"></div>
-              <div className="relative p-1.5 rounded-lg">
-                <Sparkles className="h-5 w-5 text-white" />
-              </div>
-            </div>
-            <span className="text-xl md:text-2xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
+            <HardDrive className="h-5 w-5 text-sidebar-primary transition-colors" />
+            <span className="text-lg font-semibold text-sidebar-foreground">
               Memory Bay
             </span>
           </Link>
 
-          {/* Desktop Navigation */}
-          <nav className="hidden md:flex items-center space-x-1">
+          {/* Desktop Navigation - Sidebar Style */}
+          <nav className="hidden md:flex items-center gap-1">
             {navigation.map((item) => (
               <Link
                 key={item.name}
                 to={item.href}
-                className={`group relative px-4 py-2 text-sm font-medium transition-all duration-300 rounded-lg ${
+                className={cn(
+                  'relative px-4 py-2 text-sm font-medium transition-all duration-200',
+                  'flex items-center gap-2 rounded-md',
                   isActive(item.href)
-                    ? 'text-white'
-                    : 'text-gray-400 hover:text-white'
-                }`}
+                    ? 'text-sidebar-foreground bg-sidebar-accent/50'
+                    : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-sidebar-accent/30'
+                )}
               >
-                {/* Active background */}
-                {isActive(item.href) && (
-                  <div className="absolute inset-0 bg-gradient-to-r from-blue-500/20 via-purple-500/20 to-pink-500/20 rounded-lg border border-white/20 shadow-lg"></div>
+                {/* Icon for Chat */}
+                {item.name === 'Chat' && <MessageSquare className="h-4 w-4" />}
+
+                <span>{item.name}</span>
+
+                {/* Notification badge for Chat */}
+                {item.name === 'Chat' && pendingCount > 0 && (
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-sidebar-primary text-[10px] text-white font-bold">
+                    {pendingCount > 9 ? '9+' : pendingCount}
+                  </span>
                 )}
 
-                {/* Hover background */}
-                <div className={`absolute inset-0 bg-white/5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-300 ${isActive(item.href) ? 'hidden' : ''}`}></div>
-
-                {/* Text with icon for Chat */}
-                <span className="relative z-10 flex items-center space-x-2">
-                  {item.name === 'Chat' && <MessageSquare className="h-4 w-4" />}
-                  <span>{item.name}</span>
-
-                  {/* Notification badge for Chat */}
-                  {item.name === 'Chat' && pendingCount > 0 && (
-                    <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-green-500 text-xs text-white font-bold border border-white/20">
-                      {pendingCount > 9 ? '9+' : pendingCount}
-                    </span>
-                  )}
-                </span>
+                {/* Active bottom border */}
+                {isActive(item.href) && (
+                  <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-sidebar-primary" />
+                )}
               </Link>
             ))}
           </nav>
         </div>
 
-        {/* User section */}
-        <div className="flex items-center space-x-2 md:space-x-3">
+        {/* User section - Dropdown Menu */}
+        <div className="flex items-center gap-2">
           {user && (
             <>
-              <div className="hidden lg:flex items-center space-x-2.5 px-4 py-2 rounded-lg bg-white/5 border border-white/10 backdrop-blur-sm">
-                <div className="flex items-center justify-center w-7 h-7 rounded-full shadow-lg">
-                  <User className="h-4 w-4 text-white" />
-                </div>
-                <span className="text-sm font-medium text-gray-300">{user.email}</span>
-              </div>
+              {/* User Dropdown */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="hidden md:flex h-9 px-3 gap-2 text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
+                  >
+                    <div className="w-6 h-6 rounded-full bg-sidebar-primary/20 flex items-center justify-center">
+                      <User className="h-3.5 w-3.5 text-sidebar-primary" />
+                    </div>
+                    <span className="text-sm font-medium max-w-[120px] truncate">
+                      {user.email?.split('@')[0] || 'User'}
+                    </span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <div className="px-2 py-1.5">
+                    <p className="text-sm font-medium text-sidebar-foreground">{user.email?.split('@')[0]}</p>
+                    <p className="text-xs text-sidebar-muted truncate">{user.email}</p>
+                  </div>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem asChild>
+                    <Link to="/settings" className="flex items-center">
+                      <Settings className="mr-2 h-4 w-4" />
+                      Settings
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={signOut} className="text-destructive focus:text-destructive">
+                    <LogOut className="mr-2 h-4 w-4" />
+                    Sign out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {/* Mobile: Just logout button */}
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={signOut}
-                className="h-9 w-9 p-0 text-gray-400 hover:text-white hover:bg-white/10 border border-transparent hover:border-white/20 transition-all duration-300 rounded-lg group"
+                className="md:hidden h-9 w-9 p-0 text-sidebar-icon hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
               >
-                <LogOut className="h-4 w-4 group-hover:scale-110 transition-transform duration-300" />
+                <LogOut className="h-4 w-4" />
               </Button>
             </>
           )}
@@ -104,37 +135,38 @@ export function Header() {
             variant="ghost"
             size="sm"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="md:hidden h-9 w-9 p-0 text-gray-400 hover:text-white hover:bg-white/10 border border-transparent hover:border-white/20 transition-all duration-300 rounded-lg"
+            className="md:hidden h-9 w-9 p-0 text-sidebar-icon hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
           >
             {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </Button>
         </div>
       </div>
 
-      {/* Mobile Navigation */}
+      {/* Mobile Navigation - Sidebar Style */}
       {mobileMenuOpen && (
-        <nav className="md:hidden border-t border-white/10 bg-slate-900/95 backdrop-blur-xl">
+        <nav className="md:hidden border-t border-sidebar-border bg-sidebar">
           <div className="px-4 py-2 space-y-1">
             {navigation.map((item) => (
               <Link
                 key={item.name}
                 to={item.href}
                 onClick={() => setMobileMenuOpen(false)}
-                className={`block px-4 py-3 text-base font-medium rounded-lg transition-all duration-300 ${
+                className={cn(
+                  'block px-4 py-3 text-base font-medium rounded-md transition-all duration-200',
                   isActive(item.href)
-                    ? 'bg-gradient-to-r from-blue-500/20 via-purple-500/20 to-pink-500/20 text-white border border-white/20'
-                    : 'text-gray-400 hover:text-white hover:bg-white/5'
-                }`}
+                    ? 'bg-sidebar-accent text-sidebar-foreground'
+                    : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-sidebar-accent/50'
+                )}
               >
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
+                  <div className="flex items-center gap-3">
                     {item.name === 'Chat' && <MessageSquare className="h-5 w-5" />}
                     <span>{item.name}</span>
                   </div>
 
                   {/* Notification badge for Chat */}
                   {item.name === 'Chat' && pendingCount > 0 && (
-                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-green-500 text-xs text-white font-bold border border-white/20">
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-sidebar-primary text-xs text-white font-bold">
                       {pendingCount > 9 ? '9+' : pendingCount}
                     </span>
                   )}

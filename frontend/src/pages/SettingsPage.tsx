@@ -1,15 +1,15 @@
 import { useState, useEffect } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Badge } from '@/components/ui/badge';
-import { Copy, Eye, EyeOff, Key, Plus, Trash2, User } from 'lucide-react';
+import { Shield, Palette, Bell, Plug, FileDown, Lock } from 'lucide-react';
 import { apiClient } from '@/services/apiClient';
 import { useToast } from '@/hooks/use-toast';
+import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar';
+import { SettingsSidebar, SettingsSection as SettingsSectionType } from '@/components/settings/SettingsSidebar';
+import { ProfileSection } from '@/components/settings/sections/ProfileSection';
+import { ApiKeysSection } from '@/components/settings/sections/ApiKeysSection';
+import { PlaceholderSection } from '@/components/settings/sections/PlaceholderSection';
+import type { UserProfile, ProfileUpdateData } from '@/types/profile';
 
 interface ApiKey {
   id: string;
@@ -21,22 +21,12 @@ interface ApiKey {
   created_at: string;
 }
 
-interface Profile {
-  id: string;
-  full_name?: string;
-  email: string;
-  avatar_url?: string;
-}
-
 export default function SettingsPage() {
   const { user, loading, accessToken } = useAuth();
+  const [activeSection, setActiveSection] = useState<SettingsSectionType>('profile');
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
-  const [fullName, setFullName] = useState('');
-  const [isCreatingKey, setIsCreatingKey] = useState(false);
-  const [newKeyName, setNewKeyName] = useState('');
-  const [newKeyExpiry, setNewKeyExpiry] = useState('');
   const [generatedKey, setGeneratedKey] = useState<string | null>(null);
-  const [showGeneratedKey, setShowGeneratedKey] = useState(false);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const { toast } = useToast();
 
   // Helper to get auth data for API calls
@@ -53,7 +43,7 @@ export default function SettingsPage() {
   useEffect(() => {
     if (user) {
       loadApiKeys();
-      setFullName(user.full_name || '');
+      loadUserProfile();
     }
   }, [user]);
 
@@ -72,16 +62,57 @@ export default function SettingsPage() {
     }
   };
 
-  const createApiKey = async () => {
-    if (!user || !newKeyName.trim()) return;
+  const loadUserProfile = async () => {
+    try {
+      const auth = getAuthData();
+      const profile = await apiClient.getProfile(auth);
+      setUserProfile(profile);
+    } catch (error) {
+      console.error('Failed to load profile:', error);
+    }
+  };
+
+  const handleProfileUpdate = async (data: ProfileUpdateData) => {
+    try {
+      const auth = getAuthData();
+      const result = await apiClient.updateProfile(data, auth);
+
+      toast({
+        title: "Profile Updated",
+        description: "Your profile has been saved successfully!",
+      });
+
+      await loadUserProfile();
+    } catch (error) {
+      console.error('Profile update error:', error);
+
+      if (error.message?.includes('authorization') || error.message?.includes('401')) {
+        toast({
+          title: "Authentication Error",
+          description: "Your session has expired. Please log in again.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Error",
+          description: `Failed to update profile: ${error.message}`,
+          variant: "destructive",
+        });
+      }
+
+      throw error;
+    }
+  };
+
+  const createApiKey = async (name: string, expiryDate?: string) => {
+    if (!user) return;
 
     try {
       const auth = getAuthData();
 
-      // Calculate expires_in_days and validate max 365 days
       let expiresInDays: number | undefined = undefined;
-      if (newKeyExpiry) {
-        expiresInDays = Math.ceil((new Date(newKeyExpiry).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+      if (expiryDate) {
+        expiresInDays = Math.ceil((new Date(expiryDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
         if (expiresInDays > 365) {
           toast({
             title: "Invalid expiry date",
@@ -101,18 +132,12 @@ export default function SettingsPage() {
       }
 
       const apiKeyData = {
-        name: newKeyName.trim(),
+        name: name.trim(),
         expires_in_days: expiresInDays
       };
 
       const response = await apiClient.createApiKey(apiKeyData, auth);
-
-      // Backend returns the full API key only on creation
       setGeneratedKey(response.api_key);
-      setShowGeneratedKey(true);
-      setNewKeyName('');
-      setNewKeyExpiry('');
-      setIsCreatingKey(false);
       await loadApiKeys();
 
       toast({
@@ -157,17 +182,6 @@ export default function SettingsPage() {
     });
   };
 
-  // Note: Profile updates would need a backend endpoint
-  // For now, we just update local state
-  const updateProfile = (newFullName: string) => {
-    setFullName(newFullName);
-    // TODO: Call backend API to update profile
-    toast({
-      title: "Info",
-      description: "Profile update not yet implemented",
-    });
-  };
-
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -180,194 +194,96 @@ export default function SettingsPage() {
     return <Navigate to="/auth" replace />;
   }
 
+  const renderSection = () => {
+    switch (activeSection) {
+      case 'profile':
+        return (
+          <ProfileSection
+            userProfile={userProfile}
+            onProfileUpdate={handleProfileUpdate}
+          />
+        );
+      case 'api-keys':
+        return (
+          <ApiKeysSection
+            apiKeys={apiKeys}
+            onCreateKey={createApiKey}
+            onDeleteKey={deleteApiKey}
+            onCopyKey={copyToClipboard}
+            generatedKey={generatedKey}
+            onClearGeneratedKey={() => setGeneratedKey(null)}
+          />
+        );
+      case 'security':
+        return (
+          <PlaceholderSection
+            title="Security"
+            description="Manage your account security settings"
+            icon={Shield}
+          />
+        );
+      case 'appearance':
+        return (
+          <PlaceholderSection
+            title="Appearance"
+            description="Customize the look and feel of your workspace"
+            icon={Palette}
+          />
+        );
+      case 'notifications':
+        return (
+          <PlaceholderSection
+            title="Notifications"
+            description="Configure how you receive notifications"
+            icon={Bell}
+          />
+        );
+      case 'integrations':
+        return (
+          <PlaceholderSection
+            title="Integrations"
+            description="Connect with third-party services"
+            icon={Plug}
+          />
+        );
+      case 'data-export':
+        return (
+          <PlaceholderSection
+            title="Data Export"
+            description="Download your data and manage exports"
+            icon={FileDown}
+          />
+        );
+      case 'privacy':
+        return (
+          <PlaceholderSection
+            title="Privacy Settings"
+            description="Control your privacy and data sharing preferences"
+            icon={Lock}
+          />
+        );
+      default:
+        return null;
+    }
+  };
+
   return (
-    <div className="container mx-auto py-8 px-4 max-w-4xl">
-      <h1 className="text-3xl font-bold mb-8">Settings</h1>
-
-      <Tabs defaultValue="profile" className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="profile">Profile</TabsTrigger>
-          <TabsTrigger value="api-keys">API Keys</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="profile" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <User className="h-5 w-5 mr-2" />
-                Profile Information
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  value={user.email || ''}
-                  disabled
-                  className="bg-muted"
-                />
-              </div>
-              
-              <div>
-                <Label htmlFor="fullName">Full Name</Label>
-                <Input
-                  id="fullName"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  onBlur={(e) => updateProfile(e.target.value)}
-                />
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="api-keys" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center">
-                  <Key className="h-5 w-5 mr-2" />
-                  API Keys
-                </CardTitle>
-                <Button
-                  onClick={() => setIsCreatingKey(true)}
-                  size="sm"
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Create Key
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {isCreatingKey && (
-                <Card className="bg-muted/30">
-                  <CardContent className="p-4 space-y-4">
-                    <div>
-                      <Label htmlFor="keyName">Key Name</Label>
-                      <Input
-                        id="keyName"
-                        value={newKeyName}
-                        onChange={(e) => setNewKeyName(e.target.value)}
-                        placeholder="e.g., Chrome Extension"
-                      />
-                    </div>
-                    
-                    <div>
-                      <Label htmlFor="keyExpiry">Expiry Date (Optional, max 365 days)</Label>
-                      <Input
-                        id="keyExpiry"
-                        type="date"
-                        value={newKeyExpiry}
-                        onChange={(e) => setNewKeyExpiry(e.target.value)}
-                        min={new Date().toISOString().split('T')[0]}
-                        max={new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
-                      />
-                    </div>
-                    
-                    <div className="flex space-x-2">
-                      <Button
-                        onClick={createApiKey}
-                        disabled={!newKeyName.trim()}
-                        size="sm"
-                      >
-                        Create
-                      </Button>
-                      <Button
-                        onClick={() => setIsCreatingKey(false)}
-                        variant="outline"
-                        size="sm"
-                      >
-                        Cancel
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {generatedKey && (
-                <Card className="bg-green-500/10 border-green-500/20">
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="font-medium text-green-700 dark:text-green-400">
-                        New API Key Generated
-                      </h4>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setShowGeneratedKey(!showGeneratedKey)}
-                      >
-                        {showGeneratedKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                      </Button>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <code className="flex-1 p-2 bg-background rounded text-sm">
-                        {showGeneratedKey ? generatedKey : '•'.repeat(36)}
-                      </code>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => copyToClipboard(generatedKey)}
-                      >
-                        <Copy className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    <p className="text-sm text-green-600 dark:text-green-400 mt-2">
-                      ⚠️ Save this key securely. You won't be able to see it again.
-                    </p>
-                  </CardContent>
-                </Card>
-              )}
-
-              {apiKeys.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <Key className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>No API keys created yet</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {apiKeys.map((key) => (
-                    <Card key={key.id}>
-                      <CardContent className="p-4">
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center space-x-2 mb-1">
-                              <h4 className="font-medium">{key.name}</h4>
-                              <Badge variant={key.is_active ? "default" : "secondary"}>
-                                {key.is_active ? "Active" : "Inactive"}
-                              </Badge>
-                            </div>
-                            <p className="text-sm text-muted-foreground">
-                              {key.key_prefix}
-                            </p>
-                            <div className="flex items-center space-x-4 mt-2 text-xs text-muted-foreground">
-                              <span>Created: {new Date(key.created_at).toLocaleDateString()}</span>
-                              {key.expires_at && (
-                                <span>Expires: {new Date(key.expires_at).toLocaleDateString()}</span>
-                              )}
-                              {key.last_used_at && (
-                                <span>Last used: {new Date(key.last_used_at).toLocaleDateString()}</span>
-                              )}
-                            </div>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => deleteApiKey(key.id)}
-                            className="text-destructive hover:text-destructive"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
-    </div>
+    <SidebarProvider defaultOpen={true}>
+      <div className="flex min-h-screen w-full">
+        <SettingsSidebar
+          activeSection={activeSection}
+          onSectionChange={setActiveSection}
+        />
+        <SidebarInset>
+          <header className="flex h-16 shrink-0 items-center gap-2 border-b px-6">
+            <SidebarTrigger className="-ml-1" />
+            <div className="flex-1" />
+          </header>
+          <main className="flex-1 p-6 md:p-8 max-w-5xl">
+            {renderSection()}
+          </main>
+        </SidebarInset>
+      </div>
+    </SidebarProvider>
   );
 }

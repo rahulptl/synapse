@@ -2,7 +2,7 @@
 Pydantic schemas for authentication.
 """
 from pydantic import BaseModel, EmailStr, Field, field_validator
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 from uuid import UUID
 import re
@@ -111,3 +111,56 @@ class PasswordChange(BaseModel):
 class EmailVerification(BaseModel):
     """Email verification request."""
     token: str
+
+
+class UserProfileUpdate(BaseModel):
+    """Profile update request."""
+    full_name: Optional[str] = None
+    job_title: Optional[str] = None
+    company: Optional[str] = None
+    industry: Optional[str] = None
+    interests: Optional[List[str]] = None
+    communication_style: Optional[str] = None
+    timezone: Optional[str] = None
+    primary_goals: Optional[List[str]] = None
+    use_cases: Optional[List[str]] = None
+    preferred_response_length: Optional[str] = None
+    topics_of_interest: Optional[List[str]] = None
+
+    @field_validator('communication_style')
+    @classmethod
+    def validate_communication_style(cls, v):
+        if v and v not in ['formal', 'casual', 'technical']:
+            raise ValueError('Communication style must be one of: formal, casual, technical')
+        return v
+
+    @field_validator('preferred_response_length')
+    @classmethod
+    def validate_preferred_response_length(cls, v):
+        if v and v not in ['brief', 'medium', 'detailed']:
+            raise ValueError('Preferred response length must be one of: brief, medium, detailed')
+        return v
+
+
+class UserProfileResponse(BaseModel):
+    """Profile response."""
+    id: UUID
+    email: str
+    full_name: Optional[str]
+    job_title: Optional[str]
+    company: Optional[str]
+    industry: Optional[str]
+    interests: Optional[List[str]]
+    communication_style: Optional[str]
+    timezone: Optional[str]
+    primary_goals: Optional[List[str]]
+    use_cases: Optional[List[str]]
+    preferred_response_length: Optional[str]
+    topics_of_interest: Optional[List[str]]
+    profile_completed: bool
+    profile_completed_at: Optional[datetime]
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True

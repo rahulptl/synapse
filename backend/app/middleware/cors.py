@@ -23,6 +23,10 @@ def setup_cors(app: FastAPI) -> None:
             "http://127.0.0.1:3001",
             "http://localhost:8080",
             "http://127.0.0.1:8080",
+            "http://localhost:8081",
+            "http://127.0.0.1:8081",
+            "http://localhost:8082",
+            "http://127.0.0.1:8082",
             # Cloud Run development URLs (both old and new formats)
             "https://synapse-frontend-dev-7e75zz4oja-el.a.run.app",
             "https://synapse-frontend-dev-11007620517.asia-south1.run.app",

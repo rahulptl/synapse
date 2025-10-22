@@ -34,8 +34,16 @@ class Settings(BaseSettings):
     OPENAI_MAX_FILE_SIZE_MB: int = 512  # Max file size for standard uploads
     OPENAI_MAX_SEARCH_RESULTS: int = 20  # Max results from vector search
     OPENAI_RESPONSES_MODEL: str = "gpt-5"  # Model for Responses API
-    OPENAI_RESPONSES_TEMPERATURE: float = 1.0  # Temperature for responses
-    OPENAI_RESPONSES_MAX_OUTPUT_TOKENS: Optional[int] = None  # Max output tokens (None = model default)
+
+    # AI Response Configuration - Structured Responses
+    AI_RESPONSE_TEMPERATURE: float = 0.7  # Temperature for balanced responses
+    AI_RESPONSE_VERBOSITY: str = "medium"  # low, medium, high
+    AI_RESPONSE_TOP_P: float = 0.9  # Nucleus sampling for focused output
+    AI_PRESENCE_PENALTY: float = 0.1  # Slight penalty to reduce major repetition
+    AI_FREQUENCY_PENALTY: float = 0.1  # Slight penalty to reduce word repetition
+    AI_RESPONSE_MAX_TOKENS: Optional[int] = None  # No artificial limits - let responses be complete
+    OPENAI_RESPONSES_TEMPERATURE: float = 0.7  # Legacy - use AI_RESPONSE_TEMPERATURE
+    OPENAI_RESPONSES_MAX_OUTPUT_TOKENS: Optional[int] = None  # Legacy - use AI_RESPONSE_MAX_TOKENS
 
     # Storage
     STORAGE_BACKEND: str = "gcs"  # supabase, s3, gcs, local

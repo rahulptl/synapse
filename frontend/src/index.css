@@ -52,14 +52,19 @@ All colors MUST be HSL.
     --shadow-elegant: 0 10px 30px -10px hsl(265 85% 58% / 0.3);
     --shadow-glow: 0 0 40px hsl(265 85% 70% / 0.2);
 
-    --sidebar-background: 222 84% 5%;
-    --sidebar-foreground: 213 31% 91%;
-    --sidebar-primary: 265 85% 58%;
-    --sidebar-primary-foreground: 210 40% 98%;
-    --sidebar-accent: 216 34% 17%;
-    --sidebar-accent-foreground: 213 31% 91%;
-    --sidebar-border: 216 34% 17%;
-    --sidebar-ring: 265 85% 58%;
+    /* Enhanced sidebar design system */
+    --sidebar-background: 217 33% 7%;        /* #0f1419 Deep navy-charcoal */
+    --sidebar-foreground: 213 31% 91%;       /* #e2e8f0 Default text */
+    --sidebar-primary: 217 91% 60%;          /* #3b82f6 Blue accent */
+    --sidebar-primary-foreground: 0 0% 100%; /* #ffffff Active text */
+    --sidebar-accent: 217 33% 17%;           /* #1a1f2e Hover background */
+    --sidebar-accent-foreground: 0 0% 100%;  /* #ffffff Hover text */
+    --sidebar-border: 217 33% 12%;           /* #1e293b Subtle borders */
+    --sidebar-ring: 217 91% 60%;             /* #3b82f6 Focus ring */
+    --sidebar-muted: 215 20% 45%;            /* #64748b Section headers */
+    --sidebar-active-bg: 217 33% 22%;        /* #293548 Active item bg */
+    --sidebar-icon: 214 32% 59%;             /* #94a3b8 Icon color */
+    --sidebar-connector: 217 33% 12%;        /* #1e293b Connector lines */
   }
 
   .light {
@@ -105,14 +110,19 @@ All colors MUST be HSL.
     --shadow-elegant: 0 10px 30px -10px hsl(265 85% 58% / 0.15);
     --shadow-glow: 0 0 40px hsl(265 85% 70% / 0.1);
 
+    /* Enhanced sidebar design system - light mode */
     --sidebar-background: 0 0% 98%;
-    --sidebar-foreground: 240 5.3% 26.1%;
-    --sidebar-primary: 265 85% 58%;
-    --sidebar-primary-foreground: 0 0% 98%;
-    --sidebar-accent: 210 40% 98%;
+    --sidebar-foreground: 222 47% 11%;
+    --sidebar-primary: 217 91% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 210 40% 96%;
     --sidebar-accent-foreground: 222 47% 11%;
     --sidebar-border: 214.3 31.8% 91.4%;
-    --sidebar-ring: 265 85% 58%;
+    --sidebar-ring: 217 91% 60%;
+    --sidebar-muted: 215 16.3% 46.9%;
+    --sidebar-active-bg: 217 91% 95%;
+    --sidebar-icon: 215 16.3% 46.9%;
+    --sidebar-connector: 214.3 31.8% 91.4%;
   }
 }
 
@@ -373,6 +383,76 @@ button, [role="button"], a {
 ::selection {
   background-color: hsla(var(--primary) / 0.3);
   color: hsl(var(--primary-foreground));
+}
+
+/* Enhanced Sidebar Styles */
+.sidebar-enhanced {
+  /* Sidebar shadow for depth */
+  box-shadow:
+    2px 0 8px rgba(0, 0, 0, 0.15),
+    1px 0 2px rgba(0, 0, 0, 0.1);
+}
+
+.sidebar-menu-item-active {
+  /* Active item gradient background */
+  background: linear-gradient(90deg,
+    hsla(var(--sidebar-primary) / 0.15) 0%,
+    hsla(var(--sidebar-primary) / 0.05) 100%);
+  border-left: 3px solid hsl(var(--sidebar-primary));
+
+  /* Subtle glow effect */
+  box-shadow:
+    0 0 0 1px hsla(var(--sidebar-primary) / 0.1),
+    0 2px 4px hsla(var(--sidebar-primary) / 0.05);
+}
+
+.sidebar-menu-item-hover {
+  /* Hover lift effect */
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar-menu-item-hover:hover {
+  background: hsla(var(--sidebar-accent) / 0.5);
+  transform: translateX(2px);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.sidebar-connector-line {
+  /* Vertical connector line for grouped items */
+  position: absolute;
+  left: 29px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: hsla(var(--sidebar-connector) / 0.4);
+}
+
+.sidebar-section-header {
+  /* Section header styling */
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: hsl(var(--sidebar-muted));
+  line-height: 16px;
+}
+
+/* Custom scrollbar for sidebar */
+.sidebar-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  background: hsla(var(--sidebar-primary) / 0.3);
+  border-radius: 2px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb:hover {
+  background: hsla(var(--sidebar-primary) / 0.5);
 }
 
 /* Markdown Content Styles */
