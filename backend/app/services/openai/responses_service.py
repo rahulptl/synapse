@@ -43,6 +43,19 @@ You are an intelligent knowledge retrieval assistant with access to multiple inf
 - State your reasoning when making inferences (e.g., "Looking at your specific [data], this indicates...")
 - If information is not available in expected sources, explain this and use the most appropriate alternative source
 
+## Formatting Guidelines:
+- **ALWAYS use proper GitHub Flavored Markdown (GFM)** for all responses
+- **Tables**: Use proper markdown table syntax with headers and alignment:
+  ```
+  | Header 1 | Header 2 | Header 3 |
+  |----------|----------|----------|
+  | Cell 1   | Cell 2   | Cell 3   |
+  ```
+- **Code blocks**: Use triple backticks with language specification (```python, ```javascript, etc.)
+- **Lists**: Use `-` or `*` for unordered lists, `1.` for ordered lists
+- **Emphasis**: Use `**bold**` for bold, `*italic*` for italic
+- **Citations**: Do NOT use inline citation markers. File citations will be automatically extracted and shown to the user in a separate sources section.
+
 ## Priority Order:
 Knowledge Base (if relevant) → Apply General Knowledge to Retrieved Data → Web Search (if real-time) → General Knowledge
 """
@@ -133,16 +146,97 @@ class ResponsesService(OpenAIBaseService):
             logger.error(f"Failed to create response: {e}")
             raise
 
-    def extract_text_output(self, response: Response) -> str:
+    async def chat_stream(
+        self,
+        query: str,
+        vector_store_ids: List[str],
+        model: str = "gpt-5",
+        instructions: Optional[str] = None,
+        previous_response_id: Optional[str] = None,
+        max_num_results: int = 20,
+        temperature: float = 0.7,
+        filters: Optional[Dict[str, Any]] = None,
+    ):
+        """Create a streaming response with both file search and web search enabled.
+
+        Yields events from OpenAI's streaming API.
+
+        Args:
+            query: The user's query
+            vector_store_ids: List of vector store IDs to search
+            model: The model to use (default: "gpt-4-turbo-preview")
+            instructions: System instructions (uses DEFAULT_INSTRUCTIONS if not provided)
+            previous_response_id: Previous response ID for conversation continuity
+            max_num_results: Maximum number of file search results (1-50)
+            temperature: Sampling temperature (0.0 to 2.0, default 0.7)
+            filters: OpenAI file search filters for narrowing search results
+
+        Yields:
+            Streaming events from OpenAI's Responses API
+        """
+        self.validate_configuration()
+
+        # Use default instructions if none provided
+        if instructions is None:
+            instructions = DEFAULT_INSTRUCTIONS
+
+        # Build tools - both file_search and web_search enabled
+        file_search_tool = {
+            "type": "file_search",
+            "vector_store_ids": vector_store_ids,
+            "max_num_results": max_num_results
+        }
+
+        # Add attribute filter if provided
+        if filters:
+            file_search_tool["filters"] = filters
+
+        tools = [
+            file_search_tool,
+            {
+                "type": "web_search_preview"
+            },
+            {
+            "type": "code_interpreter",
+            "container": {"type": "auto"}
+            }
+        ]
+
+        kwargs = {
+            'model': model,
+            'input': query,
+            'tools': tools,
+            'instructions': instructions,
+            'stream': True
+        }
+
+        # Only add temperature for non-reasoning models (o1 series doesn't support it)
+        # GPT-5 and o1 models don't support temperature parameter
+        if not (model.startswith('o1') or model.startswith('gpt-5')):
+            kwargs['temperature'] = temperature
+
+        if previous_response_id is not None:
+            kwargs['previous_response_id'] = previous_response_id
+
+        try:
+            stream = await self.client.responses.create(**kwargs)
+            async for event in stream:
+                yield event
+        except Exception as e:
+            logger.error(f"Failed to create streaming response: {e}")
+            raise
+
+    def extract_text_output(self, response: Response, replace_citations: bool = True) -> str:
         """Extract text content from a Response object.
 
         Uses the same logic as main.ipynb for consistency.
 
         Args:
             response: The Response object
+            replace_citations: If True, replace citation markers with filenames (default: True)
 
         Returns:
-            The extracted text content
+            The extracted text content with optional citation replacement
 
         Raises:
             ValueError: If no text content found in response
@@ -154,10 +248,55 @@ class ResponsesService(OpenAIBaseService):
                 if isinstance(item, ResponseOutputMessage)
             ][0].content[0].text
 
+            # Replace citation markers with filenames if requested
+            if replace_citations:
+                response_output_text = self._replace_citation_markers(response, response_output_text)
+
             return response_output_text
         except (IndexError, AttributeError) as e:
             logger.error(f"Failed to extract text from response: {e}")
             raise ValueError(f"No text content found in response: {e}")
+
+    def _replace_citation_markers(self, response: Response, text: str) -> str:
+        """Replace OpenAI citation markers with actual filenames.
+
+        OpenAI includes markers like 'fileciteturn0file1' in the text.
+        This method replaces them with readable filename mentions.
+
+        Args:
+            response: The Response object containing annotations
+            text: The text with citation markers
+
+        Returns:
+            Text with citation markers replaced by filenames
+        """
+        try:
+            # Get the message output
+            message_outputs = [
+                item for item in response.output
+                if isinstance(item, ResponseOutputMessage)
+            ]
+
+            if not message_outputs:
+                return text
+
+            # Extract annotations (which contain the actual filenames)
+            for content_item in message_outputs[0].content:
+                if hasattr(content_item, 'annotations'):
+                    for annotation in content_item.annotations:
+                        if annotation.type == 'file_citation':
+                            # Get the citation text (the marker in the original text)
+                            citation_text = getattr(annotation, 'text', None)
+
+                            # Replace the citation marker with nothing (remove it)
+                            # The citations will be shown in the sources section instead
+                            if citation_text:
+                                text = text.replace(citation_text, '')
+
+            return text
+        except Exception as e:
+            logger.warning(f"Failed to replace citation markers: {e}")
+            return text  # Return original text if replacement fails
 
     def extract_file_citations(self, response: Response) -> List[Dict[str, Any]]:
         """Extract file citations from a Response object.

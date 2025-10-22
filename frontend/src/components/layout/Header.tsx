@@ -1,12 +1,15 @@
 import { Link, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
-import { LogOut, User, Sparkles, Menu, X } from 'lucide-react';
+import { useChatStore } from '@/stores/chatStore';
+import { LogOut, User, Sparkles, Menu, X, MessageSquare } from 'lucide-react';
 import { useState } from 'react';
 
 export function Header() {
   const location = useLocation();
   const { user, signOut } = useAuth();
+  const chatStore = useChatStore();
+  const pendingCount = chatStore.getPendingResponsesCount();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const navigation = [
@@ -58,8 +61,18 @@ export function Header() {
                 {/* Hover background */}
                 <div className={`absolute inset-0 bg-white/5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-300 ${isActive(item.href) ? 'hidden' : ''}`}></div>
 
-                {/* Text */}
-                <span className="relative z-10">{item.name}</span>
+                {/* Text with icon for Chat */}
+                <span className="relative z-10 flex items-center space-x-2">
+                  {item.name === 'Chat' && <MessageSquare className="h-4 w-4" />}
+                  <span>{item.name}</span>
+
+                  {/* Notification badge for Chat */}
+                  {item.name === 'Chat' && pendingCount > 0 && (
+                    <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-green-500 text-xs text-white font-bold border border-white/20">
+                      {pendingCount > 9 ? '9+' : pendingCount}
+                    </span>
+                  )}
+                </span>
               </Link>
             ))}
           </nav>
@@ -113,7 +126,19 @@ export function Header() {
                     : 'text-gray-400 hover:text-white hover:bg-white/5'
                 }`}
               >
-                {item.name}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    {item.name === 'Chat' && <MessageSquare className="h-5 w-5" />}
+                    <span>{item.name}</span>
+                  </div>
+
+                  {/* Notification badge for Chat */}
+                  {item.name === 'Chat' && pendingCount > 0 && (
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-green-500 text-xs text-white font-bold border border-white/20">
+                      {pendingCount > 9 ? '9+' : pendingCount}
+                    </span>
+                  )}
+                </div>
               </Link>
             ))}
           </div>

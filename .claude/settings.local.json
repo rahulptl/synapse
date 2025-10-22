@@ -106,7 +106,8 @@
       "Bash(gcloud sql users list:*)",
       "Bash(gcloud builds log:*)",
       "Bash(/dev/null)",
-      "Bash(sips:*)"
+      "Bash(sips:*)",
+      "Bash(npx madge:*)"
     ],
     "deny": [],
     "ask": []

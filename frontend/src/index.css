@@ -374,3 +374,48 @@ button, [role="button"], a {
   background-color: hsla(var(--primary) / 0.3);
   color: hsl(var(--primary-foreground));
 }
+
+/* Markdown Content Styles */
+.markdown-content {
+  @apply text-gray-100;
+}
+
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4,
+.markdown-content h5,
+.markdown-content h6 {
+  @apply font-bold text-white mt-4 mb-2;
+}
+
+.markdown-content code {
+  @apply font-mono;
+}
+
+.markdown-content pre {
+  @apply my-3;
+}
+
+.markdown-content a {
+  @apply text-blue-400 hover:text-blue-300 transition-colors;
+}
+
+.markdown-content table {
+  @apply border-collapse w-full;
+}
+
+.markdown-content hr {
+  @apply my-4 border-gray-700;
+}
+
+/* Ensure code blocks don't overflow */
+.markdown-content pre code {
+  @apply block overflow-x-auto;
+}
+
+/* Style for inline code */
+.markdown-content p code,
+.markdown-content li code {
+  @apply bg-gray-800 text-pink-400 px-1.5 py-0.5 rounded;
+}

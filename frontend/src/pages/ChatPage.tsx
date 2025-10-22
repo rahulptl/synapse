@@ -1,6 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
+import { useChatWebSocket } from '@/hooks/useChatWebSocket';
+import { useNotifications } from '@/hooks/useNotifications';
+import { useChatStore } from '@/stores/chatStore';
+import { getChatWebSocket } from '@/services/chatWebSocket';
+import type { ChatEvent } from '@/services/chatWebSocket';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
@@ -13,6 +18,11 @@ import { Send, MessageSquare, Plus, Folder, Bot, Search, Brain, Sparkles, Extern
 import { useToast } from '@/hooks/use-toast';
 import { apiClient } from '@/services/apiClient';
 import { FolderSelectorDialog } from '@/components/chat/FolderSelectorDialog';
+import { StatusTilesContainer } from '@/components/chat/StatusTilesContainer';
+import { StatusType } from '@/components/chat/StatusTile';
+
+// Lazy load MarkdownMessage to prevent highlight.js initialization issues
+const MarkdownMessage = lazy(() => import('@/components/chat/MarkdownMessage').then(module => ({ default: module.MarkdownMessage })));
 interface Message {
   id: string;
   role: string;
@@ -61,6 +71,11 @@ interface HashtagInfo {
 export default function ChatPage() {
   const { user, loading, accessToken } = useAuth();
   const location = useLocation();
+
+  // Store and notification hooks for background generation
+  const chatStore = useChatStore();
+  const { requestPermission, showNotification, isGranted } = useNotifications();
+  const hasRequestedNotifications = useRef(false);
 
   // Add custom CSS animations and chat tail styles
   useEffect(() => {
@@ -136,7 +151,23 @@ export default function ChatPage() {
   const [showFolderSelectForUpload, setShowFolderSelectForUpload] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const isCreatingNewConversation = useRef(false);
+  const selectedConversationRef = useRef<string | null>(null);
+  const streamingConversationIdRef = useRef<string | null>(null);
   const { toast } = useToast();
+
+  // WebSocket hook
+  const { isConnected, isConnecting, sendMessage: sendWSMessage, addEventListener } = useChatWebSocket();
+
+  // State for streaming message
+  const [streamingMessage, setStreamingMessage] = useState<string>('');
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamingConversationId, setStreamingConversationId] = useState<string | null>(null);
+  const [currentStatus, setCurrentStatus] = useState<{
+    type: StatusType;
+    message?: string;
+    details?: string;
+  } | null>(null);
 
   // Single quirky search message
   const searchMessages = [
@@ -290,6 +321,26 @@ export default function ChatPage() {
       .join('\n\n');
   };
 
+  // Keep refs in sync with state for WebSocket event handler
+  useEffect(() => {
+    selectedConversationRef.current = selectedConversation;
+  }, [selectedConversation]);
+
+  useEffect(() => {
+    streamingConversationIdRef.current = streamingConversationId;
+  }, [streamingConversationId]);
+
+  // Debug: Log when messages state changes
+  useEffect(() => {
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('📊 [MESSAGES STATE] Messages changed, count:', messages.length);
+    console.log('[MESSAGES STATE] Messages:', messages.map(m => ({
+      id: m.id,
+      role: m.role,
+      content: m.content.substring(0, 40) + '...'
+    })));
+  }, [messages]);
+
   useEffect(() => {
     if (user) {
       loadConversations();
@@ -342,38 +393,131 @@ export default function ChatPage() {
 
   // Save current draft before switching conversations
   const saveCurrentDraft = (conversationId: string | null) => {
+    console.log('[DRAFT] saveCurrentDraft called for:', conversationId);
+    console.log('[DRAFT] Current inputMessage:', inputMessage.substring(0, 50));
     if (conversationId && inputMessage.trim()) {
+      console.log('[DRAFT] ✅ Saving draft');
       setConversationDrafts(prev => ({
         ...prev,
         [conversationId]: inputMessage.trim()
       }));
+    } else {
+      console.log('[DRAFT] ⏭️ Not saving (no conversation or empty message)');
     }
   };
 
   // Restore draft for a specific conversation
   const restoreDraft = (conversationId: string | null) => {
+    console.log('[DRAFT] restoreDraft called for:', conversationId);
     if (conversationId && conversationDrafts[conversationId]) {
+      console.log('[DRAFT] ✅ Restoring draft:', conversationDrafts[conversationId].substring(0, 50));
       setInputMessage(conversationDrafts[conversationId]);
     } else {
+      console.log('[DRAFT] 🗑️ No draft to restore, clearing input');
       setInputMessage('');
     }
   };
 
   useEffect(() => {
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('🔄 [EFFECT] selectedConversation changed:', selectedConversation);
+    console.log('[EFFECT] isCreatingNewConversation.current:', isCreatingNewConversation.current);
+
     if (selectedConversation) {
-      loadMessages(selectedConversation);
+      // Skip loadMessages if we're in the middle of creating a new conversation
+      // This prevents wiping the temp user message that was just added
+      if (!isCreatingNewConversation.current) {
+        console.log('[EFFECT] 📥 Calling loadMessages for:', selectedConversation);
+        loadMessages(selectedConversation);
+      } else {
+        console.log('[EFFECT] ⏭️ Skipping loadMessages - creating new conversation');
+      }
       restoreDraft(selectedConversation);
+      // Don't clear streaming state - let it persist for background conversations
     } else {
+      console.log('[EFFECT] 🗑️ Clearing messages - no conversation selected');
       setMessages([]);
       setInputMessage('');
+      // Don't clear streaming state - let it persist for background conversations
     }
-  }, [selectedConversation, conversationDrafts]);
+  }, [selectedConversation]);
+
+  // Request notification permission on mount and handle page visibility
+  useEffect(() => {
+    // Request notification permission once
+    if (!hasRequestedNotifications.current) {
+      hasRequestedNotifications.current = true;
+
+      // Optional: Show a friendly prompt first
+      if (!isGranted) {
+        // You could show a toast/dialog explaining why you want notification permission
+        requestPermission();
+      }
+    }
+  }, [isGranted, requestPermission]);
+
+  // Track background mode based on page visibility
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      const ws = getChatWebSocket();
+
+      if (document.hidden) {
+        // Page is hidden - activate background mode
+        console.log('Chat page hidden - activating background mode');
+        ws.setBackgroundMode(true, selectedConversation);
+      } else {
+        // Page is visible - deactivate background mode
+        console.log('Chat page visible - deactivating background mode');
+        ws.setBackgroundMode(false, null);
+
+        // Check for pending responses
+        if (selectedConversation && chatStore.getHasPendingResponse(selectedConversation)) {
+          const pending = chatStore.pendingResponses.get(selectedConversation);
+          if (pending) {
+            // Add the completed message to UI
+            setMessages(prev => [...prev, pending.message]);
+
+            // Clear from pending
+            chatStore.clearPendingResponse(selectedConversation);
+
+            // Show toast
+            toast({
+              title: "✨ Response Ready",
+              description: "Your AI assistant finished while you were away!",
+            });
+          }
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [selectedConversation, chatStore, toast]);
 
   // Create a wrapper for setSelectedConversation that saves draft first
   const handleConversationSelect = (conversationId: string | null) => {
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('🔀 [CONVERSATION_SWITCH] handleConversationSelect called');
+    console.log('[CONVERSATION_SWITCH] From:', selectedConversation);
+    console.log('[CONVERSATION_SWITCH] To:', conversationId);
+    console.log('[CONVERSATION_SWITCH] Current messages count:', messages.length);
+
     if (selectedConversation !== conversationId) {
+      console.log('[CONVERSATION_SWITCH] ✅ Switching conversation');
       saveCurrentDraft(selectedConversation);
+
+      // Don't clear streaming state - let it persist for background conversations
+      // The streaming bubble will only show if streamingConversationId === selectedConversation
+      console.log('[CONVERSATION_SWITCH] Keeping streaming state for background conversation');
+      console.log('[CONVERSATION_SWITCH] Current streamingConversationId:', streamingConversationId);
+
+      console.log('[CONVERSATION_SWITCH] Setting selectedConversation to:', conversationId);
       setSelectedConversation(conversationId);
+    } else {
+      console.log('[CONVERSATION_SWITCH] ⏭️ Same conversation, skipping');
     }
   };
 
@@ -387,7 +531,8 @@ export default function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const loadConversations = async () => {
+  // Define loadConversations with useCallback BEFORE it's used in useEffect
+  const loadConversations = useCallback(async () => {
     if (!user || !accessToken) return;
 
     try {
@@ -404,7 +549,257 @@ export default function ChatPage() {
         variant: "destructive",
       });
     }
-  };
+  }, [user, accessToken, toast]);
+
+  // Handle WebSocket events
+  useEffect(() => {
+    if (!isConnected) return;
+
+    const handleEvent = (event: ChatEvent) => {
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log('📨 [WS EVENT]', event.type);
+      console.log('[WS EVENT] Data:', event.data);
+      console.log('[WS EVENT] Current selectedConversationRef:', selectedConversationRef.current);
+      console.log('[WS EVENT] Current streamingConversationIdRef:', streamingConversationIdRef.current);
+
+      switch (event.type) {
+        case 'response.created':
+          // Always accept response.created for new conversations or matching conversation
+          // This handles: null/undefined conversation_id (new conv) OR matching existing conv
+          if (!selectedConversationRef.current || !event.data.conversation_id || event.data.conversation_id === selectedConversationRef.current) {
+            console.log('[STREAM] Initializing streaming on response.created');
+            // Track which conversation is streaming
+            setStreamingConversationId(event.data.conversation_id || selectedConversationRef.current);
+            // Initialize streaming immediately to show loading state
+            setIsStreaming(true);
+            setStreamingMessage(''); // Empty message initially
+            setCurrentStatus({
+              type: 'starting',
+              message: 'Starting generation'
+            });
+          } else {
+            console.log('[STREAM] Skipping response.created - conversation mismatch', {
+              selected: selectedConversationRef.current,
+              event: event.data.conversation_id
+            });
+          }
+          break;
+
+        case 'conversation.created':
+          console.log('[CONVERSATION.CREATED] New conversation ID:', event.data.conversation_id);
+          console.log('[CONVERSATION.CREATED] Previous selectedConversation:', selectedConversationRef.current);
+          console.log('[CONVERSATION.CREATED] isCreatingNewConversation flag:', isCreatingNewConversation.current);
+
+          // Update conversation ID
+          console.log('[CONVERSATION.CREATED] Setting selectedConversation to:', event.data.conversation_id);
+          setSelectedConversation(event.data.conversation_id);
+
+          console.log('[CONVERSATION.CREATED] Loading conversations list');
+          loadConversations();
+          // Clear the flag after conversation is created and selectedConversation is set
+          // We'll wait for message.created to actually clear it to ensure temp message is replaced first
+          break;
+
+        case 'message.created':
+          console.log('[MESSAGE.CREATED] Role:', event.data.role);
+          console.log('[MESSAGE.CREATED] Conversation ID:', event.data.conversation_id);
+          console.log('[MESSAGE.CREATED] Message ID:', event.data.message_id);
+          console.log('[MESSAGE.CREATED] Content preview:', event.data.content?.substring(0, 50));
+
+          // Replace temporary user message with real one from backend
+          // Accept for new conversations or matching conversation
+          const shouldProcessMessage = event.data.role === 'user' && (!selectedConversationRef.current || event.data.conversation_id === selectedConversationRef.current);
+          console.log('[MESSAGE.CREATED] Should process?', shouldProcessMessage);
+          console.log('[MESSAGE.CREATED] Condition breakdown:');
+          console.log('  - Is user message?', event.data.role === 'user');
+          console.log('  - No selected conversation?', !selectedConversationRef.current);
+          console.log('  - Matches selected?', event.data.conversation_id === selectedConversationRef.current);
+
+          if (shouldProcessMessage) {
+            console.log('[MESSAGE] ✅ Processing - Replacing temp user message with real one');
+            setMessages(prev => {
+              console.log('[MESSAGE] Current messages count:', prev.length);
+              console.log('[MESSAGE] Current messages:', prev.map(m => ({ id: m.id, role: m.role, content: m.content.substring(0, 30) })));
+
+              // Find and replace the temporary message
+              const tempMessageIndex = prev.findIndex(msg => msg.id.startsWith('temp-'));
+              console.log('[MESSAGE] Temp message index found:', tempMessageIndex);
+
+              if (tempMessageIndex !== -1) {
+                const newMessages = [...prev];
+                newMessages[tempMessageIndex] = {
+                  id: event.data.message_id,
+                  role: 'user',
+                  content: event.data.content,
+                  created_at: new Date().toISOString(),
+                  metadata: event.data.metadata // Include context items from backend
+                };
+                console.log('[MESSAGE] ✅ Replaced temp message with real message:', event.data.message_id);
+                console.log('[MESSAGE] New messages count:', newMessages.length);
+                return newMessages;
+              } else {
+                console.log('[MESSAGE] ⚠️ No temp message found to replace!');
+              }
+              return prev;
+            });
+          } else {
+            console.log('[MESSAGE] ❌ Skipping - conditions not met');
+          }
+          break;
+
+        case 'text.delta':
+          // Only process streaming for currently selected conversation (or accept if no conversation selected yet)
+          if (!selectedConversationRef.current || event.data.conversation_id === selectedConversationRef.current) {
+            console.log('[STREAM] Adding delta:', event.data.delta.substring(0, 20));
+            setStreamingMessage(prev => {
+              const newContent = prev + event.data.delta;
+              console.log('[STREAM] Total content length:', newContent.length);
+              return newContent;
+            });
+            setIsStreaming(true);
+            setCurrentStatus({
+              type: 'generating',
+              message: 'Generating response'
+            });
+          } else {
+            console.log('[STREAM] Skipping delta - conversation mismatch', {
+              selected: selectedConversationRef.current,
+              event: event.data.conversation_id
+            });
+          }
+          break;
+
+        case 'tool.web_search.start':
+          setCurrentStatus({
+            type: 'web_search',
+            message: 'Searching the web for',
+            details: event.data.query ? `"${event.data.query}"` : undefined
+          });
+          break;
+
+        case 'tool.web_search.complete':
+          setCurrentStatus({
+            type: 'generating',
+            message: 'Processing search results...',
+            details: undefined
+          });
+          break;
+
+        case 'tool.file_search.start':
+          const queries = event.data.queries?.join(', ') || 'your files';
+          setCurrentStatus({
+            type: 'file_search',
+            message: 'Searching files for',
+            details: `"${queries}"`
+          });
+          break;
+
+        case 'tool.file_search.complete':
+          setCurrentStatus({
+            type: 'generating',
+            message: 'Processing file results...',
+            details: undefined
+          });
+          break;
+
+        case 'tool.code_interpreter.start':
+          setCurrentStatus({
+            type: 'code_interpreter',
+            message: 'Running code interpreter...',
+            details: undefined
+          });
+          break;
+
+        case 'tool.code_interpreter.code_delta':
+          setCurrentStatus({
+            type: 'code_interpreter',
+            message: 'Writing code:',
+            details: event.data.delta ? `${event.data.delta.substring(0, 60)}...` : undefined
+          });
+          break;
+
+        case 'tool.code_interpreter.complete':
+          setCurrentStatus({
+            type: 'generating',
+            message: 'Processing code results...',
+            details: undefined
+          });
+          break;
+
+        case 'response.completed':
+          // Process response completion (accept for new conversations or matching conversation)
+          if (!selectedConversationRef.current || event.data.conversation_id === selectedConversationRef.current) {
+            console.log('[STREAM] Response completed, adding final message');
+
+            // Only clear streaming state if this is the conversation we're tracking
+            if (event.data.conversation_id === streamingConversationIdRef.current) {
+              // Show complete status briefly
+              setCurrentStatus({
+                type: 'complete',
+                message: 'Response complete'
+              });
+
+              // Hide after 1 second
+              setTimeout(() => {
+                setCurrentStatus(null);
+              }, 1000);
+
+              // Clear streaming state
+              setStreamingMessage('');
+              setIsStreaming(false);
+              setStreamingConversationId(null);
+              setIsLoading(false);
+            }
+
+            // Add complete message to messages array
+            const newMessage: Message = {
+              id: event.data.message_id,
+              role: 'assistant',
+              content: event.data.content,
+              created_at: new Date().toISOString(),
+              metadata: {
+                sources: event.data.sources
+              }
+            };
+
+            console.log('[STREAM] Final message content:', event.data.content.substring(0, 100));
+            setMessages(prev => [...prev, newMessage]);
+
+            // Update conversation ID if this was a new conversation
+            if (!selectedConversationRef.current && event.data.conversation_id) {
+              console.log('[STREAM] Setting conversation ID from completed event:', event.data.conversation_id);
+              setSelectedConversation(event.data.conversation_id);
+            }
+
+            // Refresh conversations to update title
+            loadConversations();
+          } else {
+            console.log('[STREAM] Skipping response.completed - conversation mismatch', {
+              selected: selectedConversationRef.current,
+              event: event.data.conversation_id
+            });
+          }
+          break;
+
+        case 'error':
+          const errorMsg = event.data?.message || event.message || 'An error occurred';
+          toast({
+            title: "Error",
+            description: errorMsg,
+            variant: "destructive",
+          });
+          setIsStreaming(false);
+          setIsLoading(false);
+          setStreamingMessage('');
+          setStreamingConversationId(null);
+          setCurrentStatus(null);
+          break;
+      }
+    };
+
+    const cleanup = addEventListener(handleEvent);
+    return cleanup;
+  }, [isConnected, addEventListener, loadConversations, toast]);
 
   const loadUserFolders = async () => {
     if (!user || !accessToken) return;
@@ -427,6 +822,8 @@ export default function ChatPage() {
   };
 
   const loadMessages = async (conversationId: string) => {
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('📥 [LOAD_MESSAGES] Starting for conversation:', conversationId);
     if (!user || !accessToken) return;
 
     try {
@@ -439,11 +836,28 @@ export default function ChatPage() {
       );
 
       const messages = response.data || response || [];
-      setMessages(messages.map((msg: any) => ({
-        ...msg,
-        metadata: msg.metadata as Message['metadata']
-      })));
+      console.log('[LOAD_MESSAGES] Received from backend:', messages.length, 'messages');
+      console.log('[LOAD_MESSAGES] Messages:', messages.map((m: any) => ({ id: m.id, role: m.role, content: m.content?.substring(0, 30), metadata: m.metadata })));
+
+      setMessages(prev => {
+        console.log('[LOAD_MESSAGES] Previous messages count:', prev.length);
+        const newMessages = messages.map((msg: any) => {
+          if (msg.metadata) {
+            console.log('[LOAD_MESSAGES] Message', msg.id, 'has metadata:', msg.metadata);
+            if (msg.metadata.sources) {
+              console.log('[LOAD_MESSAGES] ✅ Message has sources:', msg.metadata.sources.length, 'sources');
+            }
+          }
+          return {
+            ...msg,
+            metadata: msg.metadata as Message['metadata']
+          };
+        });
+        console.log('[LOAD_MESSAGES] ⚠️ REPLACING all messages with backend data');
+        return newMessages;
+      });
     } catch (error) {
+      console.error('[LOAD_MESSAGES] ❌ Error:', error);
       toast({
         title: "Error",
         description: "Failed to load messages",
@@ -515,9 +929,35 @@ export default function ChatPage() {
   };
 
   const sendMessage = async () => {
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('📤 [SEND] sendMessage called');
+    console.log('[SEND] selectedConversation:', selectedConversation);
+    console.log('[SEND] selectedConversationRef.current:', selectedConversationRef.current);
+
     if (!inputMessage.trim() || !user || !accessToken) return;
+    if (!isConnected) {
+      toast({
+        title: "Connection Error",
+        description: "WebSocket not connected. Please refresh the page.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     const userMessage = inputMessage.trim();
+    console.log('[SEND] Message content:', userMessage.substring(0, 50));
+
+    // Track if we're creating a new conversation
+    if (!selectedConversation) {
+      console.log('[SEND] Creating new conversation, setting flag');
+      isCreatingNewConversation.current = true;
+    }
+
+    // Track generation start in store
+    if (selectedConversation) {
+      chatStore.startGeneration(selectedConversation, userMessage);
+    }
+
     // Clear current draft since message is being sent
     if (selectedConversation) {
       setConversationDrafts(prev => {
@@ -526,9 +966,13 @@ export default function ChatPage() {
         return newDrafts;
       });
     }
+
     setInputMessage('');
     setIsLoading(true);
     setHashtagInfo(null);
+    setStreamingMessage('');
+    setIsStreaming(false);
+    setCurrentStatus(null);
 
     // Clear selected context items after sending
     const contextItemsCopy = [...selectedContextItems];
@@ -541,7 +985,14 @@ export default function ChatPage() {
       content: userMessage,
       created_at: new Date().toISOString(),
     };
-    setMessages(prev => [...prev, tempUserMessage]);
+    console.log('[SEND] Adding temp message to UI:', tempUserMessage.id);
+    console.log('[SEND] Current messages count before add:', messages.length);
+    setMessages(prev => {
+      const newMessages = [...prev, tempUserMessage];
+      console.log('[SEND] Messages after adding temp:', newMessages.length);
+      console.log('[SEND] Last message ID:', newMessages[newMessages.length - 1].id);
+      return newMessages;
+    });
 
     try {
       // Prepare context items for backend
@@ -550,65 +1001,19 @@ export default function ChatPage() {
         type: item.type
       }));
 
-      // Use the backend RAG chat endpoint
-      const response = await apiClient.chatWithRag(
-        {
-          message: userMessage,
-          conversation_id: selectedConversation,
-          user_id: user.id,
-          context_items: contextItems  // Pass folder and file IDs with types
-        },
-        {
-          userId: user.id,
-          accessToken: accessToken
-        }
-      );
-
-      const { conversation_id: convId, sources: aiSources, hashtag_info } = response.data || response;
-
-      // If this was a new conversation, update the selected conversation
-      if (!selectedConversation && convId) {
-        handleConversationSelect(convId);
-        await loadConversations(); // Refresh conversations list
-      }
-
-      // Sources will be displayed from message metadata
-
-      // Update hashtag info if available
-      if (hashtag_info) {
-        setHashtagInfo(hashtag_info);
-
-        // Show simple hashtag recognition feedback
-        if (hashtag_info.unrecognized_hashtags.length > 0) {
-          toast({
-            title: "Unknown folders",
-            description: hashtag_info.unrecognized_hashtags.map((tag: string) => `#${tag}`).join(', '),
-            variant: "destructive",
-          });
-        }
-      }
-
-      // Refresh messages to show the new conversation
-      if (convId) {
-        await loadMessages(convId);
-      }
-
-      // Refresh conversations to show any new conversation or updated title
-      if (convId) {
-        await loadConversations();
-      }
+      // Send via WebSocket
+      await sendWSMessage(userMessage, selectedConversation, contextItems);
 
     } catch (error) {
       console.error('Send message error:', error);
       // Remove the temporary message on error
       setMessages(prev => prev.filter(msg => msg.id !== tempUserMessage.id));
+      setIsLoading(false);
       toast({
         title: "Error",
         description: "Failed to send message",
         variant: "destructive",
       });
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -1023,22 +1428,32 @@ export default function ChatPage() {
                     <MessageSquare className="h-4 w-4" />
                   </div>
                   <div className="flex-1 min-w-0 overflow-hidden">
-                    <h3 className={`text-sm font-semibold leading-tight transition-colors duration-300 ${
-                      selectedConversation === conversation.id
-                        ? 'text-white'
-                        : 'text-gray-200 group-hover:text-white'
-                    }`}
-                    title={conversation.title}
-                    style={{
-                      display: '-webkit-box',
-                      WebkitLineClamp: 2,
-                      WebkitBoxOrient: 'vertical',
-                      overflow: 'hidden',
-                      wordBreak: 'break-word',
-                      hyphens: 'auto'
-                    }}>
-                      {conversation.title}
-                    </h3>
+                    <div className="flex items-center space-x-2">
+                      <h3 className={`text-sm font-semibold leading-tight transition-colors duration-300 ${
+                        selectedConversation === conversation.id
+                          ? 'text-white'
+                          : 'text-gray-200 group-hover:text-white'
+                      }`}
+                      title={conversation.title}
+                      style={{
+                        display: '-webkit-box',
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden',
+                        wordBreak: 'break-word',
+                        hyphens: 'auto'
+                      }}>
+                        {conversation.title}
+                      </h3>
+
+                      {/* Pending response badge */}
+                      {chatStore.getHasPendingResponse(conversation.id) && (
+                        <span className="flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-green-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                        </span>
+                      )}
+                    </div>
                     <p className="text-xs text-gray-400 mt-2 font-medium">
                       {new Date(conversation.updated_at).toLocaleDateString('en-US', {
                         month: 'short',
@@ -1097,6 +1512,23 @@ export default function ChatPage() {
             {/* Messages Area */}
             <ScrollArea className="flex-1 p-4 md:p-8">
               <div className="space-y-8 max-w-4xl mx-auto">
+                {/* WebSocket Connection Status */}
+                {isConnecting && (
+                  <div className="flex items-center justify-center space-x-3 text-amber-300 bg-amber-900/20 border border-amber-600/30 rounded-xl px-4 py-3 backdrop-blur-sm">
+                    <div className="animate-spin">
+                      <Brain className="h-4 w-4" />
+                    </div>
+                    <span className="text-sm font-medium">Connecting to chat...</span>
+                  </div>
+                )}
+
+                {isConnected && (
+                  <div className="flex items-center justify-center space-x-2 text-emerald-300 bg-emerald-900/10 border border-emerald-600/20 rounded-xl px-3 py-2 backdrop-blur-sm">
+                    <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></div>
+                    <span className="text-xs font-medium">Live chat connected</span>
+                  </div>
+                )}
+
                 {messages.map((message) => (
                   <div key={message.id} className="group message-appear">
                     {message.role === 'user' ? (
@@ -1116,6 +1548,25 @@ export default function ChatPage() {
                                   : message.content
                                 }
                               </div>
+
+                              {/* Display context items if present in metadata */}
+                              {message.metadata?.context_items && message.metadata.context_items.length > 0 && (
+                                <div className="mt-3 pt-3 border-t border-white/20">
+                                  <div className="flex flex-wrap gap-2">
+                                    {message.metadata.context_items.map((item: any, idx: number) => (
+                                      <Badge
+                                        key={idx}
+                                        variant="secondary"
+                                        className="text-xs bg-white/20 text-white border-white/30 hover:bg-white/30"
+                                      >
+                                        {item.type === 'folder' ? <Folder className="h-3 w-3 mr-1" /> : <FileText className="h-3 w-3 mr-1" />}
+                                        @{item.id}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
                               <div className="flex items-center justify-between mt-3 pt-2 border-t border-white/20">
                                 <button
                                   onClick={() => initiateSaveMessage(message)}
@@ -1147,8 +1598,10 @@ export default function ChatPage() {
 
                           <div className="space-y-4 flex-1 min-w-0">
                             <div className="relative bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl rounded-tl-lg shadow-2xl px-6 py-5 transition-all duration-300 hover:shadow-3xl group-hover:bg-white/15">
-                              <div className="text-sm leading-7 whitespace-pre-wrap text-gray-100 break-words">
-                                {message.content}
+                              <div className="text-sm leading-7 text-gray-100">
+                                <Suspense fallback={<div className="text-gray-400">Loading...</div>}>
+                                  <MarkdownMessage content={message.content} />
+                                </Suspense>
                               </div>
                               <div className="flex items-center justify-between mt-4 pt-3 border-t border-white/10">
                                 <div className="flex items-center space-x-3">
@@ -1221,23 +1674,57 @@ export default function ChatPage() {
                     )}
                   </div>
                 ))}
-                {isLoading && (
+
+                {/* Streaming message indicator */}
+                {isStreaming && streamingConversationId === selectedConversation && (
                   <div className="flex justify-start group">
-                    <div className="flex items-start space-x-3">
-                      {/* AI Avatar for loading */}
-                      <div className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg ring-2 ring-emerald-500/30">
-                        <Bot className="h-5 w-5 text-white" />
+                    <div className="flex items-start space-x-5 max-w-[85%]">
+                      <div className="flex-shrink-0 w-12 h-12 rounded-2xl flex items-center justify-center bg-gradient-to-br from-emerald-500 to-cyan-600 shadow-xl ring-2 ring-emerald-400/30 backdrop-blur-sm">
+                        <Bot className="h-6 w-6 text-white" />
                       </div>
 
-                      <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-3xl rounded-tl-lg shadow-lg px-5 py-3">
-                        <div className="flex items-center space-x-3">
-                          <TypingIndicator />
-                          <span className="text-sm text-gray-300 animate-pulse">{searchMessage}</span>
+                      <div className="space-y-4 flex-1 min-w-0">
+                        <div className="relative bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl rounded-tl-lg shadow-2xl px-6 py-5">
+                          {streamingMessage ? (
+                            // Show actual streaming text
+                            <div className="text-sm leading-7 text-gray-100 break-words">
+                              <Suspense fallback={<div className="text-gray-400">Loading...</div>}>
+                                <MarkdownMessage content={streamingMessage} />
+                              </Suspense>
+                              <span className="animate-pulse">▊</span>
+                            </div>
+                          ) : currentStatus ? (
+                            // Show current status while waiting for text - combined message
+                            <div className="flex items-center space-x-3 text-sm text-gray-300">
+                              <div className="flex space-x-1">
+                                <div className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                                <div className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                                <div className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                              </div>
+                              <div className="font-medium">
+                                {currentStatus.details
+                                  ? `${currentStatus.message} ${currentStatus.details}`
+                                  : currentStatus.message
+                                }
+                              </div>
+                            </div>
+                          ) : (
+                            // Fallback: just show loading dots
+                            <div className="flex items-center space-x-2 text-sm text-gray-300">
+                              <div className="flex space-x-1">
+                                <div className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                                <div className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                                <div className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                              </div>
+                              <span>Thinking...</span>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
                   </div>
                 )}
+
                 <div ref={messagesEndRef} />
               </div>
             </ScrollArea>
