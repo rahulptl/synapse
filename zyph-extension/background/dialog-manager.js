@@ -6,8 +6,8 @@ class DialogManager {
     async showProtectedContentDialog(tab, pageType, message) {
         try {
             // Check if user has disabled the dialog
-            const result = await chrome.storage.local.get('zyph-dont-show-protected-dialog');
-            if (result['zyph-dont-show-protected-dialog']) {
+            const result = await chrome.storage.local.get('memorybay-dont-show-protected-dialog');
+            if (result['memorybay-dont-show-protected-dialog']) {
                 console.log('[DialogManager] Protected content dialog disabled by user preference');
                 return;
             }
@@ -47,7 +47,7 @@ class DialogManager {
 
             // Store dialog window ID for cleanup
             await chrome.storage.local.set({
-                'zyph-dialog-window-id': dialogWindow.id
+                'memorybay-dialog-window-id': dialogWindow.id
             });
 
         } catch (error) {
@@ -55,11 +55,11 @@ class DialogManager {
 
             // Fallback: Show helpful browser notification
             try {
-                await chrome.notifications.create(`zyph-fallback-${Date.now()}`, {
+                await chrome.notifications.create(`memorybay-fallback-${Date.now()}`, {
                     type: 'basic',
                     iconUrl: this.getNotificationIconUrl(),
                     title: '💡 Tip: How to Save This Page',
-                    message: `${message}\n\nSelect text -> Right-click -> Choose "Save to Zyph"`,
+                    message: `${message}\n\nSelect text -> Right-click -> Choose "Save to Memory Bay"`,
                     requireInteraction: false,
                     priority: 1
                 });
@@ -73,14 +73,14 @@ class DialogManager {
         try {
             chrome.action.setBadgeText({ text: '💡' });
             chrome.action.setBadgeBackgroundColor({ color: '#3B82F6' });
-            chrome.action.setTitle({ title: `Tip: How to Save This Page\n\nFor ${pageType}, use text selection:\n1. Select the text you want\n2. Right-click and choose "Save to Zyph"` });
+            chrome.action.setTitle({ title: `Tip: How to Save This Page\n\nFor ${pageType}, use text selection:\n1. Select the text you want\n2. Right-click and choose "Save to Memory Bay"` });
 
             console.log('[DialogManager] Helpful tip badge notification set');
 
             // Clear badge after 10 seconds
             setTimeout(() => {
                 chrome.action.setBadgeText({ text: '' });
-                chrome.action.setTitle({ title: 'Open Zyph Folder Manager' });
+                chrome.action.setTitle({ title: 'Open Memory Bay Folder Manager' });
             }, 10000);
         } catch (error) {
             console.error('[DialogManager] Failed to show badge notification:', error);
@@ -109,18 +109,18 @@ class DialogManager {
             this.restrictedNotificationShown.add(notificationKey);
 
             let message = 'This page needs a simple extra step to save content.';
-            let instructions = 'Select the text you want, then right-click and choose "Save to Zyph".';
+            let instructions = 'Select the text you want, then right-click and choose "Save to Memory Bay".';
 
             if (pageType === 'Chrome internal page' && contentType === 'page') {
                 message = 'Chrome protects this page for your security.';
-                instructions = 'Just select the text you want, right-click, and choose "Save to Zyph".';
+                instructions = 'Just select the text you want, right-click, and choose "Save to Memory Bay".';
             } else if (pageType === 'Chrome internal page' && contentType === 'selection') {
                 message = 'Chrome protects this page for your security.';
-                instructions = 'You can save text by selecting it, right-clicking, and choosing "Save to Zyph".';
+                instructions = 'You can save text by selecting it, right-clicking, and choosing "Save to Memory Bay".';
             } else if (contentType === 'page') {
-                instructions = 'Select the text you want, right-click, and choose "Save to Zyph".';
+                instructions = 'Select the text you want, right-click, and choose "Save to Memory Bay".';
             } else if (contentType === 'selection') {
-                instructions = 'Select text, right-click, and choose "Save to Zyph".';
+                instructions = 'Select text, right-click, and choose "Save to Memory Bay".';
             }
 
             const notificationOptions = {
@@ -142,7 +142,7 @@ class DialogManager {
 
             let notificationId;
             try {
-                notificationId = await chrome.notifications.create(`zyph-protected-${Date.now()}`, notificationOptions);
+                notificationId = await chrome.notifications.create(`memorybay-protected-${Date.now()}`, notificationOptions);
                 console.log('[DialogManager] Enhanced browser notification created:', notificationId);
             } catch (notificationError) {
                 console.error('[DialogManager] Failed to show restricted page notification:', notificationError);
@@ -208,12 +208,12 @@ class DialogManager {
 
     async closeProtectedDialog() {
         try {
-            const result = await chrome.storage.local.get('zyph-dialog-window-id');
-            const windowId = result['zyph-dialog-window-id'];
+            const result = await chrome.storage.local.get('memorybay-dialog-window-id');
+            const windowId = result['memorybay-dialog-window-id'];
 
             if (windowId) {
                 await chrome.windows.remove(windowId);
-                await chrome.storage.local.remove('zyph-dialog-window-id');
+                await chrome.storage.local.remove('memorybay-dialog-window-id');
                 console.log('[DialogManager] Protected content dialog closed:', windowId);
             }
 
@@ -227,7 +227,7 @@ class DialogManager {
     async handleNotificationButtonClick(notificationId, buttonIndex) {
         console.log('[DialogManager] Notification button clicked:', notificationId, buttonIndex);
 
-        if (notificationId.startsWith('zyph-protected-')) {
+        if (notificationId.startsWith('memorybay-protected-')) {
             if (buttonIndex === 0) {
                 // "Got it!" button - just clear the notification
                 chrome.notifications.clear(notificationId);
@@ -249,7 +249,7 @@ class DialogManager {
     async handleNotificationClick(notificationId) {
         console.log('[DialogManager] Notification clicked:', notificationId);
 
-        if (notificationId.startsWith('zyph-protected-')) {
+        if (notificationId.startsWith('memorybay-protected-')) {
             try {
                 const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
                 if (tabs[0]) {

@@ -657,7 +657,7 @@ body {
     text-align: right;
 }
 
-.zyph-user-display {
+.memoryBay-user-display {
     padding: 10px 12px;
     border: 1px solid #e0e0e0;
     border-radius: 6px;
@@ -1870,7 +1870,7 @@ body {
 }
 
 /* Loading states for specific contexts */
-.zyph-connection-status .loading-container.inline {
+.memoryBay-connection-status .loading-container.inline {
     padding: 4px 8px;
     background: rgba(0, 102, 204, 0.1);
     border-radius: 4px;

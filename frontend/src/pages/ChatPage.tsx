@@ -15,7 +15,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
-import { Send, MessageSquare, Plus, Folder, Bot, Search, Brain, Sparkles, ExternalLink, AlertTriangle, Trash2, Menu, FileText, Bookmark, Upload, ChevronRight } from 'lucide-react';
+import { Send, MessageSquare, Plus, Folder, Bot, Search, Brain, Sparkles, ExternalLink, AlertTriangle, Trash2, Menu, FileText, Bookmark, Upload, ChevronRight, Download } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { apiClient } from '@/services/apiClient';
@@ -36,6 +36,20 @@ interface Message {
       title: string;
       source: string;
       similarity: number;
+    }>;
+    context_items?: Array<{
+      id: string;
+      type: string;
+      name: string;
+    }>;
+    generated_files?: Array<{
+      id: string;
+      filename: string;
+      container_id: string;
+      file_id: string;
+      download_url: string;
+      created_at: string;
+      content_type?: string;
     }>;
   };
 }
@@ -152,6 +166,7 @@ export default function ChatPage() {
   const [selectedSource, setSelectedSource] = useState<any | null>(null);
   const [showSourceDialog, setShowSourceDialog] = useState(false);
   const [conversationToDelete, setConversationToDelete] = useState<string | null>(null);
+  const [expandedSources, setExpandedSources] = useState<Record<string, boolean>>({});
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [messageToSave, setMessageToSave] = useState<Message | null>(null);
   const [showFolderSelectForUpload, setShowFolderSelectForUpload] = useState(false);
@@ -770,19 +785,31 @@ export default function ChatPage() {
               setIsLoading(false);
             }
 
-            // Add complete message to messages array
+            // Add complete message to messages array with sources and generated files
             const newMessage: Message = {
               id: event.data.message_id,
               role: 'assistant',
               content: event.data.content,
               created_at: new Date().toISOString(),
               metadata: {
-                sources: event.data.sources
+                sources: event.data.sources,
+                generated_files: event.data.generated_files
               }
             };
 
             console.log('[STREAM] Final message content:', event.data.content.substring(0, 100));
             setMessages(prev => [...prev, newMessage]);
+
+            // Show toast notifications for generated files
+            if (event.data.generated_files && event.data.generated_files.length > 0) {
+              event.data.generated_files.forEach((file: any) => {
+                toast({
+                  title: "File Saved to AI Artifacts",
+                  description: file.filename,
+                  duration: 4000,
+                });
+              });
+            }
 
             // Update conversation ID if this was a new conversation
             if (!selectedConversationRef.current && event.data.conversation_id) {
@@ -866,6 +893,14 @@ export default function ChatPage() {
             if (msg.metadata.sources) {
               console.log('[LOAD_MESSAGES] ✅ Message has sources:', msg.metadata.sources.length, 'sources');
             }
+            if (msg.metadata.generated_files) {
+              console.log('[LOAD_MESSAGES] ✅ Message has generated_files:', msg.metadata.generated_files.length, 'files');
+              for (const gf of msg.metadata.generated_files) {
+                console.log('[LOAD_MESSAGES] - Generated file:', gf.filename, '(id:', gf.id, ')');
+              }
+            }
+          } else {
+            console.log('[LOAD_MESSAGES] Message', msg.id, 'has NO metadata');
           }
           return {
             ...msg,
@@ -1280,6 +1315,9 @@ export default function ChatPage() {
   // Function to view source content
   const viewSource = async (source: any) => {
     try {
+      console.log('[VIEW_SOURCE] 🎯 Opening source:', source.title, '(id:', source.id, ')');
+      console.log('[VIEW_SOURCE] 📋 Source object:', source);
+
       setSelectedSource({
         title: source.title,
         source: source.source,
@@ -1291,6 +1329,7 @@ export default function ChatPage() {
       // Try to fetch the actual content from knowledge base via backend API
       try {
         if (!user || !accessToken) {
+          console.log('[VIEW_SOURCE] ❌ No authentication - user:', !!user, 'token:', !!accessToken);
           setSelectedSource((prev: any) => prev ? {
             ...prev,
             content: "Authentication required to load source content."
@@ -1298,6 +1337,7 @@ export default function ChatPage() {
           return;
         }
 
+        console.log('[VIEW_SOURCE] 🔍 Searching for content with query:', source.title);
         const response = await apiClient.searchContent(
           {
             query: source.title,
@@ -1310,28 +1350,49 @@ export default function ChatPage() {
           }
         );
 
-        const results = (response as any).data || response || [];
+        console.log('[VIEW_SOURCE] 📡 Search API response:', response);
+        // Handle different response structures - some APIs return results directly, others nest them
+        const apiResponse = (response as any).data || response;
+        const results = apiResponse.results || apiResponse || [];
+        console.log('[VIEW_SOURCE] 📊 Search results:', results.length, 'items found');
+        console.log('[VIEW_SOURCE] 📋 Results array:', results);
+
         if (results.length > 0) {
           const item = results[0];
+          console.log('[VIEW_SOURCE] ✅ Found item:', item.title, 'id:', item.id);
+          console.log('[VIEW_SOURCE] 📄 Content length:', item.content?.length || 0);
+          console.log('[VIEW_SOURCE] 📄 Content preview:', item.content?.substring(0, 100) + '...' || 'No content');
+          console.log('[VIEW_SOURCE] 📁 File metadata:', item.metadata);
+
           setSelectedSource((prev: any) => prev ? {
             ...prev,
             content: item.content || "No content available for this source.",
-            id: item.id
+            id: item.id,
+            fileMetadata: item.metadata, // Store file metadata for download
+            contentType: item.content_type
           } : null);
         } else {
+          console.log('[VIEW_SOURCE] ❌ No results found for title:', source.title);
           setSelectedSource((prev: any) => prev ? {
             ...prev,
             content: "Could not load the full content for this source. The source may have been moved or deleted."
           } : null);
         }
       } catch (fetchError) {
-        console.error('Error fetching source content:', fetchError);
+        console.error('[VIEW_SOURCE] 💥 Error fetching source content:', fetchError);
+        console.error('[VIEW_SOURCE] 💥 Error details:', {
+          message: fetchError.message,
+          status: fetchError.response?.status,
+          statusText: fetchError.response?.statusText,
+          data: fetchError.response?.data
+        });
         setSelectedSource((prev: any) => prev ? {
           ...prev,
-          content: "Error loading source content. Please try again later."
+          content: `Error loading source content: ${fetchError.message || 'Unknown error'}`
         } : null);
       }
     } catch (error) {
+      console.error('[VIEW_SOURCE] 💥 General error:', error);
       toast({
         title: "Error",
         description: "Could not load source",
@@ -1484,6 +1545,105 @@ export default function ChatPage() {
       });
     } finally {
       setShowFolderSelectForUpload(false);
+    }
+  };
+
+  // Function to download generated files (reuses knowledge base download logic)
+  const handleDownloadGeneratedFile = async (file: { id: string; filename: string }) => {
+    if (!user || !accessToken) {
+      toast({
+        title: 'Authentication required',
+        description: 'Please sign in to download files',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      const download = await apiClient.downloadItemFile(file.id, {
+        userId: user.id,
+        accessToken,
+      });
+
+      // Use filename from file object, fallback to response filename
+      const finalFilename = file.filename || download.filename || 'download';
+
+      // Trigger browser download
+      apiClient.downloadBlob(download.blob, finalFilename);
+
+      toast({
+        title: 'Download started',
+        description: `Downloading ${finalFilename}`,
+      });
+    } catch (error) {
+      console.error('Failed to download generated file:', error);
+      toast({
+        title: 'Download failed',
+        description: 'Failed to download the file. Please try again.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  // Function to toggle expanded sources for a message
+  const toggleSourcesExpanded = (messageId: string) => {
+    setExpandedSources(prev => ({
+      ...prev,
+      [messageId]: !prev[messageId]
+    }));
+  };
+
+  // Function to download source files
+  const handleDownloadSourceFile = async (source: any) => {
+    if (!user || !accessToken) {
+      toast({
+        title: 'Authentication required',
+        description: 'Please sign in to download files',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      console.log('[DOWNLOAD_SOURCE] 📥 Downloading source file:', source.title, '(id:', source.id, ')');
+      console.log('[DOWNLOAD_SOURCE] 📁 File metadata:', source.fileMetadata);
+      console.log('[DOWNLOAD_SOURCE] 🔍 Full source object:', source);
+
+      if (!source.fileMetadata?.original_filename) {
+        toast({
+          title: 'Download not available',
+          description: 'This source does not have a downloadable file.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      console.log('[DOWNLOAD_SOURCE] 🌐 Making API call to: /files/download/' + source.id);
+      console.log('[DOWNLOAD_SOURCE] 🔐 Auth info - User ID:', user.id, 'Token length:', accessToken?.length || 0);
+      console.log('[DOWNLOAD_SOURCE] 🔐 Token preview:', accessToken?.substring(0, 20) + '...' || 'No token');
+
+      const download = await apiClient.downloadItemFile(source.id, {
+        userId: user.id,
+        accessToken,
+      });
+
+      // Use filename from file metadata, fallback to response filename
+      const finalFilename = source.fileMetadata.original_filename || download.filename || source.title || 'download';
+
+      // Trigger browser download
+      apiClient.downloadBlob(download.blob, finalFilename);
+
+      toast({
+        title: 'Download started',
+        description: `Downloading ${finalFilename}`,
+      });
+    } catch (error) {
+      console.error('Failed to download source file:', error);
+      toast({
+        title: 'Download failed',
+        description: 'Failed to download the source file. Please try again.',
+        variant: 'destructive',
+      });
     }
   };
 
@@ -1719,9 +1879,9 @@ export default function ChatPage() {
                                   <h4 className="text-sm font-semibold text-sidebar-foreground">Knowledge Sources ({message.metadata.sources.length})</h4>
                                 </div>
                                 <div className="space-y-2 max-h-64 overflow-y-auto">
-                                  {message.metadata.sources.slice(0, 3).map((source, idx) => (
+                                  {(expandedSources[message.id] ? message.metadata.sources : message.metadata.sources.slice(0, 3)).map((source, idx) => (
                                     <div
-                                      key={idx}
+                                      key={`${source.id}-${idx}`}
                                       className="group bg-sidebar-accent/50 border border-sidebar-border rounded-lg p-3 hover:bg-sidebar-accent transition-colors duration-200 cursor-pointer"
                                       onClick={() => viewSource(source)}
                                     >
@@ -1745,10 +1905,45 @@ export default function ChatPage() {
                                     </div>
                                   ))}
                                   {message.metadata.sources.length > 3 && (
-                                    <div className="text-xs text-sidebar-muted text-center py-1.5 bg-sidebar-accent/30 rounded border border-sidebar-border">
-                                      +{message.metadata.sources.length - 3} more sources
+                                    <div
+                                      className="text-xs text-sidebar-muted text-center py-1.5 bg-sidebar-accent/30 rounded border border-sidebar-border cursor-pointer hover:bg-sidebar-accent/50 transition-colors duration-200"
+                                      onClick={() => toggleSourcesExpanded(message.id)}
+                                    >
+                                      {expandedSources[message.id]
+                                        ? `Show less (-${message.metadata.sources.length - 3} sources)`
+                                        : `+${message.metadata.sources.length - 3} more sources`
+                                      }
                                     </div>
                                   )}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Generated Files for AI messages */}
+                            {message.metadata?.generated_files && message.metadata.generated_files.length > 0 && (
+                              <div className="bg-sidebar-accent/30 border border-sidebar-border rounded-xl px-4 py-3 mt-3">
+                                <div className="flex items-center space-x-2 mb-3">
+                                  <FileText className="h-4 w-4 text-sidebar-muted" />
+                                  <h4 className="text-sm font-semibold text-sidebar-foreground">Generated Files ({message.metadata.generated_files.length})</h4>
+                                </div>
+                                <div className="space-y-2">
+                                  {message.metadata.generated_files.map((file) => (
+                                    <button
+                                      key={file.id}
+                                      onClick={() => handleDownloadGeneratedFile(file)}
+                                      className="group flex items-center justify-between gap-3 bg-sidebar-accent/50 border border-sidebar-border rounded-lg p-3 hover:bg-sidebar-accent transition-colors duration-200 w-full text-left cursor-pointer"
+                                    >
+                                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                                        <FileText className="h-4 w-4 text-blue-400 flex-shrink-0" />
+                                        <span className="text-sm font-medium text-sidebar-foreground truncate">{file.filename}</span>
+                                      </div>
+                                      {file.content_type && (
+                                        <Badge variant="outline" className="text-xs flex-shrink-0 uppercase">
+                                          {file.content_type}
+                                        </Badge>
+                                      )}
+                                    </button>
+                                  ))}
                                 </div>
                               </div>
                             )}
@@ -2026,8 +2221,25 @@ export default function ChatPage() {
                     <Badge variant="outline" className="text-xs">
                       {Math.round(selectedSource.similarity * 100)}% match
                     </Badge>
+                    {selectedSource.contentType && (
+                      <Badge variant="outline" className="text-xs uppercase">
+                        {selectedSource.contentType}
+                      </Badge>
+                    )}
                   </div>
                 </div>
+                {/* Download Button */}
+                {selectedSource.fileMetadata?.original_filename && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleDownloadSourceFile(selectedSource)}
+                    className="flex items-center space-x-2"
+                  >
+                    <Download className="h-4 w-4" />
+                    <span>Download Original</span>
+                  </Button>
+                )}
               </div>
 
               {/* Content Area */}

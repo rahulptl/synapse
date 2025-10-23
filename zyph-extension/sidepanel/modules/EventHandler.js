@@ -1,6 +1,6 @@
-window.Zyph = window.Zyph || {};
+window.MemoryBay = window.MemoryBay || {};
 
-window.Zyph.EventHandler = class EventHandler {
+window.MemoryBay.EventHandler = class EventHandler {
     constructor(uiManager, folderManager, contextGenerator) {
         this.uiManager = uiManager;
         this.folderManager = folderManager;
@@ -911,7 +911,7 @@ window.Zyph.EventHandler = class EventHandler {
 
     async downloadFileContent(remoteId, localContentId) {
         try {
-            const response = await window.Zyph.Api.getFullContent(remoteId);
+            const response = await window.MemoryBay.Api.getFullContent(remoteId);
 
             if (!response || !response.file_url) {
                 throw new Error('File download URL not available');
@@ -931,21 +931,21 @@ window.Zyph.EventHandler = class EventHandler {
 
         } catch (error) {
             console.error('[EventHandler] Failed to download file:', error);
-            throw new Error('Failed to download file from zyph.com');
+            throw new Error('Failed to download file from Memory Bay');
         }
     }
 
     async retryContentPull(remoteId, localContentId) {
         try {
-            const response = await window.Zyph.Api.getFullContent(remoteId);
+            const response = await window.MemoryBay.Api.getFullContent(remoteId);
 
             if (!response || !response.content) {
-                throw new Error('Content not available from zyph.com');
+                throw new Error('Content not available from Memory Bay');
             }
 
             // Update local content item with the full content
-            const result = await chrome.storage.local.get('zyphContent');
-            const allContent = result.zyphContent || [];
+            const result = await chrome.storage.local.get('memoryBayContent');
+            const allContent = result.memoryBayContent || [];
             const itemIndex = allContent.findIndex(item => item.id === localContentId);
 
             if (itemIndex === -1) {
@@ -959,7 +959,7 @@ window.Zyph.EventHandler = class EventHandler {
                 pulledAt: new Date().toISOString()
             };
 
-            await chrome.storage.local.set({ zyphContent: allContent });
+            await chrome.storage.local.set({ memoryBayContent: allContent });
 
             // Refresh the content display
             if (this.uiManager.currentlyDisplayedFolderId) {
@@ -968,11 +968,11 @@ window.Zyph.EventHandler = class EventHandler {
 
         } catch (error) {
             console.error('[EventHandler] Failed to retry content pull:', error);
-            throw new Error('Failed to load content from zyph.com');
+            throw new Error('Failed to load content from Memory Bay');
         }
     }
 
     async updateContentItemMetadata(contentId, updater) {
-        return await Zyph.Utils.updateContentMetadata(contentId, updater);
+        return await MemoryBay.Utils.updateContentMetadata(contentId, updater);
     }
 };

@@ -6,27 +6,27 @@
     // Load API URL from config on initialization
     (async function initializeApiUrl() {
         try {
-            const configModule = global?.ZyphConfig;
+            const configModule = global?.MemoryBayConfig;
             if (configModule?.getApiBaseUrl) {
                 API_BASE_URL = await configModule.getApiBaseUrl();
-                console.log('[ZyphApi] Initialized with API URL:', API_BASE_URL);
+                console.log('[MemoryBayApi] Initialized with API URL:', API_BASE_URL);
             }
         } catch (error) {
-            console.warn('[ZyphApi] Failed to load API URL from config, using fallback:', error);
+            console.warn('[MemoryBayApi] Failed to load API URL from config, using fallback:', error);
         }
     })();
 
-    class ZyphApiError extends Error {
+    class MemoryBayApiError extends Error {
         constructor(message, options = {}) {
             super(message);
-            this.name = 'ZyphApiError';
+            this.name = 'MemoryBayApiError';
             this.status = options.status || null;
             this.body = options.body || null;
             this.code = options.code || null;
         }
     }
 
-    class ZyphApiClient {
+    class MemoryBayApiClient {
         constructor() {
             this.cachedAuth = null;
             this.cachedFolders = null;
@@ -38,13 +38,13 @@
 
         async getApiBaseUrl() {
             // Try to get from config first
-            const configModule = global?.ZyphConfig;
+            const configModule = global?.MemoryBayConfig;
             if (configModule?.getApiBaseUrl) {
                 try {
                     this.apiBaseUrl = await configModule.getApiBaseUrl();
                     return this.apiBaseUrl;
                 } catch (error) {
-                    console.warn('[ZyphApi] Failed to load API URL from config:', error);
+                    console.warn('[MemoryBayApi] Failed to load API URL from config:', error);
                 }
             }
             // Fallback to module-level constant
@@ -62,11 +62,11 @@
 
             this.authLoadPromise = new Promise(async (resolve) => {
                 try {
-                    const result = await chrome.storage.local.get('zyphRemoteAuth');
-                    this.cachedAuth = result.zyphRemoteAuth || null;
+                    const result = await chrome.storage.local.get('memoryBayRemoteAuth');
+                    this.cachedAuth = result.memoryBayRemoteAuth || null;
                     resolve(this.cachedAuth);
                 } catch (error) {
-                    console.error('[ZyphApi] Failed to load auth from storage:', error);
+                    console.error('[MemoryBayApi] Failed to load auth from storage:', error);
                     this.cachedAuth = null;
                     resolve(null);
                 } finally {
@@ -90,7 +90,7 @@
                 validatedAt: auth.validatedAt || new Date().toISOString()
             } : null;
 
-            await chrome.storage.local.set({ zyphRemoteAuth: authPayload });
+            await chrome.storage.local.set({ memoryBayRemoteAuth: authPayload });
             this.cachedAuth = authPayload;
             if (!authPayload) {
                 this.clearFolderCache();
@@ -99,7 +99,7 @@
         }
 
         async clearAuth() {
-            await chrome.storage.local.remove('zyphRemoteAuth');
+            await chrome.storage.local.remove('memoryBayRemoteAuth');
             this.cachedAuth = null;
             this.clearFolderCache();
         }
@@ -114,7 +114,7 @@
             const auth = this.cachedAuth;
 
             if (!auth && !overrideKey) {
-                throw new ZyphApiError('Missing Zyph API credentials', { code: 'NO_AUTH' });
+                throw new MemoryBayApiError('Missing Memory Bay API credentials', { code: 'NO_AUTH' });
             }
 
             const apiKey = overrideKey?.apiKey || auth?.apiKey;
@@ -143,7 +143,7 @@
 
                 if (!response.ok) {
                     const body = await this.safeJson(response);
-                    throw new ZyphApiError('Failed to validate API key', {
+                    throw new MemoryBayApiError('Failed to validate API key', {
                         status: response.status,
                         body,
                         code: response.status === 401 ? 'UNAUTHORIZED' : 'VALIDATION_FAILED'
@@ -153,7 +153,7 @@
                 const data = await response.json();
 
                 if (!data.valid) {
-                    throw new ZyphApiError('API key is not valid', { code: 'INVALID_KEY', body: data });
+                    throw new MemoryBayApiError('API key is not valid', { code: 'INVALID_KEY', body: data });
                 }
 
                 const authPayload = {
@@ -167,18 +167,18 @@
                 await this.setAuth(authPayload);
                 return authPayload;
             } catch (error) {
-                if (error instanceof ZyphApiError) {
+                if (error instanceof MemoryBayApiError) {
                     throw error;
                 }
-                console.error('[ZyphApi] Unexpected error validating API key:', error);
-                throw new ZyphApiError(error.message || 'Unexpected validation error', { code: 'NETWORK_ERROR' });
+                console.error('[MemoryBayApi] Unexpected error validating API key:', error);
+                throw new MemoryBayApiError(error.message || 'Unexpected validation error', { code: 'NETWORK_ERROR' });
             }
         }
 
         async ensureAuth() {
             const auth = await this.getAuth();
             if (!auth || !auth.apiKey) {
-                throw new ZyphApiError('Please connect your Zyph.com account in settings', { code: 'NO_AUTH' });
+                throw new MemoryBayApiError('Please connect your Memory Bay account in settings', { code: 'NO_AUTH' });
             }
             return auth;
         }
@@ -193,7 +193,7 @@
                 const auth = await this.getAuth();
                 return !!(auth && auth.apiKey);
             } catch (error) {
-                console.error('[ZyphApi] Error checking auth status:', error);
+                console.error('[MemoryBayApi] Error checking auth status:', error);
                 return false;
             }
         }
@@ -230,7 +230,7 @@
                 if (response.status === 401 || response.status === 403) {
                     await this.clearAuth();
                     const body = await this.safeJson(response);
-                    throw new ZyphApiError('Authentication failed with Zyph.com', {
+                    throw new MemoryBayApiError('Authentication failed with Memory Bay', {
                         status: response.status,
                         body,
                         code: 'AUTH_REJECTED'
@@ -239,7 +239,7 @@
 
                 if (!response.ok) {
                     const body = await this.safeJson(response);
-                    throw new ZyphApiError('Request to Zyph.com failed', {
+                    throw new MemoryBayApiError('Request to Memory Bay failed', {
                         status: response.status,
                         body,
                         code: 'REQUEST_FAILED'
@@ -248,11 +248,11 @@
 
                 return this.safeJson(response);
             } catch (error) {
-                if (error instanceof ZyphApiError) {
+                if (error instanceof MemoryBayApiError) {
                     throw error;
                 }
-                console.error('[ZyphApi] Network error calling Zyph.com:', error);
-                throw new ZyphApiError(error.message || 'Network error contacting Zyph.com', { code: 'NETWORK_ERROR' });
+                console.error('[MemoryBayApi] Network error calling Memory Bay:', error);
+                throw new MemoryBayApiError(error.message || 'Network error contacting Memory Bay', { code: 'NETWORK_ERROR' });
             }
         }
 
@@ -279,7 +279,7 @@
             this.cachedFolders = folders;
             this.lastFolderFetch = Date.now();
 
-            await chrome.storage.local.set({ zyphRemoteFolders: {
+            await chrome.storage.local.set({ memoryBayRemoteFolders: {
                 fetchedAt: new Date().toISOString(),
                 folders
             }});
@@ -290,7 +290,7 @@
         async ingestContent(payload) {
             await this.ensureAuth();
             if (!payload || !payload.title || !payload.content || !payload.folder_id) {
-                throw new ZyphApiError('Missing required fields for ingest', { code: 'BAD_PAYLOAD' });
+                throw new MemoryBayApiError('Missing required fields for ingest', { code: 'BAD_PAYLOAD' });
             }
 
                         const body = await this.authenticatedFetch('/content', {
@@ -304,13 +304,13 @@
             await this.ensureAuth();
 
             if (!file) {
-                throw new ZyphApiError('File is required for upload', { code: 'BAD_PAYLOAD' });
+                throw new MemoryBayApiError('File is required for upload', { code: 'BAD_PAYLOAD' });
             }
             if (!folderId) {
-                throw new ZyphApiError('folder_id is required for upload', { code: 'BAD_PAYLOAD' });
+                throw new MemoryBayApiError('folder_id is required for upload', { code: 'BAD_PAYLOAD' });
             }
             if (!title) {
-                throw new ZyphApiError('title is required for upload', { code: 'BAD_PAYLOAD' });
+                throw new MemoryBayApiError('title is required for upload', { code: 'BAD_PAYLOAD' });
             }
 
             const fileBlob = file instanceof Blob ? file : new Blob([file], { type: 'application/octet-stream' });
@@ -334,7 +334,7 @@
         async queryContent(payload) {
             await this.ensureAuth();
             if (!payload || !payload.query) {
-                throw new ZyphApiError('Query text is required', { code: 'BAD_PAYLOAD' });
+                throw new MemoryBayApiError('Query text is required', { code: 'BAD_PAYLOAD' });
             }
 
                         return this.authenticatedFetch('/search/text', {
@@ -345,7 +345,7 @@
 
         async getContent(contentId) {
             if (!contentId) {
-                throw new ZyphApiError('contentId is required', { code: 'BAD_PAYLOAD' });
+                throw new MemoryBayApiError('contentId is required', { code: 'BAD_PAYLOAD' });
             }
 
             return this.authenticatedFetch(`/content/${contentId}`, {
@@ -355,7 +355,7 @@
 
         async getFolderContent(folderId) {
             if (!folderId) {
-                throw new ZyphApiError('folderId is required', { code: 'BAD_PAYLOAD' });
+                throw new MemoryBayApiError('folderId is required', { code: 'BAD_PAYLOAD' });
             }
 
                         return this.authenticatedFetch(`/folders/${folderId}/content`, {
@@ -365,7 +365,7 @@
 
         async getFullContent(contentId) {
             if (!contentId) {
-                throw new ZyphApiError('contentId is required', { code: 'BAD_PAYLOAD' });
+                throw new MemoryBayApiError('contentId is required', { code: 'BAD_PAYLOAD' });
             }
 
             return this.authenticatedFetch(`/content/${contentId}`, {
@@ -377,7 +377,7 @@
             await this.ensureAuth();
 
             if (!folderData || !folderData.name) {
-                throw new ZyphApiError('Folder name is required', { code: 'BAD_PAYLOAD' });
+                throw new MemoryBayApiError('Folder name is required', { code: 'BAD_PAYLOAD' });
             }
 
             const payload = {
@@ -401,11 +401,11 @@
             await this.ensureAuth();
 
             if (!folderId) {
-                throw new ZyphApiError('folderId is required', { code: 'BAD_PAYLOAD' });
+                throw new MemoryBayApiError('folderId is required', { code: 'BAD_PAYLOAD' });
             }
 
             if (!updateData || (!updateData.name && !updateData.description && updateData.parent_id === undefined)) {
-                throw new ZyphApiError('At least one field (name, description, or parent_id) must be provided', { code: 'BAD_PAYLOAD' });
+                throw new MemoryBayApiError('At least one field (name, description, or parent_id) must be provided', { code: 'BAD_PAYLOAD' });
             }
 
             const payload = {};
@@ -428,7 +428,7 @@
             await this.ensureAuth();
 
             if (!folderId) {
-                throw new ZyphApiError('folderId is required', { code: 'BAD_PAYLOAD' });
+                throw new MemoryBayApiError('folderId is required', { code: 'BAD_PAYLOAD' });
             }
 
             const result = await this.authenticatedFetch(`/folders/${folderId}`, {
@@ -442,7 +442,7 @@
         }
     }
 
-    global.Zyph = global.Zyph || {};
-    global.Zyph.Api = new ZyphApiClient();
-    global.Zyph.ZyphApiError = ZyphApiError;
+    global.MemoryBay = global.MemoryBay || {};
+    global.MemoryBay.Api = new MemoryBayApiClient();
+    global.MemoryBay.MemoryBayApiError = MemoryBayApiError;
 })(typeof self !== 'undefined' ? self : this);

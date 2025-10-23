@@ -834,9 +834,9 @@ class SearchService:
                     'metadata': item.item_metadata,
                     'created_at': item.created_at.isoformat() if item.created_at else None,
                     'updated_at': item.updated_at.isoformat() if item.updated_at else None,
-                    'processing_status': item.processing_status,
-                    'is_chunked': item.is_chunked,
-                    'total_chunks': item.total_chunks,
+                    'processing_status': item.status,
+                    'is_chunked': False,  # Default value since field doesn't exist
+                    'total_chunks': 1,   # Default value since field doesn't exist
                     'preview': content[:200] + ('...' if len(content) > 200 else '')
                 })
 

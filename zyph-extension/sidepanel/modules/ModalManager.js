@@ -1,6 +1,6 @@
-window.Zyph = window.Zyph || {};
+window.MemoryBay = window.MemoryBay || {};
 
-window.Zyph.ModalManager = class ModalManager {
+window.MemoryBay.ModalManager = class ModalManager {
     constructor(uiElements, folderManager) {
         this.folderManager = folderManager;
 
@@ -16,26 +16,26 @@ window.Zyph.ModalManager = class ModalManager {
 
         // Settings modal elements
         this.settingsModal = uiElements.settingsModal;
-        this.zyphApiKeyInput = uiElements.zyphApiKeyInput;
-        this.zyphApiKeyGroup = uiElements.zyphApiKeyGroup;
-        this.zyphUserDisplay = uiElements.zyphUserDisplay;
-        this.zyphConnectionStatus = uiElements.zyphConnectionStatus;
-        this.zyphConnectedSummary = uiElements.zyphConnectedSummary;
-        this.zyphConnectedDetails = uiElements.zyphConnectedDetails;
-        this.zyphConnectionUpdated = uiElements.zyphConnectionUpdated;
-        this.testZyphConnectionBtn = uiElements.testZyphConnectionBtn;
-        this.disconnectZyphBtn = uiElements.disconnectZyphBtn;
-        this.currentZyphAuth = null;
+        this.memoryBayApiKeyInput = uiElements.memoryBayApiKeyInput;
+        this.memoryBayApiKeyGroup = uiElements.memoryBayApiKeyGroup;
+        this.memoryBayUserDisplay = uiElements.memoryBayUserDisplay;
+        this.memoryBayConnectionStatus = uiElements.memoryBayConnectionStatus;
+        this.memoryBayConnectedSummary = uiElements.memoryBayConnectedSummary;
+        this.memoryBayConnectedDetails = uiElements.memoryBayConnectedDetails;
+        this.memoryBayConnectionUpdated = uiElements.memoryBayConnectionUpdated;
+        this.testMemoryBayConnectionBtn = uiElements.testMemoryBayConnectionBtn;
+        this.disconnectMemoryBayBtn = uiElements.disconnectMemoryBayBtn;
+        this.currentMemoryBayAuth = null;
 
         this.handleRemoteFoldersUpdated = this.onRemoteFoldersUpdated.bind(this);
-        document.addEventListener('zyph:remote-folders-updated', this.handleRemoteFoldersUpdated);
+        document.addEventListener('memory-bay:remote-folders-updated', this.handleRemoteFoldersUpdated);
 
-        if (this.testZyphConnectionBtn) {
-            this.testZyphConnectionBtn.addEventListener('click', () => this.testZyphConnection());
+        if (this.testMemoryBayConnectionBtn) {
+            this.testMemoryBayConnectionBtn.addEventListener('click', () => this.testMemoryBayConnection());
         }
 
-        if (this.disconnectZyphBtn) {
-            this.disconnectZyphBtn.addEventListener('click', () => this.disconnectZyph());
+        if (this.disconnectMemoryBayBtn) {
+            this.disconnectMemoryBayBtn.addEventListener('click', () => this.disconnectMemoryBay());
         }
     }
 
@@ -137,12 +137,12 @@ window.Zyph.ModalManager = class ModalManager {
 
         const linkedMeta = selectedRemoteId ? this.folderManager.getRemoteFolderMeta(selectedRemoteId) : null;
         const availableOptions = this.folderManager.getRemoteFolderOptions() || [];
-        let message = 'Connect your Zyph.com account in Settings to enable syncing.';
+        let message = 'Connect your Memory Bay account in Settings to enable syncing.';
         let disableSelect = true;
 
         switch (status?.state) {
             case 'loading':
-                message = 'Loading Zyph.com folders...';
+                message = 'Loading Memory Bay folders...';
                 disableSelect = true;
                 element.classList.add('status-warning');
                 break;
@@ -152,10 +152,10 @@ window.Zyph.ModalManager = class ModalManager {
                     message = `Linked to ${linkedMeta.path || linkedMeta.name}`;
                     element.classList.add('status-success');
                 } else if (availableOptions.length) {
-                    message = 'Select a Zyph.com folder to sync captured items.';
+                    message = 'Select a Memory Bay folder to sync captured items.';
                     element.classList.add('status-warning');
                 } else {
-                    message = 'No Zyph.com folders found. Create one on zyph.com first.';
+                    message = 'No Memory Bay folders found. Create one on the Memory Bay app first.';
                     element.classList.add('status-warning');
                 }
                 break;
@@ -163,11 +163,11 @@ window.Zyph.ModalManager = class ModalManager {
                 disableSelect = true;
                 element.classList.add('status-error');
                 if (status.code === 'NO_AUTH') {
-                    message = 'Enter your Zyph.com API key in Settings to sync folders.';
+                    message = 'Enter your Memory Bay API key in Settings to sync folders.';
                 } else if (status.message) {
                     message = status.message;
                 } else {
-                    message = 'Unable to load Zyph.com folders. Try again later.';
+                    message = 'Unable to load Memory Bay folders. Try again later.';
                 }
                 break;
             case 'unavailable':
@@ -267,31 +267,31 @@ window.Zyph.ModalManager = class ModalManager {
         let remoteAuth = null;
 
         try {
-            remoteAuth = await (window?.Zyph?.Api?.getAuth?.() || Promise.resolve(null));
+            remoteAuth = await (window?.MemoryBay?.Api?.getAuth?.() || Promise.resolve(null));
         } catch (error) {
-            console.warn('[ModalManager] Failed to retrieve Zyph auth:', error);
+            console.warn('[ModalManager] Failed to retrieve Memory Bay auth:', error);
             remoteAuth = null;
         }
 
-        this.currentZyphAuth = remoteAuth;
+        this.currentMemoryBayAuth = remoteAuth;
 
-        if (this.zyphApiKeyInput) {
-            this.zyphApiKeyInput.value = '';
+        if (this.memoryBayApiKeyInput) {
+            this.memoryBayApiKeyInput.value = '';
         }
-        if (this.disconnectZyphBtn) {
-            this.disconnectZyphBtn.disabled = !remoteAuth;
+        if (this.disconnectMemoryBayBtn) {
+            this.disconnectMemoryBayBtn.disabled = !remoteAuth;
         }
 
         this.updateUserDisplay(remoteAuth);
         this.updateConnectionStatus(remoteAuth);
-        this.toggleZyphConnectionView(remoteAuth);
+        this.toggleMemoryBayConnectionView(remoteAuth);
         this.renderConnectionSummary(remoteAuth);
 
         this.settingsModal.classList.add('show');
-        const shouldFocusInput = this.zyphApiKeyInput && !(remoteAuth && remoteAuth.apiKey);
+        const shouldFocusInput = this.memoryBayApiKeyInput && !(remoteAuth && remoteAuth.apiKey);
         if (shouldFocusInput) {
             setTimeout(() => {
-                this.zyphApiKeyInput?.focus();
+                this.memoryBayApiKeyInput?.focus();
             }, 100);
         }
     }
@@ -301,8 +301,8 @@ window.Zyph.ModalManager = class ModalManager {
     }
 
     async saveSettings() {
-        const zyphResult = await this.saveZyphSettings({ notifyOnError: true });
-        if (!zyphResult.success) {
+        const memoryBayResult = await this.saveMemoryBaySettings({ notifyOnError: true });
+        if (!memoryBayResult.success) {
             return { success: false };
         }
 
@@ -310,18 +310,18 @@ window.Zyph.ModalManager = class ModalManager {
         return { success: true };
     }
 
-    async saveZyphSettings({ notifyOnError = false, showSuccessToast = false, forceValidate = false } = {}) {
-        if (!this.zyphApiKeyInput || !window?.Zyph?.Api) {
+    async saveMemoryBaySettings({ notifyOnError = false, showSuccessToast = false, forceValidate = false } = {}) {
+        if (!this.memoryBayApiKeyInput || !window?.MemoryBay?.Api) {
             return { success: true };
         }
 
-        const apiKey = this.zyphApiKeyInput.value.trim();
-        const hasExistingAuth = !!(this.currentZyphAuth && this.currentZyphAuth.apiKey);
+        const apiKey = this.memoryBayApiKeyInput.value.trim();
+        const hasExistingAuth = !!(this.currentMemoryBayAuth && this.currentMemoryBayAuth.apiKey);
 
         if (!apiKey) {
             if (forceValidate && !hasExistingAuth) {
                 if (notifyOnError) {
-                    alert('Enter your Zyph API key before validating the connection.');
+                    alert('Enter your Memory Bay API key before validating the connection.');
                 }
                 return { success: false };
             }
@@ -329,33 +329,33 @@ window.Zyph.ModalManager = class ModalManager {
             if (!hasExistingAuth) {
                 this.updateConnectionStatus(null);
                 this.updateUserDisplay(null);
-                this.toggleZyphConnectionView(null);
+                this.toggleMemoryBayConnectionView(null);
                 this.renderConnectionSummary(null);
                 return { success: true };
             }
 
-            this.updateConnectionStatus(this.currentZyphAuth);
-            this.updateUserDisplay(this.currentZyphAuth);
-            this.toggleZyphConnectionView(this.currentZyphAuth);
-            this.renderConnectionSummary(this.currentZyphAuth);
+            this.updateConnectionStatus(this.currentMemoryBayAuth);
+            this.updateUserDisplay(this.currentMemoryBayAuth);
+            this.toggleMemoryBayConnectionView(this.currentMemoryBayAuth);
+            this.renderConnectionSummary(this.currentMemoryBayAuth);
             return { success: true, unchanged: true };
         }
 
         try {
             // Show loading state during validation
-            if (window?.Zyph?.UIManager?.showConnectionLoadingState) {
-                window.Zyph.UIManager.showConnectionLoadingState();
+            if (window?.MemoryBay?.UIManager?.showConnectionLoadingState) {
+                window.MemoryBay.UIManager.showConnectionLoadingState();
             }
 
-            const auth = await window.Zyph.Api.validateApiKey(apiKey);
-            this.currentZyphAuth = auth;
-            if (this.disconnectZyphBtn) {
-                this.disconnectZyphBtn.disabled = false;
+            const auth = await window.MemoryBay.Api.validateApiKey(apiKey);
+            this.currentMemoryBayAuth = auth;
+            if (this.disconnectMemoryBayBtn) {
+                this.disconnectMemoryBayBtn.disabled = false;
             }
-            this.zyphApiKeyInput.value = '';
+            this.memoryBayApiKeyInput.value = '';
             this.updateConnectionStatus(auth);
             this.updateUserDisplay(auth);
-            this.toggleZyphConnectionView(auth);
+            this.toggleMemoryBayConnectionView(auth);
             this.renderConnectionSummary(auth);
 
             try {
@@ -367,118 +367,118 @@ window.Zyph.ModalManager = class ModalManager {
             chrome.runtime?.sendMessage?.({ action: 'processRemoteQueue' }).catch(() => {});
 
             if (showSuccessToast) {
-                alert('Zyph.com connection validated successfully!');
+                alert('Memory Bay connection validated successfully!');
             }
 
             return { success: true, auth };
         } catch (error) {
-            console.error('[ModalManager] Zyph validation failed:', error);
+            console.error('[ModalManager] Memory Bay validation failed:', error);
             this.updateConnectionStatus(null, { state: 'error', message: error?.message });
             this.updateUserDisplay(null);
-            this.toggleZyphConnectionView(null);
+            this.toggleMemoryBayConnectionView(null);
             this.renderConnectionSummary(null);
             if (notifyOnError) {
-                alert(`Failed to validate Zyph.com connection: ${error?.message || 'Unknown error'}`);
+                alert(`Failed to validate Memory Bay connection: ${error?.message || 'Unknown error'}`);
             }
             return { success: false, error };
         }
     }
 
-    async testZyphConnection() {
-        const result = await this.saveZyphSettings({ notifyOnError: true, showSuccessToast: true, forceValidate: true });
+    async testMemoryBayConnection() {
+        const result = await this.saveMemoryBaySettings({ notifyOnError: true, showSuccessToast: true, forceValidate: true });
         return result;
     }
 
-    async disconnectZyph() {
-        if (!window?.Zyph?.Api) {
+    async disconnectMemoryBay() {
+        if (!window?.MemoryBay?.Api) {
             return;
         }
 
         try {
-            await window.Zyph.Api.clearAuth();
-            this.currentZyphAuth = null;
-            if (this.zyphApiKeyInput) {
-                this.zyphApiKeyInput.value = '';
+            await window.MemoryBay.Api.clearAuth();
+            this.currentMemoryBayAuth = null;
+            if (this.memoryBayApiKeyInput) {
+                this.memoryBayApiKeyInput.value = '';
             }
-            if (this.disconnectZyphBtn) {
-                this.disconnectZyphBtn.disabled = true;
+            if (this.disconnectMemoryBayBtn) {
+                this.disconnectMemoryBayBtn.disabled = true;
             }
             this.updateConnectionStatus(null);
             this.updateUserDisplay(null);
-            this.toggleZyphConnectionView(null);
+            this.toggleMemoryBayConnectionView(null);
             this.renderConnectionSummary(null);
             try {
                 await this.folderManager.refreshRemoteFolders({ forceRefresh: true });
             } catch (error) {
                 console.warn('[ModalManager] Failed to refresh remote folders after disconnect:', error);
             }
-            alert('Disconnected from Zyph.com. Local captures will remain linked but new items will not sync until you reconnect.');
+            alert('Disconnected from Memory Bay. Local captures will remain linked but new items will not sync until you reconnect.');
         } catch (error) {
-            console.error('[ModalManager] Failed to clear Zyph auth:', error);
-            alert(`Failed to disconnect from Zyph.com: ${error?.message || 'Unknown error'}`);
+            console.error('[ModalManager] Failed to clear Memory Bay auth:', error);
+            alert(`Failed to disconnect from Memory Bay: ${error?.message || 'Unknown error'}`);
         }
     }
 
     updateUserDisplay(auth) {
-        if (!this.zyphUserDisplay) {
+        if (!this.memoryBayUserDisplay) {
             return;
         }
 
         if (auth && (auth.user || auth.userId || auth.user_id)) {
-            const userName = auth.user?.full_name || auth.user?.email || auth.userId || auth.user_id || 'Zyph user';
+            const userName = auth.user?.full_name || auth.user?.email || auth.userId || auth.user_id || 'Memory Bay user';
             const userId = auth.userId || auth.user_id;
-            this.zyphUserDisplay.textContent = userId ? `${userName} (${userId})` : userName;
+            this.memoryBayUserDisplay.textContent = userId ? `${userName} (${userId})` : userName;
         } else {
-            this.zyphUserDisplay.textContent = 'Not connected';
+            this.memoryBayUserDisplay.textContent = 'Not connected';
         }
     }
 
     updateConnectionStatus(auth, options = {}) {
-        if (!this.zyphConnectionStatus) {
+        if (!this.memoryBayConnectionStatus) {
             return;
         }
 
-        this.zyphConnectionStatus.classList.remove('connected', 'error');
+        this.memoryBayConnectionStatus.classList.remove('connected', 'error');
 
         if (auth && auth.apiKey) {
-            const userName = auth.user?.full_name || auth.user?.email || auth.userId || 'Zyph user';
+            const userName = auth.user?.full_name || auth.user?.email || auth.userId || 'Memory Bay user';
             const keyName = auth.keyName || auth.key_name || 'API Key';
             const validatedAt = auth.validatedAt || new Date().toISOString();
             const message = `Connected as ${userName} | ${keyName} | Validated ${new Date(validatedAt).toLocaleString()}`;
-            this.zyphConnectionStatus.textContent = message;
-            this.zyphConnectionStatus.classList.add('connected');
+            this.memoryBayConnectionStatus.textContent = message;
+            this.memoryBayConnectionStatus.classList.add('connected');
         } else if (options.state === 'error') {
-            this.zyphConnectionStatus.textContent = options.message || 'Failed to connect to Zyph.com.';
-            this.zyphConnectionStatus.classList.add('error');
+            this.memoryBayConnectionStatus.textContent = options.message || 'Failed to connect to Memory Bay.';
+            this.memoryBayConnectionStatus.classList.add('error');
         } else {
-            this.zyphConnectionStatus.textContent = 'Not connected. Enter your Zyph.com API key to enable syncing.';
+            this.memoryBayConnectionStatus.textContent = 'Not connected. Enter your Memory Bay API key to enable syncing.';
         }
     }
 
-    toggleZyphConnectionView(auth) {
+    toggleMemoryBayConnectionView(auth) {
         const hasAuth = !!(auth && auth.apiKey);
 
-        if (this.zyphApiKeyGroup) {
-            this.zyphApiKeyGroup.classList.toggle('is-hidden', hasAuth);
+        if (this.memoryBayApiKeyGroup) {
+            this.memoryBayApiKeyGroup.classList.toggle('is-hidden', hasAuth);
         }
 
-        if (this.testZyphConnectionBtn) {
-            this.testZyphConnectionBtn.classList.toggle('is-hidden', hasAuth);
+        if (this.testMemoryBayConnectionBtn) {
+            this.testMemoryBayConnectionBtn.classList.toggle('is-hidden', hasAuth);
         }
     }
 
     renderConnectionSummary(auth) {
-        if (!this.zyphConnectedSummary || !this.zyphConnectedDetails) {
+        if (!this.memoryBayConnectedSummary || !this.memoryBayConnectedDetails) {
             return;
         }
 
         const hasAuth = !!(auth && auth.apiKey);
 
         if (!hasAuth) {
-            this.zyphConnectedSummary.classList.add('is-hidden');
-            this.zyphConnectedDetails.innerHTML = '';
-            if (this.zyphConnectionUpdated) {
-                this.zyphConnectionUpdated.textContent = '';
+            this.memoryBayConnectedSummary.classList.add('is-hidden');
+            this.memoryBayConnectedDetails.innerHTML = '';
+            if (this.memoryBayConnectionUpdated) {
+                this.memoryBayConnectionUpdated.textContent = '';
             }
             return;
         }
@@ -495,20 +495,20 @@ window.Zyph.ModalManager = class ModalManager {
         rows.push({ label: 'Key', value: keyValue });
 
         const validatedAt = auth.validatedAt || auth.validated_at || null;
-        if (this.zyphConnectionUpdated) {
-            this.zyphConnectionUpdated.textContent = validatedAt
+        if (this.memoryBayConnectionUpdated) {
+            this.memoryBayConnectionUpdated.textContent = validatedAt
                 ? `Validated ${this.formatDateTime(validatedAt)}`
                 : 'Validated recently';
         }
 
-        this.zyphConnectedDetails.innerHTML = rows.map(row => `
+        this.memoryBayConnectedDetails.innerHTML = rows.map(row => `
             <div class="summary-row">
                 <span class="summary-label">${this.escapeHtml(row.label)}</span>
                 <span class="summary-value">${this.escapeHtml(row.value)}</span>
             </div>
         `).join('');
 
-        this.zyphConnectedSummary.classList.remove('is-hidden');
+        this.memoryBayConnectedSummary.classList.remove('is-hidden');
     }
 
     buildAuthUserLabel(auth) {

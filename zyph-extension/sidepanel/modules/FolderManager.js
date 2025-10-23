@@ -1,7 +1,7 @@
 // Create global namespace
-window.Zyph = window.Zyph || {};
+window.MemoryBay = window.MemoryBay || {};
 
-window.Zyph.FolderManager = class FolderManager {
+window.MemoryBay.FolderManager = class FolderManager {
     constructor() {
         this.folders = [];
         this.selectedFolder = null;
@@ -27,8 +27,8 @@ window.Zyph.FolderManager = class FolderManager {
             return;
         }
         try {
-            const result = await chrome.storage.local.get('zyphFolderMeta');
-            this.folderMetadata = result.zyphFolderMeta || {};
+            const result = await chrome.storage.local.get('memoryBayFolderMeta');
+            this.folderMetadata = result.memoryBayFolderMeta || {};
         } catch (error) {
             console.warn('[FolderManager] Failed to load folder metadata:', error);
             this.folderMetadata = {};
@@ -39,7 +39,7 @@ window.Zyph.FolderManager = class FolderManager {
 
     async persistMetadata() {
         try {
-            await chrome.storage.local.set({ zyphFolderMeta: this.folderMetadata });
+            await chrome.storage.local.set({ memoryBayFolderMeta: this.folderMetadata });
         } catch (error) {
             console.error('[FolderManager] Failed to persist folder metadata:', error);
         }
@@ -140,7 +140,7 @@ window.Zyph.FolderManager = class FolderManager {
     }
 
     async ensureRemoteFolders({ forceRefresh = false } = {}) {
-        if (!window?.Zyph?.Api) {
+        if (!window?.MemoryBay?.Api) {
             this.remoteStatus = { state: 'unavailable', reason: 'API module missing' };
             return [];
         }
@@ -166,12 +166,12 @@ window.Zyph.FolderManager = class FolderManager {
         this.notifyRemoteFoldersUpdated();
 
         // Show loading state in UI if available
-        if (window?.Zyph?.UIManager?.showFolderLoadingState) {
-            window.Zyph.UIManager.showFolderLoadingState();
+        if (window?.MemoryBay?.UIManager?.showFolderLoadingState) {
+            window.MemoryBay.UIManager.showFolderLoadingState();
         }
 
         try {
-            const folders = await window.Zyph.Api.fetchFolders({ forceRefresh });
+            const folders = await window.MemoryBay.Api.fetchFolders({ forceRefresh });
             this.remoteFolders = Array.isArray(folders) ? folders : [];
             this.remoteFolderMap = {};
 
@@ -189,7 +189,7 @@ window.Zyph.FolderManager = class FolderManager {
 
             try {
                 await chrome.storage.local.set({
-                    zyphRemoteFolders: {
+                    memoryBayRemoteFolders: {
                         fetchedAt: new Date().toISOString(),
                         folders: this.remoteFolders,
                         flat: flatOptions
@@ -207,7 +207,7 @@ window.Zyph.FolderManager = class FolderManager {
             this.cachedRemoteOptions = [];
             this.remoteStatus = {
                 state: 'error',
-                message: error?.message || 'Failed to load Zyph.com folders',
+                message: error?.message || 'Failed to load Memory Bay folders',
                 code: error?.code || null
             };
             console.error('[FolderManager] Unable to refresh remote folders:', error);
@@ -304,12 +304,12 @@ window.Zyph.FolderManager = class FolderManager {
             // First, try to load content from API (primary source)
             let folderContent = [];
 
-            if (window?.Zyph?.Api) {
+            if (window?.MemoryBay?.Api) {
                 try {
                     console.log(`[FolderManager] Loading content from API for folder ${folderId}`);
-                    console.log(`[FolderManager] API client available:`, !!window.Zyph.Api);
+                    console.log(`[FolderManager] API client available:`, !!window.MemoryBay.Api);
                     console.log(`[FolderManager] Calling getFolderContent with folderId:`, folderId);
-                    const remoteData = await window.Zyph.Api.getFolderContent(folderId);
+                    const remoteData = await window.MemoryBay.Api.getFolderContent(folderId);
                     console.log(`[FolderManager] API response received:`, remoteData);
                     const remoteContent = remoteData?.items || remoteData?.content || [];
                     console.log(`[FolderManager] Extracted content:`, remoteContent);
@@ -319,14 +319,14 @@ window.Zyph.FolderManager = class FolderManager {
                     if (Array.isArray(remoteContent) && remoteContent.length > 0) {
                         // Transform API content to match expected format
                         folderContent = remoteContent.map(item => ({
-                            id: item.id || Zyph.Utils.generateId(),
+                            id: item.id || MemoryBay.Utils.generateId(),
                             type: this.mapRemoteContentType(item.content_type),
                             folderId: folderId,
                             title: item.title || 'Untitled',
                             content: item.content || '',
                             url: item.source_url || null,
-                            favicon: item.source_url ? Zyph.Utils.getDefaultFavicon(item.source_url) : '',
-                            domain: item.source_url ? Zyph.Utils.getDomainFromUrl(item.source_url) : null,
+                            favicon: item.source_url ? MemoryBay.Utils.getDefaultFavicon(item.source_url) : '',
+                            domain: item.source_url ? MemoryBay.Utils.getDomainFromUrl(item.source_url) : null,
                             timestamp: item.created_at || new Date().toISOString(),
                             metadata: {
                                 remoteSync: {
@@ -358,12 +358,12 @@ window.Zyph.FolderManager = class FolderManager {
 
             // Fallback to local storage if API fails or returns no content
             console.log(`[FolderManager] Falling back to local storage for folder ${folderId}`);
-            const result = await chrome.storage.local.get('zyphContent');
-            const allContent = result.zyphContent || [];
+            const result = await chrome.storage.local.get('memoryBayContent');
+            const allContent = result.memoryBayContent || [];
             folderContent = allContent
                 .filter(item => item.folderId === folderId)
                 .filter(item => {
-                    // Only show items that are successfully synced to zyph.com
+                    // Only show items that are successfully synced to Memory Bay
                     const remoteSync = item.metadata?.remoteSync;
                     return remoteSync?.state === 'synced' && remoteSync?.remoteContentId;
                 })
@@ -375,8 +375,8 @@ window.Zyph.FolderManager = class FolderManager {
             await this.syncFolderContentWithRemote(folderId, folderContent);
 
             // Reload from local storage after sync
-            const updatedResult = await chrome.storage.local.get('zyphContent');
-            const updatedAllContent = updatedResult.zyphContent || [];
+            const updatedResult = await chrome.storage.local.get('memoryBayContent');
+            const updatedAllContent = updatedResult.memoryBayContent || [];
             const updatedFolderContent = updatedAllContent
                 .filter(item => item.folderId === folderId)
                 .filter(item => {
@@ -398,7 +398,7 @@ window.Zyph.FolderManager = class FolderManager {
 
     async syncFolderContentWithRemote(folderId, localContent) {
         try {
-            if (!window?.Zyph?.Api) {
+            if (!window?.MemoryBay?.Api) {
                 console.log('[FolderManager] API unavailable, skipping remote sync');
                 return;
             }
@@ -406,7 +406,7 @@ window.Zyph.FolderManager = class FolderManager {
             console.log('[FolderManager] Starting sync with remote for folder:', folderId);
 
             // Get remote content for this folder
-            const remoteData = await window.Zyph.Api.getFolderContent(folderId);
+            const remoteData = await window.MemoryBay.Api.getFolderContent(folderId);
             const remoteContent = remoteData?.items || remoteData?.content || [];
 
             if (!Array.isArray(remoteContent)) {
@@ -414,7 +414,7 @@ window.Zyph.FolderManager = class FolderManager {
                 return;
             }
 
-            // Create map of remote content IDs that exist on zyph.com
+            // Create map of remote content IDs that exist on Memory Bay
             const remoteContentIds = new Set();
             const remoteContentMap = new Map();
             remoteContent.forEach(item => {
@@ -440,7 +440,7 @@ window.Zyph.FolderManager = class FolderManager {
                 if (remoteSync?.state === 'synced' && remoteSync.remoteContentId) {
                     // This item was previously synced to remote
                     if (!remoteContentIds.has(remoteSync.remoteContentId)) {
-                        // But it no longer exists on zyph.com, so delete it locally
+                        // But it no longer exists on Memory Bay, so delete it locally
                         itemsToDelete.push(localItem.id);
                     }
                 }
@@ -456,16 +456,16 @@ window.Zyph.FolderManager = class FolderManager {
 
                     if (isFileContent) {
                         // For files, show option to pull
-                        content = `${remoteItem.title || 'File'}\n\n[File from zyph.com - Click to download]`;
+                        content = `${remoteItem.title || 'File'}\n\n[File from Memory Bay - Click to download]`;
                         needsPull = true;
                     } else {
                         // For text content, auto-pull the full content
                         try {
-                            const fullContent = await window.Zyph.Api.getFullContent(remoteItem.id);
+                            const fullContent = await window.MemoryBay.Api.getFullContent(remoteItem.id);
                             if (fullContent && fullContent.content) {
                                 content = fullContent.content;
                             } else {
-                                content = `${remoteItem.title || 'Untitled'}\n\n[Content could not be loaded from zyph.com]`;
+                                content = `${remoteItem.title || 'Untitled'}\n\n[Content could not be loaded from Memory Bay]`;
                                 needsPull = true;
                             }
                         } catch (error) {
@@ -477,14 +477,14 @@ window.Zyph.FolderManager = class FolderManager {
 
                     // This remote item doesn't exist locally, add it
                     const localItem = {
-                        id: Zyph.Utils.generateId(),
+                        id: MemoryBay.Utils.generateId(),
                         type: this.mapRemoteContentType(remoteItem.content_type),
                         folderId: folderId,
                         title: remoteItem.title || 'Untitled',
                         content: content,
                         url: remoteItem.source_url || null,
-                        favicon: remoteItem.source_url ? Zyph.Utils.getDefaultFavicon(remoteItem.source_url) : '',
-                        domain: remoteItem.source_url ? Zyph.Utils.getDomainFromUrl(remoteItem.source_url) : null,
+                        favicon: remoteItem.source_url ? MemoryBay.Utils.getDefaultFavicon(remoteItem.source_url) : '',
+                        domain: remoteItem.source_url ? MemoryBay.Utils.getDomainFromUrl(remoteItem.source_url) : null,
                         timestamp: remoteItem.created_at || new Date().toISOString(),
                         metadata: {
                             remoteSync: {
@@ -504,14 +504,14 @@ window.Zyph.FolderManager = class FolderManager {
 
             // Handle deletions
             if (itemsToDelete.length > 0) {
-                console.log(`[FolderManager] Found ${itemsToDelete.length} items deleted from zyph.com, removing locally`);
+                console.log(`[FolderManager] Found ${itemsToDelete.length} items deleted from Memory Bay, removing locally`);
 
                 // Remove the deleted items from local storage
-                const result = await chrome.storage.local.get('zyphContent');
-                const allContent = result.zyphContent || [];
+                const result = await chrome.storage.local.get('memoryBayContent');
+                const allContent = result.memoryBayContent || [];
                 const updatedContent = allContent.filter(item => !itemsToDelete.includes(item.id));
 
-                await chrome.storage.local.set({ zyphContent: updatedContent });
+                await chrome.storage.local.set({ memoryBayContent: updatedContent });
 
                 // Clean up session payloads for deleted items
                 for (const deletedId of itemsToDelete) {
@@ -529,11 +529,11 @@ window.Zyph.FolderManager = class FolderManager {
                 console.log(`[FolderManager] Found ${itemsToAdd.length} new remote items, adding locally`);
 
                 // Add the new items to local storage
-                const result = await chrome.storage.local.get('zyphContent');
-                const allContent = result.zyphContent || [];
+                const result = await chrome.storage.local.get('memoryBayContent');
+                const allContent = result.memoryBayContent || [];
                 const updatedContent = [...allContent, ...itemsToAdd];
 
-                await chrome.storage.local.set({ zyphContent: updatedContent });
+                await chrome.storage.local.set({ memoryBayContent: updatedContent });
 
                 console.log(`[FolderManager] Successfully added ${itemsToAdd.length} remote items to local storage`);
             }
@@ -616,8 +616,8 @@ window.Zyph.FolderManager = class FolderManager {
 
     async deleteContentItem(contentId) {
         try {
-            const result = await chrome.storage.local.get('zyphContent');
-            const allContent = result.zyphContent || [];
+            const result = await chrome.storage.local.get('memoryBayContent');
+            const allContent = result.memoryBayContent || [];
             const contentIndex = allContent.findIndex(item => item.id === contentId);
 
             if (contentIndex === -1) {
@@ -626,7 +626,7 @@ window.Zyph.FolderManager = class FolderManager {
             }
 
             const [removedItem] = allContent.splice(contentIndex, 1);
-            await chrome.storage.local.set({ zyphContent: allContent });
+            await chrome.storage.local.set({ memoryBayContent: allContent });
             await this.clearSessionPayloadsForItem(removedItem);
             console.log(`[FolderManager] Removed content item ${contentId} from folder ${removedItem.folderId}`);
 
@@ -676,12 +676,12 @@ window.Zyph.FolderManager = class FolderManager {
         }
 
         try {
-            if (!window?.Zyph?.Api) {
+            if (!window?.MemoryBay?.Api) {
                 throw new Error('API module not available');
             }
 
             console.log(`[FolderManager] Deleting folder ${folderId}`);
-            await window.Zyph.Api.deleteFolder(folderId);
+            await window.MemoryBay.Api.deleteFolder(folderId);
 
             // Refresh folders after deletion
             await this.loadFolders({ forceRefresh: true });
@@ -709,7 +709,7 @@ window.Zyph.FolderManager = class FolderManager {
         }
 
         try {
-            if (!window?.Zyph?.Api) {
+            if (!window?.MemoryBay?.Api) {
                 throw new Error('API module not available');
             }
 
@@ -720,7 +720,7 @@ window.Zyph.FolderManager = class FolderManager {
                 parent_id: parentId
             };
 
-            const result = await window.Zyph.Api.createFolder(folderData);
+            const result = await window.MemoryBay.Api.createFolder(folderData);
 
             // Refresh folders after creation
             await this.loadFolders({ forceRefresh: true });
@@ -748,12 +748,12 @@ window.Zyph.FolderManager = class FolderManager {
         }
 
         try {
-            if (!window?.Zyph?.Api) {
+            if (!window?.MemoryBay?.Api) {
                 throw new Error('API module not available');
             }
 
             console.log(`[FolderManager] Renaming folder ${folderId} to "${newName}"`);
-            const result = await window.Zyph.Api.updateFolder(folderId, { name: newName.trim() });
+            const result = await window.MemoryBay.Api.updateFolder(folderId, { name: newName.trim() });
 
             // Refresh folders after rename
             await this.loadFolders({ forceRefresh: true });
@@ -828,7 +828,7 @@ window.Zyph.FolderManager = class FolderManager {
                 status: this.remoteStatus,
                 options: this.cachedRemoteOptions
             };
-            const event = new CustomEvent('zyph:remote-folders-updated', { detail });
+            const event = new CustomEvent('memory-bay:remote-folders-updated', { detail });
             document.dispatchEvent(event);
         } catch (error) {
             console.warn('[FolderManager] Failed to dispatch remote folder update event:', error);
@@ -848,17 +848,17 @@ window.Zyph.FolderManager = class FolderManager {
 
     async refreshCurrentFolderContent() {
         // Refresh the currently displayed folder to show newly synced items
-        if (window?.Zyph?.UIManager?.currentlyDisplayedFolderId) {
-            const folderId = window.Zyph.UIManager.currentlyDisplayedFolderId;
+        if (window?.MemoryBay?.UIManager?.currentlyDisplayedFolderId) {
+            const folderId = window.MemoryBay.UIManager.currentlyDisplayedFolderId;
             console.log('[FolderManager] Refreshing folder content after sync:', folderId);
 
             // Reload content without showing loading state (silent refresh)
             try {
                 const content = await this.loadFolderContent(folderId);
-                if (window?.Zyph?.UIManager?.contentRenderer) {
-                    const contentPanel = window.Zyph.UIManager.contentRenderer.displayFolderContent(content, { preserveExpanded: true });
-                    if (window?.Zyph?.UIManager?.eventHandler) {
-                        window.Zyph.UIManager.eventHandler.bindContentPanelEvents(contentPanel);
+                if (window?.MemoryBay?.UIManager?.contentRenderer) {
+                    const contentPanel = window.MemoryBay.UIManager.contentRenderer.displayFolderContent(content, { preserveExpanded: true });
+                    if (window?.MemoryBay?.UIManager?.eventHandler) {
+                        window.MemoryBay.UIManager.eventHandler.bindContentPanelEvents(contentPanel);
                     }
                 }
             } catch (error) {
@@ -868,6 +868,6 @@ window.Zyph.FolderManager = class FolderManager {
     }
 
     mapRemoteContentType(contentType) {
-        return Zyph.Utils.mapRemoteContentType(contentType);
+        return MemoryBay.Utils.mapRemoteContentType(contentType);
     }
 };

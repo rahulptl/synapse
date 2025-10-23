@@ -1,6 +1,6 @@
-window.Zyph = window.Zyph || {};
+window.MemoryBay = window.MemoryBay || {};
 
-window.Zyph.PromptManager = class PromptManager {
+window.MemoryBay.PromptManager = class PromptManager {
     constructor() {
         this.promptCache = {
             system: null,

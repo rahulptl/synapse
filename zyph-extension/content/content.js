@@ -1,4 +1,4 @@
-class ZyphContentCapture {
+class MemoryBayContentCapture {
     constructor() {
         this.selectedText = '';
         this.restrictionWarningEl = null;
@@ -211,12 +211,12 @@ class ZyphContentCapture {
             const {
                 headline = "💡 Tip: How to Save This Page",
                 message = 'This page needs a simple extra step to save content.',
-                instructions = 'Select the text you want, right-click, and choose "Save to Zyph".',
+                instructions = 'Select the text you want, right-click, and choose "Save to Memory Bay".',
                 domain = ''
             } = payload || {};
 
             const container = document.createElement('div');
-            container.id = 'zyph-restricted-warning';
+            container.id = 'memorybay-restricted-warning';
             container.setAttribute('role', 'alert');
             container.style.cssText = `
                 position: fixed;
@@ -379,12 +379,12 @@ class ZyphContentCapture {
 
         const range = selection.getRangeAt(0);
         const span = document.createElement('span');
-        span.className = 'zyph-highlight';
+        span.className = 'memorybay-highlight';
         span.style.cssText = `
             background-color: rgba(102, 126, 234, 0.3);
             border-radius: 2px;
             padding: 1px 2px;
-            animation: zyph-flash 0.5s ease-in-out;
+            animation: memorybay-flash 0.5s ease-in-out;
         `;
 
         try {
@@ -402,12 +402,12 @@ class ZyphContentCapture {
     }
 }
 
-if (!window.zyphContentCapture) {
-    window.zyphContentCapture = new ZyphContentCapture();
+if (!window.memoryBayContentCapture) {
+    window.memoryBayContentCapture = new MemoryBayContentCapture();
 
     const style = document.createElement('style');
     style.textContent = `
-        @keyframes zyph-flash {
+        @keyframes memorybay-flash {
             0% { background-color: rgba(102, 126, 234, 0.6); }
             100% { background-color: rgba(102, 126, 234, 0.3); }
         }

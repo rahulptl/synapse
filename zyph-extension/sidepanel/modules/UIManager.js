@@ -1,6 +1,6 @@
-window.Zyph = window.Zyph || {};
+window.MemoryBay = window.MemoryBay || {};
 
-window.Zyph.UIManager = class UIManager {
+window.MemoryBay.UIManager = class UIManager {
     constructor(folderManager, contextGenerator) {
         this.folderManager = folderManager;
         this.contextGenerator = contextGenerator;
@@ -42,23 +42,23 @@ window.Zyph.UIManager = class UIManager {
         this.closeSettingsBtn = document.getElementById('close-settings');
         this.cancelSettingsBtn = document.getElementById('cancel-settings-btn');
         this.saveSettingsBtn = document.getElementById('save-settings-btn');
-        this.zyphApiKeyInput = document.getElementById('zyph-api-key');
-        this.zyphApiKeyGroup = document.getElementById('zyph-api-key-group');
-        this.zyphUserDisplay = document.getElementById('zyph-user-display');
-        this.zyphConnectionStatus = document.getElementById('zyph-connection-status');
-        this.zyphConnectedSummary = document.getElementById('zyph-connected-summary');
-        this.zyphConnectedDetails = document.getElementById('zyph-connected-details');
-        this.zyphConnectionUpdated = document.getElementById('zyph-connection-updated');
-        this.testZyphConnectionBtn = document.getElementById('test-zyph-connection');
-        this.disconnectZyphBtn = document.getElementById('disconnect-zyph');
+        this.memoryBayApiKeyInput = document.getElementById('memory-bay-api-key');
+        this.memoryBayApiKeyGroup = document.getElementById('memory-bay-api-key-group');
+        this.memoryBayUserDisplay = document.getElementById('memory-bay-user-display');
+        this.memoryBayConnectionStatus = document.getElementById('memory-bay-connection-status');
+        this.memoryBayConnectedSummary = document.getElementById('memory-bay-connected-summary');
+        this.memoryBayConnectedDetails = document.getElementById('memory-bay-connected-details');
+        this.memoryBayConnectionUpdated = document.getElementById('memory-bay-connection-updated');
+        this.testMemoryBayConnectionBtn = document.getElementById('test-memory-bay-connection');
+        this.disconnectMemoryBayBtn = document.getElementById('disconnect-memory-bay');
     }
 
     initializeComponents() {
         // Initialize modular components
-        this.folderRenderer = new window.Zyph.FolderRenderer(this.folderManager);
-        this.contentRenderer = new window.Zyph.ContentRenderer(this.folderManager, this.contextGenerator);
+        this.folderRenderer = new window.MemoryBay.FolderRenderer(this.folderManager);
+        this.contentRenderer = new window.MemoryBay.ContentRenderer(this.folderManager, this.contextGenerator);
 
-        this.modalManager = new window.Zyph.ModalManager({
+        this.modalManager = new window.MemoryBay.ModalManager({
             folderModal: this.folderModal,
             modalTitle: this.modalTitle,
             folderNameInput: this.folderNameInput,
@@ -68,18 +68,18 @@ window.Zyph.UIManager = class UIManager {
             iconSelector: this.iconSelector,
             saveFolderBtn: this.saveFolderBtn,
             settingsModal: this.settingsModal,
-            zyphApiKeyInput: this.zyphApiKeyInput,
-            zyphApiKeyGroup: this.zyphApiKeyGroup,
-            zyphUserDisplay: this.zyphUserDisplay,
-            zyphConnectionStatus: this.zyphConnectionStatus,
-            zyphConnectedSummary: this.zyphConnectedSummary,
-            zyphConnectedDetails: this.zyphConnectedDetails,
-            zyphConnectionUpdated: this.zyphConnectionUpdated,
-            testZyphConnectionBtn: this.testZyphConnectionBtn,
-            disconnectZyphBtn: this.disconnectZyphBtn
+            memoryBayApiKeyInput: this.memoryBayApiKeyInput,
+            memoryBayApiKeyGroup: this.memoryBayApiKeyGroup,
+            memoryBayUserDisplay: this.memoryBayUserDisplay,
+            memoryBayConnectionStatus: this.memoryBayConnectionStatus,
+            memoryBayConnectedSummary: this.memoryBayConnectedSummary,
+            memoryBayConnectedDetails: this.memoryBayConnectedDetails,
+            memoryBayConnectionUpdated: this.memoryBayConnectionUpdated,
+            testMemoryBayConnectionBtn: this.testMemoryBayConnectionBtn,
+            disconnectMemoryBayBtn: this.disconnectMemoryBayBtn
         }, this.folderManager);
 
-        this.eventHandler = new window.Zyph.EventHandler(this, this.folderManager, this.contextGenerator);
+        this.eventHandler = new window.MemoryBay.EventHandler(this, this.folderManager, this.contextGenerator);
     }
 
     bindEvents() {
@@ -88,7 +88,7 @@ window.Zyph.UIManager = class UIManager {
 
     observeStorageChanges() {
         this.storageChangeHandler = (changes, areaName) => {
-            if (areaName !== 'local' || !changes.zyphContent) {
+            if (areaName !== 'local' || !changes.memoryBayContent) {
                 return;
             }
 
@@ -104,8 +104,8 @@ window.Zyph.UIManager = class UIManager {
             const folderId = this.currentlyDisplayedFolderId;
 
             const toArray = (value) => Array.isArray(value) ? value : [];
-            const oldItems = toArray(changes.zyphContent.oldValue).filter(item => item.folderId === folderId);
-            const newItems = toArray(changes.zyphContent.newValue).filter(item => item.folderId === folderId);
+            const oldItems = toArray(changes.memoryBayContent.oldValue).filter(item => item.folderId === folderId);
+            const newItems = toArray(changes.memoryBayContent.newValue).filter(item => item.folderId === folderId);
 
             const oldIds = new Set(oldItems.map(item => item.id));
             const newIds = new Set(newItems.map(item => item.id));
@@ -131,7 +131,7 @@ window.Zyph.UIManager = class UIManager {
     }
 
     async refreshFolders() {
-        console.log('[UIManager] Manually refreshing folders from Zyph.com...');
+        console.log('[UIManager] Manually refreshing folders from Memory Bay...');
 
         // Add a spinning animation to the refresh button
         if (this.refreshFoldersBtn) {
@@ -210,17 +210,17 @@ window.Zyph.UIManager = class UIManager {
     }
 
     showRemoteManagementNotice() {
-        alert('Folders are managed on Zyph.com. Use the button below the list to open Zyph and manage your folders.');
+        alert('Folders are managed on Memory Bay. Use the button below the list to open Memory Bay and manage your folders.');
     }
 
     openRemoteManagement() {
         try {
-            const win = window.open('https://zyph.com/', '_blank');
+            const win = window.open('https://synapse-frontend-dev-11007620517.asia-south1.run.app/', '_blank');
             if (win) {
                 win.opener = null;
             }
         } catch (error) {
-            console.error('[UIManager] Failed to open Zyph.com:', error);
+            console.error('[UIManager] Failed to open Memory Bay:', error);
         }
     }
 
@@ -347,7 +347,7 @@ window.Zyph.UIManager = class UIManager {
                 <div class="loading-container">
                     <div class="loading-spinner"></div>
                     <p class="loading-text">Loading and syncing content...</p>
-                    <p class="loading-subtext">Checking for new and deleted items on zyph.com</p>
+                    <p class="loading-subtext">Checking for new and deleted items on Memory Bay</p>
                 </div>
             `;
         }
@@ -361,21 +361,21 @@ window.Zyph.UIManager = class UIManager {
             folderList.innerHTML = `
                 <div class="loading-container">
                     <div class="loading-spinner"></div>
-                    <p class="loading-text">Loading folders from zyph.com...</p>
+                    <p class="loading-text">Loading folders from Memory Bay...</p>
                 </div>
             `;
         }
     }
 
     showConnectionLoadingState() {
-        const statusElement = document.querySelector('.zyph-connection-status') ||
+        const statusElement = document.querySelector('.memory-bay-connection-status') ||
                              document.querySelector('.connection-status');
 
         if (statusElement) {
             statusElement.innerHTML = `
                 <div class="loading-container inline">
                     <div class="loading-spinner small"></div>
-                    <span class="loading-text">Connecting to zyph.com...</span>
+                    <span class="loading-text">Connecting to Memory Bay...</span>
                 </div>
             `;
         }

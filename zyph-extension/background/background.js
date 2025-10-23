@@ -1,7 +1,7 @@
 // Import modules
-importScripts('../common/config.js', '../common/utils.js', '../common/zyph-api.js', 'dialog-manager.js', 'content-saver.js');
+importScripts('../common/config.js', '../common/utils.js', '../common/memory-bay-api.js', 'dialog-manager.js', 'content-saver.js');
 
-class ZyphBackgroundManager {
+class MemoryBayBackgroundManager {
     constructor() {
         this.contextMenuCreationPromise = null;
         this.contextMenuRebuildRequested = false;
@@ -108,14 +108,14 @@ class ZyphBackgroundManager {
         }
 
         // Check authentication status before fetching folders
-        const isAuthenticated = await Zyph.Api.isAuthenticated();
+        const isAuthenticated = await MemoryBay.Api.isAuthenticated();
 
         if (!isAuthenticated) {
             console.warn('[Background] Not authenticated - showing connect prompt');
             try {
                 chrome.contextMenus.create({
-                    id: 'zyph-not-authenticated',
-                    title: '⚠️ Connect your Zyph account in settings',
+                    id: 'memorybay-not-authenticated',
+                    title: '⚠️ Connect your Memory Bay account in settings',
                     contexts: supportedContexts,
                     enabled: false
                 });
@@ -138,23 +138,23 @@ class ZyphBackgroundManager {
         
         try {
             chrome.contextMenus.create({
-                id: 'zyph-main',
-                title: 'Save to Zyph',
+                id: 'memorybay-main',
+                title: 'Save to Memory Bay',
                 contexts: supportedContexts
             });
 
             chrome.contextMenus.create({
-                id: 'zyph-separator',
+                id: 'memorybay-separator',
                 type: 'separator',
-                parentId: 'zyph-main',
+                parentId: 'memorybay-main',
                 contexts: supportedContexts
             });
 
             if (normalizedFolders.length === 0) {
                 chrome.contextMenus.create({
-                    id: 'zyph-no-folders',
+                    id: 'memorybay-no-folders',
                     title: 'No folders available - Create one first',
-                    parentId: 'zyph-main',
+                    parentId: 'memorybay-main',
                     enabled: false,
                     contexts: supportedContexts
                 });
@@ -162,21 +162,21 @@ class ZyphBackgroundManager {
                 const grouped = this.groupFoldersByParent(normalizedFolders);
                 const rootItems = grouped.get(null) || [];
                 rootItems.forEach(folder => {
-                    this.addFolderBranch(folder, 'zyph-main', supportedContexts, grouped);
+                    this.addFolderBranch(folder, 'memorybay-main', supportedContexts, grouped);
                 });
             }
 
             chrome.contextMenus.create({
-                id: 'zyph-manage-separator',
+                id: 'memorybay-manage-separator',
                 type: 'separator',
-                parentId: 'zyph-main',
+                parentId: 'memorybay-main',
                 contexts: supportedContexts
             });
 
             chrome.contextMenus.create({
-                id: 'zyph-manage',
+                id: 'memorybay-manage',
                 title: 'Manage Folders...',
-                parentId: 'zyph-main',
+                parentId: 'memorybay-main',
                 contexts: supportedContexts
             });
             
@@ -205,7 +205,7 @@ class ZyphBackgroundManager {
     }
 
     addFolderBranch(folder, parentMenuId, contexts, grouped) {
-        const menuId = `zyph-folder-${folder.id}`;
+        const menuId = `memorybay-folder-${folder.id}`;
         chrome.contextMenus.create({
             id: menuId,
             title: folder.name,
@@ -225,33 +225,33 @@ class ZyphBackgroundManager {
             tabId: tab.id
         });
 
-        if (info.menuItemId === 'zyph-main') {
+        if (info.menuItemId === 'memorybay-main') {
             // Main menu item clicked - this is a parent menu, no action needed
             console.log(`[Background] Main menu item clicked - no action required`);
             return;
         }
 
-        if (info.menuItemId === 'zyph-manage') {
+        if (info.menuItemId === 'memorybay-manage') {
             console.log(`[Background] Opening side panel for management`);
             chrome.sidePanel.open({ windowId: tab.windowId });
             return;
         }
 
-        if (info.menuItemId.startsWith('zyph-folder-')) {
+        if (info.menuItemId.startsWith('memorybay-folder-')) {
             // Check if this is a protected page BEFORE attempting to save
-            if (!Zyph.Utils.isValidTabForContentScript(tab)) {
+            if (!MemoryBay.Utils.isValidTabForContentScript(tab)) {
                 console.log(`[Background] Blocking save attempt on protected page: ${tab.url}`);
                 await this.showProtectedPageError(tab);
                 return;
             }
 
-            const folderId = info.menuItemId.replace('zyph-folder-', '');
+            const folderId = info.menuItemId.replace('memorybay-folder-', '');
             console.log(`[Background] Saving to folder ${folderId}`);
             await this.contentSaver.saveContentToFolder(folderId, info, tab);
             return;
         }
 
-        if (info.menuItemId === 'zyph-no-folders') {
+        if (info.menuItemId === 'memorybay-no-folders') {
             // No folders available - open side panel to create one
             console.log(`[Background] No folders available - opening side panel to create folders`);
             chrome.sidePanel.open({ windowId: tab.windowId });
@@ -259,7 +259,7 @@ class ZyphBackgroundManager {
         }
 
         // Handle separator items (they shouldn't be clickable but just in case)
-        if (info.menuItemId === 'zyph-separator' || info.menuItemId === 'zyph-manage-separator') {
+        if (info.menuItemId === 'memorybay-separator' || info.menuItemId === 'memorybay-manage-separator') {
             console.log(`[Background] Separator clicked - no action required`);
             return;
         }
@@ -292,7 +292,7 @@ class ZyphBackgroundManager {
         if (message.action === 'saveDroppedContent') {
             try {
                 // Check if we're on a protected page before saving dropped content
-                if (sender.tab && !Zyph.Utils.isValidTabForContentScript(sender.tab)) {
+                if (sender.tab && !MemoryBay.Utils.isValidTabForContentScript(sender.tab)) {
                     console.log(`[Background] Blocking dropped content save on protected page: ${sender.tab.url}`);
                     sendResponse({
                         success: false,
@@ -344,8 +344,8 @@ class ZyphBackgroundManager {
 
     async showProtectedPageError(tab) {
         try {
-            const pageType = Zyph.Utils.getPageType(tab.url);
-            const message = `This page needs a simple extra step. Select the text you want, right-click, and choose "Save to Zyph".`;
+            const pageType = MemoryBay.Utils.getPageType(tab.url);
+            const message = `This page needs a simple extra step. Select the text you want, right-click, and choose "Save to Memory Bay".`;
 
             console.log(`[Background] Protected page tip shown for: ${pageType}`);
 
@@ -359,4 +359,4 @@ class ZyphBackgroundManager {
 
 }
 
-new ZyphBackgroundManager();
+new MemoryBayBackgroundManager();

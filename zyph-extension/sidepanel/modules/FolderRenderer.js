@@ -1,6 +1,6 @@
-window.Zyph = window.Zyph || {};
+window.MemoryBay = window.MemoryBay || {};
 
-window.Zyph.FolderRenderer = class FolderRenderer {
+window.MemoryBay.FolderRenderer = class FolderRenderer {
     constructor(folderManager) {
         this.folderManager = folderManager;
     }
@@ -9,7 +9,7 @@ window.Zyph.FolderRenderer = class FolderRenderer {
         let status = this.folderManager.getRemoteStatus();
         let folders = [];
         try {
-            // Force refresh to get latest folders from zyph.com
+            // Force refresh to get latest folders from Memory Bay
             folders = await this.folderManager.loadFolders({ forceRefresh: true });
             status = this.folderManager.getRemoteStatus();
 
@@ -26,12 +26,12 @@ window.Zyph.FolderRenderer = class FolderRenderer {
         html += this.renderFolderActions();
 
         if (status.state === 'loading') {
-            html += this.renderStatusMessage('Loading folders from Zyph.com...', 'info');
+            html += this.renderStatusMessage('Loading folders from Memory Bay...', 'info');
         } else if (status.state === 'error') {
-            const message = status.message || 'Unable to load folders from Zyph.com.';
+            const message = status.message || 'Unable to load folders from Memory Bay.';
             html += this.renderStatusMessage(`${message} <button class="remote-status-action" data-action="open-settings">Reconnect</button>`, 'error');
         } else if (status.state === 'unavailable') {
-            html += this.renderStatusMessage('Zyph.com integration is unavailable in this context.', 'warning');
+            html += this.renderStatusMessage('Memory Bay integration is unavailable in this context.', 'warning');
         } else if (status.state === 'ready' && rootFolders.length === 0) {
             html += this.renderStatusMessage('No folders found. Create a folder to get started!', 'info');
         }
@@ -69,7 +69,7 @@ window.Zyph.FolderRenderer = class FolderRenderer {
         return `
             <div class="remote-manage-hint">
                 <button class="manage-remote-btn" data-action="open-remote-management">
-                    Manage folders on Zyph.com
+                    Manage folders on Memory Bay
                 </button>
             </div>
         `;
@@ -149,7 +149,7 @@ window.Zyph.FolderRenderer = class FolderRenderer {
         if (!folder?.remote?.id) {
             return '';
         }
-        const tooltip = this.escapeHtml(folder.remote.path || folder.remote.name || 'Zyph.com folder');
+        const tooltip = this.escapeHtml(folder.remote.path || folder.remote.name || 'Memory Bay folder');
         return `
             <span class="remote-badge" title="Linked to ${tooltip}">
                 <svg viewBox="0 0 24 24" fill="currentColor">

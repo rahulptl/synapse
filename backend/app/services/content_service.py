@@ -463,5 +463,198 @@ class ContentService:
             "items": content_list  # Changed from "content" to "items" to match frontend expectation
         }
 
+    async def create_knowledge_item_from_bytes(
+        self,
+        db: AsyncSession,
+        user_id: UUID,
+        folder_id: UUID,
+        filename: str,
+        file_bytes: bytes,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> KnowledgeItem:
+        """
+        Create a knowledge item directly from file bytes.
+
+        This is used for programmatically created files (e.g., code interpreter outputs)
+        where we have the raw bytes rather than an UploadFile.
+
+        Args:
+            db: Database session
+            user_id: User ID
+            folder_id: Target folder ID
+            filename: Filename for the file
+            file_bytes: Raw file bytes
+            metadata: Additional metadata to store
+
+        Returns:
+            KnowledgeItem: Created knowledge item
+
+        Raises:
+            ValueError: If folder doesn't exist or upload fails
+        """
+        # Verify folder exists and belongs to user
+        folder_stmt = select(Folder).where(
+            Folder.id == folder_id,
+            Folder.user_id == user_id
+        )
+        folder_result = await db.execute(folder_stmt)
+        folder = folder_result.scalar_one_or_none()
+
+        if not folder:
+            raise ValueError("Invalid folder or insufficient permissions")
+
+        file_size = len(file_bytes)
+
+        # Log file creation for monitoring
+        logger.info(
+            f"Creating knowledge item from bytes: {filename} "
+            f"({file_size / 1024:.1f}KB) for user {user_id}"
+        )
+
+        # Generate storage path (similar to file_service)
+        import re
+        import uuid
+        # Clean filename for storage
+        storage_filename = re.sub(r'[^a-zA-Z0-9._-]', '_', filename)
+        storage_filename = f"{uuid.uuid4().hex[:8]}_{storage_filename}"
+        storage_path = f"{user_id}/{folder_id}/{storage_filename}"
+
+        # Detect content type from filename extension
+        content_type = self._detect_content_type_from_filename(filename)
+        mime_type = self._detect_mime_type_from_filename(filename)
+
+        # Upload file to storage
+        try:
+            storage_url = await storage_service.upload_content(
+                storage_path,
+                file_bytes,
+                mime_type
+            )
+        except Exception as e:
+            logger.error(f"Failed to upload file bytes to storage: {e}")
+            raise ValueError(f"Failed to upload file to storage: {e}")
+
+        # Prepare metadata
+        item_metadata = {
+            "storage_path": storage_path,
+            "original_filename": filename,
+            "file_size": file_size,
+            "mime_type": mime_type,
+            "stored_in_storage": True,
+            **(metadata or {})
+        }
+
+        # Create knowledge item
+        file_content_text = f"[FILE:{storage_path}]"
+        knowledge_item = KnowledgeItem(
+            user_id=user_id,
+            folder_id=folder_id,
+            title=filename,
+            content=file_content_text,
+            content_type=content_type,
+            source_type=metadata.get('source_type', 'code_interpreter') if metadata else 'code_interpreter',
+            filename=filename,
+            size_bytes=file_size,
+            item_metadata=item_metadata,
+            status="pending"  # Will be processed in background
+        )
+
+        db.add(knowledge_item)
+        await db.commit()
+        await db.refresh(knowledge_item)
+
+        # Create GCSFile record
+        bucket_name = settings.GCS_BUCKET_NAME or "local"
+        gcs_file = GCSFile(
+            knowledge_item_id=knowledge_item.id,
+            bucket_name=bucket_name,
+            object_path=storage_path,
+            gcs_url=storage_url
+        )
+        db.add(gcs_file)
+        await db.commit()
+
+        logger.info(
+            f"Created knowledge item {knowledge_item.id} from bytes: {filename}"
+        )
+
+        return knowledge_item
+
+    def _detect_content_type_from_filename(self, filename: str) -> str:
+        """Detect ContentType enum from filename extension."""
+        ext = filename.split('.')[-1].lower() if '.' in filename else ''
+
+        # Map extensions to ContentType enum values
+        ext_map = {
+            'pdf': 'pdf',
+            'doc': 'doc',
+            'docx': 'docx',
+            'txt': 'text',
+            'md': 'text',
+            'csv': 'text',
+            'json': 'text',
+            'xml': 'text',
+            'html': 'html',
+            'htm': 'html',
+            'png': 'image',
+            'jpg': 'image',
+            'jpeg': 'image',
+            'gif': 'image',
+            'bmp': 'image',
+            'py': 'text',
+            'js': 'text',
+            'ts': 'text',
+            'java': 'text',
+            'cpp': 'text',
+            'c': 'text',
+            'cs': 'text',
+            'rb': 'text',
+            'php': 'text',
+            'sh': 'text',
+            'css': 'text',
+        }
+
+        return ext_map.get(ext, 'document')
+
+    def _detect_mime_type_from_filename(self, filename: str) -> str:
+        """Detect MIME type from filename extension."""
+        ext = filename.split('.')[-1].lower() if '.' in filename else ''
+
+        # Map extensions to MIME types (matching OpenAI's supported types)
+        mime_map = {
+            'pdf': 'application/pdf',
+            'doc': 'application/msword',
+            'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            'txt': 'text/plain',
+            'md': 'text/markdown',
+            'csv': 'text/csv',
+            'json': 'application/json',
+            'xml': 'application/xml',
+            'html': 'text/html',
+            'htm': 'text/html',
+            'png': 'image/png',
+            'jpg': 'image/jpeg',
+            'jpeg': 'image/jpeg',
+            'gif': 'image/gif',
+            'zip': 'application/zip',
+            'tar': 'application/x-tar',
+            'py': 'text/x-python',
+            'js': 'text/javascript',
+            'ts': 'application/typescript',
+            'java': 'text/x-java',
+            'cpp': 'text/x-c++',
+            'c': 'text/x-c',
+            'cs': 'text/x-csharp',
+            'rb': 'text/x-ruby',
+            'php': 'text/x-php',
+            'sh': 'application/x-sh',
+            'css': 'text/css',
+        }
+
+        return mime_map.get(ext, 'application/octet-stream')
+
+
 # Service instance
 content_service = ContentService()

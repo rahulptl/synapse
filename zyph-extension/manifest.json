@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Zyph Folder Manager",
+  "name": "Memory Bay Folder Manager",
   "version": "1.0.0",
   "description": "Create and manage nested folders for organizing topics, customers, and projects",
   "permissions": [
@@ -25,7 +25,7 @@
   },
   "action": {
     "default_popup": "popup/popup.html",
-    "default_title": "Open Zyph Folder Manager"
+    "default_title": "Open Memory Bay Folder Manager"
   },
   "side_panel": {
     "default_path": "sidepanel/sidepanel.html"

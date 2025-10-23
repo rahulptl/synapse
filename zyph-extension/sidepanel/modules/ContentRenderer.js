@@ -1,4 +1,4 @@
-window.Zyph = window.Zyph || {};
+window.MemoryBay = window.MemoryBay || {};
 
 const CONTENT_TYPE_ICONS = {
     page: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zm3 18H7V4h6v5h5zm-8-3h8v-2H9zm0-4h8v-2H9z"/></svg>',
@@ -11,7 +11,7 @@ const SECTION_ICONS = {
 };
 
 
-window.Zyph.ContentRenderer = class ContentRenderer {
+window.MemoryBay.ContentRenderer = class ContentRenderer {
     constructor(folderManager, contextGenerator) {
         this.folderManager = folderManager;
         this.contextGenerator = contextGenerator;
@@ -20,7 +20,7 @@ window.Zyph.ContentRenderer = class ContentRenderer {
     }
 
     displayFolderContent(content, options = {}) {
-        const folderName = Zyph.Utils.escapeHtml(this.folderManager.selectedFolder?.name || '');
+        const folderName = MemoryBay.Utils.escapeHtml(this.folderManager.selectedFolder?.name || '');
 
         let contentPanel = document.getElementById('folder-content-panel');
         if (!contentPanel) {
@@ -38,7 +38,7 @@ window.Zyph.ContentRenderer = class ContentRenderer {
             contentPanel.innerHTML = `
                 <div class="content-header">
                     <h3>${folderName}</h3>
-                    <button class="close-content-btn" type="button">${Zyph.UI_ICONS.CLOSE}</button>
+                    <button class="close-content-btn" type="button">${MemoryBay.UI_ICONS.CLOSE}</button>
                 </div>
                 <div class="empty-content">
                     <p>No content saved to this folder yet.</p>
@@ -54,7 +54,7 @@ window.Zyph.ContentRenderer = class ContentRenderer {
             contentPanel.innerHTML = `
                 <div class="content-header">
                     <h3>${folderName}</h3>
-                    <button class="close-content-btn" type="button">${Zyph.UI_ICONS.CLOSE}</button>
+                    <button class="close-content-btn" type="button">${MemoryBay.UI_ICONS.CLOSE}</button>
                 </div>
                 ${contextHTML}
                 <div class="content-list">
@@ -81,7 +81,7 @@ window.Zyph.ContentRenderer = class ContentRenderer {
         const date = new Date(item.timestamp).toLocaleDateString();
         const icon = CONTENT_TYPE_ICONS[item.type] || CONTENT_TYPE_ICONS.page;
         const remoteBadge = this.buildRemoteSyncBadge(item);
-        const title = Zyph.Utils.escapeHtml(item.title || 'Untitled');
+        const title = MemoryBay.Utils.escapeHtml(item.title || 'Untitled');
         const pullButton = this.buildPullButton(item);
 
         return `
@@ -92,7 +92,7 @@ window.Zyph.ContentRenderer = class ContentRenderer {
                     ${remoteBadge}
                     ${pullButton}
                     <button class="content-action-btn delete-content-btn" type="button" title="Remove from folder" data-content-id="${item.id}">
-                        ${Zyph.UI_ICONS.DELETE}
+                        ${MemoryBay.UI_ICONS.DELETE}
                     </button>
                     <svg class="expand-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                         <path d="M8.59 16.59 13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/>
@@ -114,12 +114,12 @@ window.Zyph.ContentRenderer = class ContentRenderer {
         if (isLoading) {
             return `
                 <button class="content-action-btn pull-content-btn loading" type="button" disabled title="Loading content...">
-                    ${Zyph.UI_ICONS.LOADING}
+                    ${MemoryBay.UI_ICONS.LOADING}
                 </button>
             `;
         }
 
-        const icon = isFile ? Zyph.UI_ICONS.DOWNLOAD : Zyph.UI_ICONS.RETRY;
+        const icon = isFile ? MemoryBay.UI_ICONS.DOWNLOAD : MemoryBay.UI_ICONS.RETRY;
         const title = isFile ? 'Download file' : 'Retry loading content';
         const action = isFile ? 'download' : 'retry';
 
@@ -166,7 +166,7 @@ window.Zyph.ContentRenderer = class ContentRenderer {
             tooltipParts.push(`Attempts: ${remote.attempts}`);
         }
 
-        const tooltip = Zyph.Utils.escapeHtml(tooltipParts.join(' | ') || 'Synced with Zyph.com');
+        const tooltip = MemoryBay.Utils.escapeHtml(tooltipParts.join(' | ') || 'Synced with Memory Bay');
 
         return `
             <span class="remote-sync-badge remote-sync-${stateKey}" title="${tooltip}">
@@ -192,7 +192,7 @@ window.Zyph.ContentRenderer = class ContentRenderer {
         const generatingMarkup = `
             <span class="context-status generating">
                 Generating...
-                <button class="reset-btn" type="button" data-folder-id="${folder.id}" title="Cancel generation">${Zyph.UI_ICONS.CLOSE}</button>
+                <button class="reset-btn" type="button" data-folder-id="${folder.id}" title="Cancel generation">${MemoryBay.UI_ICONS.CLOSE}</button>
             </span>
         `;
 
@@ -272,8 +272,8 @@ window.Zyph.ContentRenderer = class ContentRenderer {
 
             // Fallback to local storage if not found in current items
             if (!contentItem) {
-                const result = await chrome.storage.local.get('zyphContent');
-                const allContent = result.zyphContent || [];
+                const result = await chrome.storage.local.get('memoryBayContent');
+                const allContent = result.memoryBayContent || [];
                 contentItem = allContent.find(item => item.id === contentId);
             }
 
@@ -317,7 +317,7 @@ window.Zyph.ContentRenderer = class ContentRenderer {
 
         const rawContent = this.getContentText(contentItem);
         const previewHtml = rawContent
-            ? Zyph.Utils.escapeHtml(rawContent).replace(/\n/g, '<br>')
+            ? MemoryBay.Utils.escapeHtml(rawContent).replace(/\n/g, '<br>')
             : '<em>No content captured</em>';
         const fallbackNote = contentItem.metadata?.fallback
             ? '<p><strong>Note:</strong> Content saved using fallback method</p>'
@@ -424,7 +424,7 @@ window.Zyph.ContentRenderer = class ContentRenderer {
     }
 
     showNotification(message, type = 'info') {
-        Zyph.Utils.showNotification(message, type);
+        MemoryBay.Utils.showNotification(message, type);
     }
 
     closeFolderContent() {

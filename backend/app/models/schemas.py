@@ -4,7 +4,7 @@ Pydantic models for request/response schemas.
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from uuid import UUID
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, validator, field_validator
 from enum import Enum
 
 
@@ -281,7 +281,16 @@ class Message(MessageBase):
     conversation_id: UUID
     user_id: UUID
     created_at: datetime
-    metadata: Optional[Dict[str, Any]] = Field(None, alias='message_metadata')
+    metadata: Optional[Dict[str, Any]] = Field(None, alias='metadata')
+
+    @field_validator('metadata', mode='before')
+    @classmethod
+    def convert_metadata_to_dict(cls, v):
+        """Convert SQLAlchemy JSON objects to plain dict."""
+        if v is not None and not isinstance(v, dict):
+            # Handle SQLAlchemy JSON objects or other custom types
+            return dict(v) if hasattr(v, '__iter__') else {}
+        return v
 
 
 # Delete schemas

@@ -1,6 +1,6 @@
-window.Zyph = window.Zyph || {};
+window.MemoryBay = window.MemoryBay || {};
 
-window.Zyph.SidePanelApp = class SidePanelApp {
+window.MemoryBay.SidePanelApp = class SidePanelApp {
     constructor() {
         this.folderManager = null;
         this.promptManager = null;
@@ -14,13 +14,13 @@ window.Zyph.SidePanelApp = class SidePanelApp {
             console.log('[SidePanelApp] Initializing application...');
             
             // Initialize managers in dependency order
-            this.folderManager = new window.Zyph.FolderManager();
-            this.promptManager = new window.Zyph.PromptManager();
-            this.contextGenerator = new window.Zyph.ContextGenerator(this.folderManager, this.promptManager);
-            this.uiManager = new window.Zyph.UIManager(this.folderManager, this.contextGenerator);
+            this.folderManager = new window.MemoryBay.FolderManager();
+            this.promptManager = new window.MemoryBay.PromptManager();
+            this.contextGenerator = new window.MemoryBay.ContextGenerator(this.folderManager, this.promptManager);
+            this.uiManager = new window.MemoryBay.UIManager(this.folderManager, this.contextGenerator);
 
             // Make UIManager available globally for loading states
-            window.Zyph.UIManager = this.uiManager;
+            window.MemoryBay.UIManager = this.uiManager;
 
             // Load initial data
             await this.loadInitialData();
@@ -61,7 +61,7 @@ window.Zyph.SidePanelApp = class SidePanelApp {
         const errorHTML = `
             <div class="init-error">
                 <h3>Initialization Error</h3>
-                <p>The Zyph Extension failed to initialize properly.</p>
+                <p>The Memory Bay Extension failed to initialize properly.</p>
                 <p><strong>Error:</strong> ${error.message}</p>
                 <button onclick="location.reload()" class="btn primary">Reload Extension</button>
             </div>
@@ -110,7 +110,7 @@ window.Zyph.SidePanelApp = class SidePanelApp {
 
         try {
             // Test storage access
-            const testData = await chrome.storage.local.get('zyphFolderMeta');
+            const testData = await chrome.storage.local.get('memoryBayFolderMeta');
             health.storage = true;
 
             // Test API key
@@ -178,11 +178,11 @@ window.Zyph.SidePanelApp = class SidePanelApp {
 };
 
 // Global app instance and factory function
-window.Zyph.appInstance = null;
+window.MemoryBay.appInstance = null;
 
-window.Zyph.getApp = function() {
-    if (!window.Zyph.appInstance) {
-        window.Zyph.appInstance = new window.Zyph.SidePanelApp();
+window.MemoryBay.getApp = function() {
+    if (!window.MemoryBay.appInstance) {
+        window.MemoryBay.appInstance = new window.MemoryBay.SidePanelApp();
     }
-    return window.Zyph.appInstance;
+    return window.MemoryBay.appInstance;
 };

@@ -81,7 +81,7 @@ class PopupManager {
                 <svg viewBox="0 0 24 24" fill="currentColor">
                     <path d="M10 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2h-8l-2-2z"/>
                 </svg>
-                <p>No folders available yet.<br>Connect to Zyph.com and manage your folders there.</p>
+                <p>No folders available yet.<br>Connect to Memory Bay and manage your folders there.</p>
             </div>
         `;
     }
@@ -125,9 +125,9 @@ class PopupManager {
     }
 
     async fetchRemoteFolders() {
-        if (window?.Zyph?.Api) {
+        if (window?.MemoryBay?.Api) {
             try {
-                const remote = await window.Zyph.Api.fetchFolders({ forceRefresh: false });
+                const remote = await window.MemoryBay.Api.fetchFolders({ forceRefresh: false });
                 const flattened = this.flattenRemoteFolders(remote);
                 if (flattened.length) {
                     return flattened;
@@ -138,8 +138,8 @@ class PopupManager {
         }
 
         try {
-            const cached = await chrome.storage.local.get('zyphRemoteFolders');
-            const flat = cached?.zyphRemoteFolders?.flat;
+            const cached = await chrome.storage.local.get('memoryBayRemoteFolders');
+            const flat = cached?.memoryBayRemoteFolders?.flat;
             if (Array.isArray(flat) && flat.length) {
                 return flat.map(folder => ({
                     id: folder.id,

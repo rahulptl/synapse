@@ -11,7 +11,7 @@
     };
 
     // Shared utility functions used across the extension
-    class ZyphUtils {
+    class MemoryBayUtils {
         // ID Generation
         static generateId() {
             return Date.now().toString(36) + Math.random().toString(36).substring(2);
@@ -147,8 +147,8 @@
             }
 
             try {
-                const result = await chrome.storage.local.get('zyphContent');
-                const allContent = Array.isArray(result.zyphContent) ? result.zyphContent : [];
+                const result = await chrome.storage.local.get('memoryBayContent');
+                const allContent = Array.isArray(result.memoryBayContent) ? result.memoryBayContent : [];
                 const index = allContent.findIndex(item => item.id === contentId);
 
                 if (index === -1) {
@@ -161,7 +161,7 @@
 
                 const updatedMetadata = updater(metadata) || metadata;
                 allContent[index].metadata = updatedMetadata;
-                await chrome.storage.local.set({ zyphContent: allContent });
+                await chrome.storage.local.set({ memoryBayContent: allContent });
                 return true;
             } catch (error) {
                 console.error('[Utils] Failed to update content metadata:', error);
@@ -211,8 +211,8 @@
     }
 
     // Export to global namespace
-    global.Zyph = global.Zyph || {};
-    global.Zyph.Utils = ZyphUtils;
-    global.Zyph.UI_ICONS = UI_ICONS;
+    global.MemoryBay = global.MemoryBay || {};
+    global.MemoryBay.Utils = MemoryBayUtils;
+    global.MemoryBay.UI_ICONS = UI_ICONS;
 
 })(typeof self !== 'undefined' ? self : this);

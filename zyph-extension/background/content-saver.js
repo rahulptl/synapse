@@ -3,8 +3,8 @@ class ContentSaver {
         this.dialogManager = dialogManager;
         this.MAX_LOCAL_CONTENT_LENGTH = 100000;
         this.SESSION_CONTENT_THRESHOLD = 50000;
-        this.REMOTE_QUEUE_KEY = 'zyphRemoteSyncQueue';
-        this.REMOTE_QUEUE_ALARM = 'zyph-remote-sync';
+        this.REMOTE_QUEUE_KEY = 'memoryBayRemoteSyncQueue';
+        this.REMOTE_QUEUE_ALARM = 'memorybay-remote-sync';
         this.remoteQueueProcessing = false;
         this.cachedFolders = [];
         this.MAX_DROPPED_FILE_BYTES = 5 * 1024 * 1024; // 5 MB cap for stored binaries
@@ -18,7 +18,7 @@ class ContentSaver {
                 return;
             }
 
-            const isRestrictedTab = !Zyph.Utils.isValidTabForContentScript(tab);
+            const isRestrictedTab = !MemoryBay.Utils.isValidTabForContentScript(tab);
             let contentData;
 
             if (isRestrictedTab) {
@@ -38,12 +38,12 @@ class ContentSaver {
                 const saveResult = await this.saveContentItem(contentData);
 
                 if (!saveResult.success) {
-                    await this.showSaveError('Chrome storage is full. Remove older Zyph items and try again.');
+                    await this.showSaveError('Chrome storage is full. Remove older Memory Bay items and try again.');
                     return;
                 }
 
                 if (saveResult.quotaFallback) {
-                    await this.showSaveError('Chrome storage is almost full. Zyph saved a lightweight placeholder instead of the full content. Delete older items to free up space.');
+                    await this.showSaveError('Chrome storage is almost full. Memory Bay saved a lightweight placeholder instead of the full content. Delete older items to free up space.');
                 } else {
                     this.showSaveNotification(folder.name, saveResult.item.type);
                 }
@@ -94,19 +94,19 @@ class ContentSaver {
                 let shouldShowSuccess = true;
 
                 if (saveResult.quotaFallback) {
-                    await this.showSaveError('Chrome storage is almost full. Zyph saved a lightweight placeholder instead of embedding the dropped item. Delete older items to free up space.');
+                    await this.showSaveError('Chrome storage is almost full. Memory Bay saved a lightweight placeholder instead of embedding the dropped item. Delete older items to free up space.');
                     shouldShowSuccess = false;
                 }
 
                 if (payload.type === 'dropped-file') {
                     const storedMeta = saveResult.item.metadata || {};
                     if (storedMeta.fileStored === 'too-large') {
-                        const sizeLabel = Zyph.Utils.formatBytes(storedMeta.fileSize || payload.metadata?.fileSize || item.size || 0);
-                        const limitLabel = Zyph.Utils.formatBytes(this.MAX_DROPPED_FILE_BYTES);
-                        await this.showSaveError(`File ${payload.title} (${sizeLabel}) exceeds the ${limitLabel} attachment limit. Zyph saved metadata only.`);
+                        const sizeLabel = MemoryBay.Utils.formatBytes(storedMeta.fileSize || payload.metadata?.fileSize || item.size || 0);
+                        const limitLabel = MemoryBay.Utils.formatBytes(this.MAX_DROPPED_FILE_BYTES);
+                        await this.showSaveError(`File ${payload.title} (${sizeLabel}) exceeds the ${limitLabel} attachment limit. Memory Bay saved metadata only.`);
                         shouldShowSuccess = false;
                     } else if (storedMeta.fileStored === 'failed') {
-                        await this.showSaveError(`Zyph could not attach the full file ${payload.title}. Only a preview was saved.`);
+                        await this.showSaveError(`Memory Bay could not attach the full file ${payload.title}. Only a preview was saved.`);
                         shouldShowSuccess = false;
                     }
                 }
@@ -257,15 +257,15 @@ class ContentSaver {
             } else if (dropItem.dataUrl) {
                 content = `Data URL preview for ${name}:\n${dropItem.dataUrl}`;
             } else if (dropItem.binary) {
-                const sizeLabel = Zyph.Utils.formatBytes(dropItem.size);
-                content = `Binary file ${name} (${sizeLabel}) saved via drag-and-drop. Download the attachment from this item in Zyph.`;
+                const sizeLabel = MemoryBay.Utils.formatBytes(dropItem.size);
+                content = `Binary file ${name} (${sizeLabel}) saved via drag-and-drop. Download the attachment from this item in Memory Bay.`;
             } else {
-                const sizeLabel = Zyph.Utils.formatBytes(dropItem.size);
+                const sizeLabel = MemoryBay.Utils.formatBytes(dropItem.size);
                 content = `File ${name} (${sizeLabel}) saved via drag-and-drop. The original binary content exceeds the embedded size limit.`;
             }
 
             const item = {
-                id: Zyph.Utils.generateId(),
+                id: MemoryBay.Utils.generateId(),
                 type: 'dropped-file',
                 folderId: folder.id,
                 title: name,
@@ -314,13 +314,13 @@ class ContentSaver {
             lines.push(`URL: ${url}`);
 
             return {
-                id: Zyph.Utils.generateId(),
+                id: MemoryBay.Utils.generateId(),
                 type: 'dropped-url',
                 folderId: folder.id,
                 title: title || url,
                 content: lines.join('\n'),
                 url,
-                favicon: Zyph.Utils.getDefaultFavicon(url),
+                favicon: MemoryBay.Utils.getDefaultFavicon(url),
                 domain,
                 timestamp,
                 metadata
@@ -347,7 +347,7 @@ class ContentSaver {
             const preview = text.length > 80 ? `${text.slice(0, 80)}...` : text;
 
             return {
-                id: Zyph.Utils.generateId(),
+                id: MemoryBay.Utils.generateId(),
                 type: 'dropped-text',
                 folderId: folder.id,
                 title: preview || 'Dropped text',
@@ -370,13 +370,13 @@ class ContentSaver {
             });
 
             return {
-                id: Zyph.Utils.generateId(),
+                id: MemoryBay.Utils.generateId(),
                 type: 'selection',
                 folderId: folder.id,
                 title: `Selection from ${response.title || tab.title}`,
                 content: info.selectionText,
                 url: tab.url,
-                favicon: response.favicon || Zyph.Utils.getDefaultFavicon(tab.url),
+                favicon: response.favicon || MemoryBay.Utils.getDefaultFavicon(tab.url),
                 domain: response.domain || new URL(tab.url).hostname,
                 timestamp: new Date().toISOString(),
                 metadata: {
@@ -417,14 +417,14 @@ class ContentSaver {
             }
 
             return {
-                id: Zyph.Utils.generateId(),
+                id: MemoryBay.Utils.generateId(),
                 type: 'page',
                 folderId: folder.id,
                 title: response.title || tab.title,
                 content: response.content,
                 rawHtml: response.rawHtml,
                 url: tab.url,
-                favicon: response.favicon || Zyph.Utils.getDefaultFavicon(tab.url),
+                favicon: response.favicon || MemoryBay.Utils.getDefaultFavicon(tab.url),
                 domain: response.domain || new URL(tab.url).hostname,
                 timestamp: new Date().toISOString(),
                 metadata: response.metadata || {}
@@ -444,13 +444,13 @@ class ContentSaver {
             if (type === 'selection' && info?.selectionText) {
                 // This is valid user content - selectionText from the context menu
                 const fallbackContent = {
-                    id: Zyph.Utils.generateId(),
+                    id: MemoryBay.Utils.generateId(),
                     type: 'selection',
                     folderId: folder.id,
                     title: `Selection from ${tab.title}`,
                     content: info.selectionText,
                     url: tab.url,
-                    favicon: Zyph.Utils.getDefaultFavicon(tab.url),
+                    favicon: MemoryBay.Utils.getDefaultFavicon(tab.url),
                     domain: domain,
                     timestamp: new Date().toISOString(),
                     metadata: {
@@ -468,19 +468,19 @@ class ContentSaver {
                 let instructions;
 
                 if (pageType === 'Chrome internal page') {
-                    instructions = 'This is a protected content page. To save content from this page:\n1) Select the text you want to save\n2) Right-click on the selection\n3) Choose "Save to Zyph" from the context menu';
+                    instructions = 'This is a protected content page. To save content from this page:\n1) Select the text you want to save\n2) Right-click on the selection\n3) Choose "Save to Memory Bay" from the context menu';
                 } else {
-                    instructions = 'This page type doesn\'t allow automatic content extraction. To save content:\n1) Select the text you want to save\n2) Right-click on the selection\n3) Choose "Save to Zyph" from the context menu';
+                    instructions = 'This page type doesn\'t allow automatic content extraction. To save content:\n1) Select the text you want to save\n2) Right-click on the selection\n3) Choose "Save to Memory Bay" from the context menu';
                 }
 
                 const fallbackPageContent = {
-                    id: Zyph.Utils.generateId(),
+                    id: MemoryBay.Utils.generateId(),
                     type: 'page',
                     folderId: folder.id,
                     title: tab.title || 'Untitled Page',
                     content: `Page URL: ${tab.url}\nPage Title: ${tab.title}\nPage Type: ${pageType}\n\nNote: ${instructions}`,
                     url: tab.url,
-                    favicon: Zyph.Utils.getDefaultFavicon(tab.url),
+                    favicon: MemoryBay.Utils.getDefaultFavicon(tab.url),
                     domain: domain,
                     timestamp: new Date().toISOString(),
                     metadata: {
@@ -502,16 +502,16 @@ class ContentSaver {
 
     async saveContentItem(contentData) {
         const { itemForLocal, sessionKeys } = await this.prepareItemForStorage(contentData);
-        const result = await chrome.storage.local.get('zyphContent');
-        const existingContent = result.zyphContent || [];
+        const result = await chrome.storage.local.get('memoryBayContent');
+        const existingContent = result.memoryBayContent || [];
         const fullContentList = [...existingContent, itemForLocal];
 
         try {
-            await chrome.storage.local.set({ zyphContent: fullContentList });
+            await chrome.storage.local.set({ memoryBayContent: fullContentList });
             this.scheduleContextRegeneration(itemForLocal.folderId);
             return { success: true, quotaFallback: false, item: itemForLocal };
         } catch (error) {
-            if (!Zyph.Utils.isQuotaError(error)) {
+            if (!MemoryBay.Utils.isQuotaError(error)) {
                 await this.removeSessionPayloads(sessionKeys);
                 throw error;
             }
@@ -523,11 +523,11 @@ class ContentSaver {
             const placeholderList = [...existingContent, placeholderItem];
 
             try {
-                await chrome.storage.local.set({ zyphContent: placeholderList });
+                await chrome.storage.local.set({ memoryBayContent: placeholderList });
                 this.scheduleContextRegeneration(placeholderItem.folderId);
                 return { success: true, quotaFallback: true, item: placeholderItem };
             } catch (innerError) {
-                if (Zyph.Utils.isQuotaError(innerError)) {
+                if (MemoryBay.Utils.isQuotaError(innerError)) {
                     console.error('[ContentSaver] Storage quota exceeded even after placeholder attempt');
                     return { success: false, quotaFallback: false, error: innerError };
                 }
@@ -613,7 +613,7 @@ class ContentSaver {
     }
 
     buildSessionKey(itemId, payloadType) {
-        return `zyph:${itemId}:${payloadType}`;
+        return `memorybay:${itemId}:${payloadType}`;
     }
 
     async storeSessionPayload(key, payload) {
@@ -671,7 +671,7 @@ class ContentSaver {
     }
 
     createQuotaPlaceholder(originalItem) {
-        const placeholderMessage = 'Chrome storage is full, so Zyph saved this lightweight placeholder instead of the captured content. Delete older items in the side panel and try again.';
+        const placeholderMessage = 'Chrome storage is full, so Memory Bay saved this lightweight placeholder instead of the captured content. Delete older items in the side panel and try again.';
         const placeholderContent = `Page URL: ${originalItem.url}\n\n${placeholderMessage}`;
         const originalSize = this.estimateItemSize(originalItem);
         const truncatedTitle = originalItem.title && originalItem.title.length > 80
@@ -733,7 +733,7 @@ class ContentSaver {
     async handleRemoteSync(folder, savedItem, originalContent, options = {}) {
         try {
             if (!folder?.remote?.id) {
-                console.log('[ContentSaver] Folder not linked to Zyph.com - skipping remote sync');
+                console.log('[ContentSaver] Folder not linked to Memory Bay - skipping remote sync');
                 return;
             }
 
@@ -749,21 +749,21 @@ class ContentSaver {
                 && metadata.fileSessionKey
                 && metadata.fileStored === 'session'
                 && typeof metadata.fileSessionKey === 'string'
-                && self?.Zyph?.Api?.uploadFile;
+                && self?.MemoryBay?.Api?.uploadFile;
 
             console.log('[ContentSaver] File upload check:', {
                 hasRemoteId: !!folder?.remote?.id,
                 isDroppedFile: isDroppedFile,
                 hasSessionKey: !!metadata.fileSessionKey,
                 fileStored: metadata.fileStored,
-                hasUploadApi: !!self?.Zyph?.Api?.uploadFile,
+                hasUploadApi: !!self?.MemoryBay?.Api?.uploadFile,
                 canUploadFile: canUploadFile,
                 savedItemType: savedItem.type
             });
 
             if (canUploadFile) {
                 const uploadTask = {
-                    taskId: Zyph.Utils.generateId(),
+                    taskId: MemoryBay.Utils.generateId(),
                     taskType: 'file-upload',
                     localContentId: savedItem.id,
                     remoteFolderId: folder.remote.id,
@@ -805,7 +805,7 @@ class ContentSaver {
             }
 
             const task = {
-                taskId: Zyph.Utils.generateId(),
+                taskId: MemoryBay.Utils.generateId(),
                 taskType: 'ingest',
                 localContentId: savedItem.id,
                 remoteFolderId: folder.remote.id,
@@ -851,7 +851,7 @@ class ContentSaver {
             folder_name: folder.name,
             folder_path: folder.remote?.path || null,
             folder_remote_id: folder.remote?.id,
-            synced_from: 'zyph-extension',
+            synced_from: 'memorybay-extension',
             quota_fallback: !!options.quotaFallback
         };
 
@@ -896,7 +896,7 @@ class ContentSaver {
     }
 
     mapContentType(type) {
-        return Zyph.Utils.mapContentType(type);
+        return MemoryBay.Utils.mapContentType(type);
     }
 
     async enqueueRemoteTask(task) {
@@ -950,8 +950,8 @@ class ContentSaver {
             return;
         }
 
-        if (!self?.Zyph?.Api) {
-            console.warn('[ContentSaver] Zyph API module unavailable, cannot process remote queue');
+        if (!self?.MemoryBay?.Api) {
+            console.warn('[ContentSaver] Memory Bay API module unavailable, cannot process remote queue');
             return;
         }
 
@@ -1013,7 +1013,7 @@ class ContentSaver {
 
                     const retryable = result.retryable;
                     const attempts = (task.attempts || 0) + 1;
-                    const message = result.error?.message || 'Failed to upload file to Zyph.com';
+                    const message = result.error?.message || 'Failed to upload file to Memory Bay';
                     const code = result.error?.code || null;
 
                     await this.markRemoteStatus(task.localContentId, {
@@ -1048,7 +1048,7 @@ class ContentSaver {
                 }
 
                 try {
-                    const response = await self.Zyph.Api.ingestContent(task.payload);
+                    const response = await self.MemoryBay.Api.ingestContent(task.payload);
                     queue.shift();
 
                     await this.markRemoteStatus(task.localContentId, {
@@ -1069,7 +1069,7 @@ class ContentSaver {
                 } catch (error) {
                     const retryable = this.isRetryableRemoteError(error);
                     const attempts = (task.attempts || 0) + 1;
-                    const message = error?.message || 'Failed to sync with Zyph.com';
+                    const message = error?.message || 'Failed to sync with Memory Bay';
                     const code = error?.code || null;
 
                     await this.markRemoteStatus(task.localContentId, {
@@ -1124,7 +1124,7 @@ class ContentSaver {
             }
 
             const blob = new Blob([binary], { type: task.fileType || 'application/octet-stream' });
-            const uploadResponse = await self.Zyph.Api.uploadFile({
+            const uploadResponse = await self.MemoryBay.Api.uploadFile({
                 file: blob,
                 fileName: task.fileName || 'upload.bin',
                 folderId: task.remoteFolderId,
@@ -1189,8 +1189,8 @@ class ContentSaver {
         }
 
         try {
-            const result = await chrome.storage.local.get('zyphContent');
-            const allContent = Array.isArray(result.zyphContent) ? result.zyphContent : [];
+            const result = await chrome.storage.local.get('memoryBayContent');
+            const allContent = Array.isArray(result.memoryBayContent) ? result.memoryBayContent : [];
             const index = allContent.findIndex(item => item.id === contentId);
 
             if (index === -1) {
@@ -1204,7 +1204,7 @@ class ContentSaver {
 
             const updatedMetadata = updater(metadata) || metadata;
             allContent[index].metadata = updatedMetadata;
-            await chrome.storage.local.set({ zyphContent: allContent });
+            await chrome.storage.local.set({ memoryBayContent: allContent });
             return true;
         } catch (error) {
             console.error('[ContentSaver] Failed to update content metadata:', error);
@@ -1232,7 +1232,7 @@ class ContentSaver {
             await chrome.notifications.create({
                 type: 'basic',
                 iconUrl: this.dialogManager.getNotificationIconUrl(),
-                title: 'Zyph Save Error',
+                title: 'Memory Bay Save Error',
                 message: message,
                 priority: 2
             });
@@ -1265,16 +1265,16 @@ class ContentSaver {
     }
 
     async getFolders({ forceRefresh = false } = {}) {
-        if (self?.Zyph?.Api) {
+        if (self?.MemoryBay?.Api) {
             try {
                 // Check authentication first
-                const isAuthenticated = await self.Zyph.Api.isAuthenticated();
+                const isAuthenticated = await self.MemoryBay.Api.isAuthenticated();
                 if (!isAuthenticated) {
                     console.warn('[ContentSaver] Not authenticated - returning empty folders');
                     return [];
                 }
 
-                const remoteFolders = await self.Zyph.Api.fetchFolders({ forceRefresh });
+                const remoteFolders = await self.MemoryBay.Api.fetchFolders({ forceRefresh });
                 this.cachedFolders = this.flattenRemoteFolders(remoteFolders);
                 return this.cachedFolders;
             } catch (error) {
@@ -1284,7 +1284,7 @@ class ContentSaver {
                     return [];
                 }
                 // Log other errors but continue to fallback
-                console.warn('[ContentSaver] Failed to fetch folders from Zyph.com:', error);
+                console.warn('[ContentSaver] Failed to fetch folders from Memory Bay:', error);
             }
         }
 
@@ -1293,8 +1293,8 @@ class ContentSaver {
         }
 
         try {
-            const cached = await chrome.storage.local.get('zyphRemoteFolders');
-            const flat = cached?.zyphRemoteFolders?.flat;
+            const cached = await chrome.storage.local.get('memoryBayRemoteFolders');
+            const flat = cached?.memoryBayRemoteFolders?.flat;
             if (Array.isArray(flat)) {
                 this.cachedFolders = flat.map(folder => ({
                     id: folder.id,

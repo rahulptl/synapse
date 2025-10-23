@@ -1,6 +1,6 @@
-# Zyph Extension - Environment Configuration Guide
+# Memory Bay Extension - Environment Configuration Guide
 
-This guide explains how to configure the Zyph Chrome Extension to work with different backend environments (local, dev, prod).
+This guide explains how to configure the Memory Bay Chrome Extension to work with different backend environments (local, dev, prod).
 
 ## Quick Start
 
@@ -214,7 +214,7 @@ You can't run different environments in the same browser profile, but you can:
 zyph-extension/
 ├── common/
 │   ├── config.js          ← Environment configuration (edit this!)
-│   └── zyph-api.js        ← API client (uses config.js)
+│   └── memory-bay-api.js  ← API client (uses config.js)
 ├── manifest.json          ← Permissions (includes host_permissions)
 ├── popup/
 │   └── popup.html         ← Includes config.js script
@@ -228,14 +228,14 @@ You can switch environments programmatically using:
 
 ```javascript
 // In browser console or extension code
-await window.ZyphConfig.setEnvironment('dev');
+await window.MemoryBayConfig.setEnvironment('dev');
 
 // Get current environment
-const config = await window.ZyphConfig.getEnvironmentConfig();
+const config = await window.MemoryBayConfig.getEnvironmentConfig();
 console.log('Current environment:', config.name);
 
 // Get all environments
-const envs = window.ZyphConfig.getAllEnvironments();
+const envs = window.MemoryBayConfig.getAllEnvironments();
 console.log('Available:', Object.keys(envs));
 ```
 

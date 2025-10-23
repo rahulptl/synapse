@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Zyph Folder Manager</title>
+    <title>Memory Bay Folder Manager</title>
     <link rel="stylesheet" href="sidepanel.css">
 </head>
 <body>
@@ -12,9 +12,9 @@
             <svg class="logo-icon" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M10 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2h-8l-2-2z"/>
             </svg>
-            Zyph Folders
+            Memory Bay Folders
         </h1>
-        <button class="icon-btn" id="refresh-folders-btn" title="Refresh folders from Zyph.com">
+        <button class="icon-btn" id="refresh-folders-btn" title="Refresh folders from Memory Bay">
             <svg viewBox="0 0 24 24" fill="currentColor">
                 <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
             </svg>
@@ -95,11 +95,11 @@
                     </select>
                 </div>
                 <div class="input-group">
-                    <label for="remote-folder-select">Link To Zyph.com Folder</label>
+                    <label for="remote-folder-select">Link To Memory Bay Folder</label>
                     <select id="remote-folder-select">
                         <option value="">Not linked</option>
                     </select>
-                    <small id="remote-folder-status" class="input-hint">Connect your Zyph.com account in Settings to enable syncing.</small>
+                    <small id="remote-folder-status" class="input-hint">Connect your Memory Bay account in Settings to enable syncing.</small>
                 </div>
             </div>
             <div class="modal-footer">
@@ -122,28 +122,28 @@
             </div>
             <div class="modal-body settings-body">
                 <div class="settings-section">
-                    <h4>Zyph.com Connection</h4>
-                    <p class="settings-description">Sync captured items with your Zyph.com workspace by providing an API key.</p>
-                    <div class="input-group" id="zyph-api-key-group">
-                        <label for="zyph-api-key">Zyph API Key</label>
-                        <input type="password" id="zyph-api-key" placeholder="zyph_..." autocomplete="off">
-                        <small>Your key is stored locally and used only for Zyph.com requests.</small>
+                    <h4>Memory Bay Connection</h4>
+                    <p class="settings-description">Sync captured items with your Memory Bay workspace by providing an API key.</p>
+                    <div class="input-group" id="memory-bay-api-key-group">
+                        <label for="memory-bay-api-key">Memory Bay API Key</label>
+                        <input type="password" id="memory-bay-api-key" placeholder="mb_..." autocomplete="off">
+                        <small>Your key is stored locally and used only for Memory Bay requests.</small>
                     </div>
-                    <div class="connection-summary is-hidden" id="zyph-connected-summary">
+                    <div class="connection-summary is-hidden" id="memory-bay-connected-summary">
                         <div class="connection-summary-header">
                             <span class="connection-pill">Connected</span>
-                            <span class="connection-summary-updated" id="zyph-connection-updated"></span>
+                            <span class="connection-summary-updated" id="memory-bay-connection-updated"></span>
                         </div>
-                        <div class="connection-summary-details" id="zyph-connected-details"></div>
+                        <div class="connection-summary-details" id="memory-bay-connected-details"></div>
                     </div>
                     <div class="input-group">
-                        <label>Zyph User</label>
-                        <div class="zyph-user-display" id="zyph-user-display">Not connected</div>
+                        <label>Memory Bay User</label>
+                        <div class="memory-bay-user-display" id="memory-bay-user-display">Not connected</div>
                     </div>
-                    <div class="connection-status" id="zyph-connection-status">Not connected.</div>
+                    <div class="connection-status" id="memory-bay-connection-status">Not connected.</div>
                     <div class="settings-actions">
-                        <button id="test-zyph-connection" class="btn secondary" type="button">Validate Connection</button>
-                        <button id="disconnect-zyph" class="btn link" type="button">Disconnect</button>
+                        <button id="test-memory-bay-connection" class="btn secondary" type="button">Validate Connection</button>
+                        <button id="disconnect-memory-bay" class="btn link" type="button">Disconnect</button>
                     </div>
                 </div>
             </div>
@@ -157,7 +157,7 @@
     <!-- Load modules in dependency order -->
     <script src="../common/utils.js"></script>
     <script src="../common/config.js"></script>
-    <script src="../common/zyph-api.js"></script>
+    <script src="../common/memory-bay-api.js"></script>
     <script src="modules/FolderManager.js"></script>
     <script src="modules/PromptManager.js"></script>
     <script src="modules/ContextGenerator.js"></script>

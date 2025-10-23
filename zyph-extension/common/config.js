@@ -1,5 +1,5 @@
 /**
- * Environment Configuration for Zyph Extension
+ * Environment Configuration for Memory Bay Extension
  *
  * To switch environments:
  * 1. Change the ENVIRONMENT variable below to 'local', 'dev', or 'prod'
@@ -40,8 +40,8 @@ const DEFAULT_ENVIRONMENT = 'dev';  // Options: 'local', 'dev', 'prod'
 async function getEnvironmentConfig() {
     try {
         // Try to get from storage (set by popup UI)
-        const result = await chrome.storage.local.get('zyphEnvironment');
-        const envKey = result.zyphEnvironment || DEFAULT_ENVIRONMENT;
+        const result = await chrome.storage.local.get('memoryBayEnvironment');
+        const envKey = result.memoryBayEnvironment || DEFAULT_ENVIRONMENT;
 
         const config = ENVIRONMENTS[envKey];
         if (!config) {
@@ -73,7 +73,7 @@ async function setEnvironment(envKey) {
         throw new Error(`Invalid environment: ${envKey}`);
     }
 
-    await chrome.storage.local.set({ zyphEnvironment: envKey });
+    await chrome.storage.local.set({ memoryBayEnvironment: envKey });
     console.log(`[Config] Environment changed to: ${ENVIRONMENTS[envKey].name}`);
 
     // Notify other parts of the extension
@@ -93,7 +93,7 @@ function getAllEnvironments() {
     return ENVIRONMENTS;
 }
 
-const ZyphConfigApi = {
+const MemoryBayConfigApi = {
     getEnvironmentConfig,
     getApiBaseUrl,
     setEnvironment,
@@ -103,7 +103,7 @@ const ZyphConfigApi = {
 
 // Export for use in other scripts
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = ZyphConfigApi;
+    module.exports = MemoryBayConfigApi;
 }
 
 // Make available globally for extension scripts (window, service worker, etc.)
@@ -114,5 +114,5 @@ const globalScope = (typeof globalThis !== 'undefined')
         : (typeof window !== 'undefined' ? window : undefined);
 
 if (globalScope) {
-    globalScope.ZyphConfig = ZyphConfigApi;
+    globalScope.MemoryBayConfig = MemoryBayConfigApi;
 }

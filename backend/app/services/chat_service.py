@@ -613,13 +613,116 @@ class ChatService:
             # Build sources from citations
             sources = await self._build_sources_from_citations(db, citations, user_id)
 
-            # Store assistant message WITH sources in metadata (now with cleaned content)
+            # Process generated files from code interpreter
+            generated_files = []
+            logger.info(f"Checking for generated files. Has response: {hasattr(event, 'response')}, Has output: {hasattr(event.response, 'output') if hasattr(event, 'response') else False}")
+            if hasattr(event, 'response') and hasattr(event.response, 'output'):
+                try:
+                    logger.info("Extracting container file annotations from response")
+                    container_annotations = self.responses_service.extract_container_file_annotations(event.response)
+                    logger.info(f"Found {len(container_annotations)} container file annotation(s)")
+
+                    if container_annotations:
+                        from app.services.openai.container_file_service import container_file_service
+                        from app.services.content_service import content_service
+                        from app.services.folder_service import folder_service
+
+                        # Get/create AI Artifacts folder (lazy creation)
+                        ai_folder = await folder_service.get_or_create_ai_artifacts_folder(db, user_id)
+
+                        for annotation in container_annotations:
+                            try:
+                                # Download file from OpenAI
+                                logger.info(
+                                    f"Downloading generated file: {annotation['filename']} "
+                                    f"(container: {annotation['container_id']}, file: {annotation['file_id']})"
+                                )
+                                file_bytes, filename = await container_file_service.download_container_file(
+                                    annotation["container_id"],
+                                    annotation["file_id"]
+                                )
+
+                                # Use annotation filename if header parsing gave us generic name
+                                if filename == annotation["file_id"] and annotation.get("filename"):
+                                    filename = annotation["filename"]
+                                    logger.debug(f"Using annotation filename: {filename}")
+
+                                # Save to knowledge base
+                                knowledge_item = await content_service.create_knowledge_item_from_bytes(
+                                    db=db,
+                                    user_id=user_id,
+                                    folder_id=ai_folder.id,
+                                    filename=filename,
+                                    file_bytes=file_bytes,
+                                    metadata={
+                                        "container_id": annotation["container_id"],
+                                        "file_id": annotation["file_id"],
+                                        "original_filename": filename,
+                                        "generated_by": "code_interpreter",
+                                        "source_type": "code_interpreter"
+                                    }
+                                )
+
+                                # Add to background processing queue
+                                from app.services.processing_service import processing_service
+                                # Note: process_knowledge_item is typically called via BackgroundTasks
+                                # For now, we'll skip background processing to keep the flow simple
+                                # The file is already uploaded and the knowledge item is created
+
+                                # Return relative URL for API - frontend will construct full URL
+                                download_url = f"/api/v1/files/download/{knowledge_item.id}"
+
+                                generated_files.append({
+                                    "id": str(knowledge_item.id),
+                                    "filename": filename,
+                                    "container_id": annotation["container_id"],
+                                    "file_id": annotation["file_id"],
+                                    "download_url": download_url,  # Relative for frontend to construct
+                                    "created_at": knowledge_item.created_at.isoformat(),
+                                    "content_type": knowledge_item.content_type
+                                })
+
+                                # Remove sandbox link from message content (won't work with auth anyway)
+                                # OpenAI returns links like: [filename](sandbox:/mnt/data/filename)
+                                # We'll show downloadable files in the "Generated Files" section instead
+                                sandbox_link_pattern = f"[{filename}](sandbox:/mnt/data/{filename})"
+                                if sandbox_link_pattern in assistant_content:
+                                    # Replace with just the filename (no link)
+                                    assistant_content = assistant_content.replace(
+                                        sandbox_link_pattern,
+                                        f"**{filename}**"
+                                    )
+                                    logger.debug(f"Removed sandbox link for {filename}, file available in Generated Files section")
+
+                                logger.info(
+                                    f"Saved generated file '{filename}' to AI Artifacts folder "
+                                    f"(knowledge_item_id: {knowledge_item.id})"
+                                )
+
+                            except Exception as e:
+                                logger.error(
+                                    f"Failed to save generated file {annotation.get('filename', 'unknown')}: {e}",
+                                    exc_info=True
+                                )
+                                # Continue with other files even if one fails
+
+                except Exception as e:
+                    logger.error(f"Failed to process generated files: {e}", exc_info=True)
+                    # Don't fail the whole response if file processing fails
+
+            # Store assistant message WITH sources and generated files in metadata
+            message_metadata = {
+                "citations": citations,
+                "sources": sources  # Store sources so they're available when reloading messages
+            }
+
+            # Add generated_files if any were created
+            if generated_files:
+                message_metadata["generated_files"] = generated_files
+
             assistant_message = await self._store_message(
                 db, user_id, conversation.id, MessageRole.ASSISTANT, assistant_content,
-                metadata={
-                    "citations": citations,
-                    "sources": sources  # Store sources so they're available when reloading messages
-                }
+                metadata=message_metadata
             )
 
             # Update conversation with last_response_id for continuity
@@ -632,15 +735,21 @@ class ChatService:
                 db, conversation, chat_request.message
             )
 
-            # Send completion event
+            # Send completion event with sources and generated files
+            completion_data = {
+                "conversation_id": str(conversation.id),
+                "message_id": str(assistant_message.id),
+                "content": assistant_content,
+                "sources": sources
+            }
+
+            # Include generated_files in completion event if any were created
+            if generated_files:
+                completion_data["generated_files"] = generated_files
+
             yield {
                 "type": "response.completed",
-                "data": {
-                    "conversation_id": str(conversation.id),
-                    "message_id": str(assistant_message.id),
-                    "content": assistant_content,
-                    "sources": sources
-                },
+                "data": completion_data,
                 "sequence_number": sequence
             }
 
@@ -945,7 +1054,21 @@ class ChatService:
             .limit(limit)
         )
         result = await db.execute(stmt)
-        return result.scalars().all()
+        messages = result.scalars().all()
+
+        # Log metadata contents for debugging
+        logger.info(f"[GET_MESSAGES] Retrieved {len(messages)} messages for conversation {conversation_id}")
+        for msg in messages:
+            if msg.message_metadata:
+                logger.info(f"[GET_MESSAGES] Message {msg.id} has metadata keys: {list(msg.message_metadata.keys())}")
+                if 'generated_files' in msg.message_metadata:
+                    logger.info(f"[GET_MESSAGES] - Generated files: {len(msg.message_metadata['generated_files'])} files")
+                if 'sources' in msg.message_metadata:
+                    logger.info(f"[GET_MESSAGES] - Sources: {len(msg.message_metadata['sources'])} sources")
+            else:
+                logger.info(f"[GET_MESSAGES] Message {msg.id} has no metadata")
+
+        return messages
 
     async def delete_conversation(
         self,
@@ -1049,6 +1172,20 @@ class ChatService:
         metadata: Optional[Dict[str, Any]] = None
     ) -> Message:
         """Store a message in the conversation."""
+        # Log what metadata we're storing
+        if metadata:
+            logger.info(f"[STORE_MESSAGE] Storing {role.value} message with metadata keys: {list(metadata.keys())}")
+            if 'generated_files' in metadata:
+                logger.info(f"[STORE_MESSAGE] Generated files in metadata: {len(metadata['generated_files'])} files")
+                for gf in metadata['generated_files']:
+                    logger.info(f"[STORE_MESSAGE] - File: {gf.get('filename')} (id: {gf.get('id')})")
+            if 'sources' in metadata:
+                logger.info(f"[STORE_MESSAGE] Sources in metadata: {len(metadata['sources'])} sources")
+                for src in metadata['sources'][:3]:  # Log first 3 sources
+                    logger.info(f"[STORE_MESSAGE] - Source: {src.get('title')} (similarity: {src.get('similarity')})")
+        else:
+            logger.info(f"[STORE_MESSAGE] Storing {role.value} message with no metadata")
+
         message = Message(
             conversation_id=conversation_id,
             user_id=user_id,
@@ -1059,6 +1196,11 @@ class ChatService:
         db.add(message)
         await db.commit()
         await db.refresh(message)
+
+        # Log what was actually saved after refresh
+        if message.message_metadata:
+            logger.info(f"[STORE_MESSAGE] After save, message {message.id} has metadata keys: {list(message.message_metadata.keys())}")
+
         return message
 
     async def _maybe_update_conversation_title(

@@ -20,6 +20,8 @@ from app.models.schemas import (
 
 router = APIRouter()
 
+logger = logging.getLogger(__name__)
+
 
 @router.post("", response_model=ChatResponse)
 async def chat(
@@ -119,7 +121,28 @@ async def get_conversation_messages(
             conversation_id=conversation_id,
             limit=limit
         )
-        return messages
+
+        # Log the raw messages before schema conversion
+        logger.info(f"[API_MESSAGES] Raw messages from service: {len(messages)} messages")
+        for msg in messages:
+            logger.info(f"[API_MESSAGES] Message {msg.id} metadata type: {type(msg.message_metadata)}, content: {msg.message_metadata}")
+
+        # Convert database Message objects to MessageSchema
+        schema_messages = []
+        for msg in messages:
+            schema_msg = Message(
+                id=msg.id,
+                conversation_id=msg.conversation_id,
+                user_id=msg.user_id,
+                role=msg.role,
+                content=msg.content,
+                created_at=msg.created_at,
+                metadata=msg.message_metadata  # This should now be a dict due to our validator
+            )
+            schema_messages.append(schema_msg)
+            logger.info(f"[API_MESSAGES] Schema message {msg.id} metadata: {schema_msg.metadata}")
+
+        return schema_messages
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:

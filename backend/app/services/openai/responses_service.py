@@ -348,3 +348,67 @@ class ResponsesService(OpenAIBaseService):
         except Exception as e:
             logger.warning(f"Failed to extract citations from response: {e}")
             return []  # Return empty list rather than raising
+
+    def extract_container_file_annotations(self, response: Response) -> List[Dict[str, Any]]:
+        """Extract container file citations from a Response object.
+
+        When code interpreter generates files, they appear as
+        AnnotationContainerFileCitation objects in the response annotations.
+
+        Args:
+            response: The Response object
+
+        Returns:
+            List of dicts with container_id, file_id, filename, start_index, end_index
+
+        Example return:
+            [
+                {
+                    'container_id': 'cntr_68f9ef04616c819186cb73b14a1654a605309c2b4ecfe80b',
+                    'file_id': 'cfile_68f9ef14e7ec81919d9c58aaa552c80f',
+                    'filename': 'hello_world_100.csv',
+                    'start_index': 68,
+                    'end_index': 105
+                }
+            ]
+        """
+        try:
+            annotations = []
+
+            # Get the message output
+            message_outputs = [
+                item for item in response.output
+                if isinstance(item, ResponseOutputMessage)
+            ]
+
+            if not message_outputs:
+                return annotations
+
+            # Extract container file annotations
+            for content_item in message_outputs[0].content:
+                if hasattr(content_item, 'annotations') and content_item.annotations:
+                    for annotation in content_item.annotations:
+                        # Check for container_file_citation type
+                        if annotation.type == 'container_file_citation':
+                            annotation_data = {
+                                'container_id': annotation.container_id,
+                                'file_id': annotation.file_id,
+                                'filename': annotation.filename,
+                                'start_index': annotation.start_index,
+                                'end_index': annotation.end_index,
+                                'type': annotation.type
+                            }
+                            annotations.append(annotation_data)
+                            logger.debug(
+                                f"Extracted container file annotation: "
+                                f"{annotation.filename} (file_id: {annotation.file_id})"
+                            )
+
+            if annotations:
+                logger.info(f"Found {len(annotations)} generated file(s) in response")
+
+            return annotations
+
+        except Exception as e:
+            logger.warning(f"Failed to extract container file annotations: {e}", exc_info=True)
+            return []  # Return empty list rather than raising
