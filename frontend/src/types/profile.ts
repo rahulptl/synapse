@@ -12,10 +12,11 @@ export interface UserProfile {
   use_cases?: string[];
   preferred_response_length?: 'brief' | 'medium' | 'detailed';
   topics_of_interest?: string[];
+  avatar_url?: string;
   profile_completed: boolean;
   profile_completed_at?: string;
   created_at: string;
-  updated_at: string;
+  updated_at: string;  // Used for avatar cache busting
 }
 
 export interface ProfileUpdateData {
@@ -39,5 +40,6 @@ export interface AuthData {
     id: string;
     email: string;
     full_name?: string;
+    avatar_url?: string;
   };
 }

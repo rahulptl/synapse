@@ -457,6 +457,7 @@ class ChatService:
             assistant_content = ""
             citations = []
             file_search_items = {}  # Track file search items by item_id
+            web_search_items = {}  # Track web search items by item_id
 
             # Process stream events
             async for event in stream:
@@ -470,6 +471,12 @@ class ChatService:
                             'queries': getattr(event.item, 'queries', []),
                             'status': getattr(event.item, 'status', 'unknown')
                         }
+                    # Track web search tool calls when they are added
+                    elif hasattr(event, 'item') and hasattr(event.item, 'type') and event.item.type == 'web_search_call':
+                        web_search_items[event.item.id] = {
+                            'query': None,  # Query not available yet
+                            'status': getattr(event.item, 'status', 'unknown')
+                        }
 
                 elif event_type == "response.output_item.done":
                     # Update file search item when done (might have queries)
@@ -477,6 +484,15 @@ class ChatService:
                         if event.item.id in file_search_items:
                             file_search_items[event.item.id]['queries'] = getattr(event.item, 'queries', [])
                             file_search_items[event.item.id]['status'] = getattr(event.item, 'status', 'completed')
+                    # Update web search item when done (query is available here!)
+                    elif hasattr(event, 'item') and hasattr(event.item, 'type') and event.item.type == 'web_search_call':
+                        if event.item.id in web_search_items:
+                            # Extract query from action.query (see OpenAI docs)
+                            query = None
+                            if hasattr(event.item, 'action') and hasattr(event.item.action, 'query'):
+                                query = event.item.action.query
+                            web_search_items[event.item.id]['query'] = query
+                            web_search_items[event.item.id]['status'] = getattr(event.item, 'status', 'completed')
 
                 elif event_type == "response.output_text.delta":
                     # Text chunk
@@ -494,16 +510,12 @@ class ChatService:
                     sequence += 1
 
                 elif event_type == "response.web_search_call.in_progress":
-                    # Extract search query if available
-                    search_query = None
-                    if hasattr(event, 'item') and hasattr(event.item, 'search_query'):
-                        search_query = event.item.search_query
-                    elif hasattr(event, 'search_query'):
-                        search_query = event.search_query
-
-                    # Provide fallback if query not available yet
-                    if not search_query:
-                        search_query = "relevant information"
+                    # Try to get query from tracked web search items
+                    search_query = "relevant information"  # Default fallback
+                    if hasattr(event, 'item_id') and event.item_id in web_search_items:
+                        tracked_query = web_search_items[event.item_id].get('query')
+                        if tracked_query:
+                            search_query = tracked_query
 
                     yield {
                         "type": "tool.web_search.start",
@@ -516,16 +528,12 @@ class ChatService:
                     sequence += 1
 
                 elif event_type == "response.web_search_call.completed":
-                    # Extract search query if available
-                    search_query = None
-                    if hasattr(event, 'item') and hasattr(event.item, 'search_query'):
-                        search_query = event.item.search_query
-                    elif hasattr(event, 'search_query'):
-                        search_query = event.search_query
-
-                    # Provide fallback if query not available
-                    if not search_query:
-                        search_query = "relevant information"
+                    # Get query from tracked web search items (should be available now from output_item.done)
+                    search_query = "relevant information"  # Default fallback
+                    if hasattr(event, 'item_id') and event.item_id in web_search_items:
+                        tracked_query = web_search_items[event.item_id].get('query')
+                        if tracked_query:
+                            search_query = tracked_query
 
                     yield {
                         "type": "tool.web_search.complete",

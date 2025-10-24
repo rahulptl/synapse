@@ -12,10 +12,11 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
-import { Send, MessageSquare, Plus, Folder, Bot, Search, Brain, Sparkles, ExternalLink, AlertTriangle, Trash2, Menu, FileText, Bookmark, Upload, ChevronRight, Download } from 'lucide-react';
+import { Send, Plus, Folder, Bot, Search, Brain, Sparkles, ExternalLink, AlertTriangle, Trash2, Menu, FileText, Bookmark, Upload, ChevronRight, Download } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { apiClient } from '@/services/apiClient';
@@ -23,6 +24,7 @@ import { FolderSelectorDialog } from '@/components/chat/FolderSelectorDialog';
 import { StatusTilesContainer } from '@/components/chat/StatusTilesContainer';
 import { StatusType } from '@/components/chat/StatusTile';
 import { ModernConversationList } from '@/components/chat/ModernConversationList';
+import { getInitials, getAvatarUrl } from '@/utils/avatarHelpers';
 
 // Lazy load MarkdownMessage to prevent highlight.js initialization issues
 const MarkdownMessage = lazy(() => import('@/components/chat/MarkdownMessage').then(module => ({ default: module.MarkdownMessage })));
@@ -166,7 +168,6 @@ export default function ChatPage() {
   const [selectedSource, setSelectedSource] = useState<any | null>(null);
   const [showSourceDialog, setShowSourceDialog] = useState(false);
   const [conversationToDelete, setConversationToDelete] = useState<string | null>(null);
-  const [expandedSources, setExpandedSources] = useState<Record<string, boolean>>({});
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [messageToSave, setMessageToSave] = useState<Message | null>(null);
   const [showFolderSelectForUpload, setShowFolderSelectForUpload] = useState(false);
@@ -1585,13 +1586,6 @@ export default function ChatPage() {
     }
   };
 
-  // Function to toggle expanded sources for a message
-  const toggleSourcesExpanded = (messageId: string) => {
-    setExpandedSources(prev => ({
-      ...prev,
-      [messageId]: !prev[messageId]
-    }));
-  };
 
   // Function to download source files
   const handleDownloadSourceFile = async (source: any) => {
@@ -1659,6 +1653,31 @@ export default function ChatPage() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-muted-foreground">Loading...</div>
+
+        {/* Debug button for avatar troubleshooting */}
+        {showDebugInfo && (
+          <div className="fixed top-4 right-4 z-50 bg-black/80 text-white p-4 rounded-lg shadow-lg max-w-sm">
+            <div className="text-sm font-mono mb-2">
+              <div className="font-bold text-yellow-300">🔍 Avatar Debug</div>
+              <div className="text-xs text-gray-300">
+                <div>User: {user?.full_name || 'Unknown'}</div>
+                <div>Avatar: {user?.avatar_url || 'None'}</div>
+              </div>
+            </div>
+            <button
+              onClick={handleDebugInfo}
+              className="mt-3 px-3 py-2 bg-blue-500 text-white rounded text-sm hover:bg-blue-600"
+            >
+              Show User Data
+            </button>
+            <button
+              onClick={() => setShowDebugInfo(false)}
+              className="mt-1 px-3 py-1 bg-gray-600 text-white rounded text-sm hover:bg-gray-700"
+            >
+              Hide
+            </button>
+          </div>
+        )}
       </div>
     );
   }
@@ -1777,16 +1796,26 @@ export default function ChatPage() {
                   </div>
                 )}
 
-                {messages.map((message) => (
+                {messages.map((message) => {
+                  // Get cache-busted avatar URL
+                  const avatarUrl = getAvatarUrl(user?.avatar_url, user?.profile_updated_at);
+
+                  return (
                   <div key={message.id} className="group message-appear">
                     {message.role === 'user' ? (
                       // User message layout - minimal design
                       <div className="flex justify-end group">
-                        <div className="flex flex-row-reverse items-start space-x-reverse space-x-4 max-w-[80%]">
+                        <div className="flex flex-row-reverse items-start gap-4 max-w-[80%]">
                           {/* Avatar */}
-                          <div className="flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center bg-sidebar-primary text-white">
-                            <span className="text-xs font-semibold">You</span>
-                          </div>
+                          <Avatar className="flex-shrink-0">
+                            <AvatarImage
+                              src={avatarUrl}
+                              alt={user?.full_name || 'You'}
+                            />
+                            <AvatarFallback className="bg-sidebar-primary text-white text-xs font-semibold">
+                              {user?.full_name ? getInitials(user.full_name) : 'You'}
+                            </AvatarFallback>
+                          </Avatar>
 
                           <div className="space-y-2 flex-1 min-w-0">
                             <div className="relative bg-sidebar-primary text-white rounded-2xl rounded-tr-md shadow-md px-5 py-3 transition-opacity duration-200 hover:opacity-90">
@@ -1871,50 +1900,26 @@ export default function ChatPage() {
                               </div>
                                                           </div>
 
-                            {/* Sources for AI messages - Minimal design */}
+                            {/* Sources for AI messages - Compact Tile Design */}
                             {message.metadata?.sources && message.metadata.sources.length > 0 && (
                               <div className="bg-sidebar-accent/30 border border-sidebar-border rounded-xl px-4 py-3">
                                 <div className="flex items-center space-x-2 mb-3">
                                   <Search className="h-4 w-4 text-sidebar-muted" />
                                   <h4 className="text-sm font-semibold text-sidebar-foreground">Knowledge Sources ({message.metadata.sources.length})</h4>
                                 </div>
-                                <div className="space-y-2 max-h-64 overflow-y-auto">
-                                  {(expandedSources[message.id] ? message.metadata.sources : message.metadata.sources.slice(0, 3)).map((source, idx) => (
-                                    <div
+                                <div className="flex flex-wrap gap-2">
+                                  {message.metadata.sources.map((source, idx) => (
+                                    <button
                                       key={`${source.id}-${idx}`}
-                                      className="group bg-sidebar-accent/50 border border-sidebar-border rounded-lg p-3 hover:bg-sidebar-accent transition-colors duration-200 cursor-pointer"
                                       onClick={() => viewSource(source)}
+                                      className="group inline-flex items-center gap-1.5 px-3 py-1.5 bg-sidebar-accent/50 hover:bg-sidebar-accent border border-sidebar-border rounded-full text-xs font-medium text-sidebar-foreground transition-colors duration-200 cursor-pointer"
+                                      title={`${source.title} - ${Math.round(source.similarity * 100)}% match`}
                                     >
-                                      <div className="flex items-start justify-between gap-3">
-                                        <div className="flex-1 min-w-0 space-y-1">
-                                          <div className="flex items-center space-x-2">
-                                            <span className="text-sm font-medium text-sidebar-foreground truncate">{source.title}</span>
-                                            <ExternalLink className="h-3.5 w-3.5 text-sidebar-muted flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
-                                          </div>
-                                          {source.source && (
-                                            <div className="flex items-center space-x-1.5 text-xs text-sidebar-muted">
-                                              <Folder className="h-3 w-3" />
-                                              <span>{source.source}</span>
-                                            </div>
-                                          )}
-                                        </div>
-                                        <Badge variant="outline" className="text-xs flex-shrink-0">
-                                          {Math.round(source.similarity * 100)}%
-                                        </Badge>
-                                      </div>
-                                    </div>
+                                      <FileText className="h-3 w-3 text-sidebar-muted flex-shrink-0" />
+                                      <span className="truncate max-w-[200px]">{source.title}</span>
+                                      <ExternalLink className="h-3 w-3 text-sidebar-muted flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                    </button>
                                   ))}
-                                  {message.metadata.sources.length > 3 && (
-                                    <div
-                                      className="text-xs text-sidebar-muted text-center py-1.5 bg-sidebar-accent/30 rounded border border-sidebar-border cursor-pointer hover:bg-sidebar-accent/50 transition-colors duration-200"
-                                      onClick={() => toggleSourcesExpanded(message.id)}
-                                    >
-                                      {expandedSources[message.id]
-                                        ? `Show less (-${message.metadata.sources.length - 3} sources)`
-                                        : `+${message.metadata.sources.length - 3} more sources`
-                                      }
-                                    </div>
-                                  )}
                                 </div>
                               </div>
                             )}
@@ -1952,7 +1957,8 @@ export default function ChatPage() {
                       </div>
                     )}
                   </div>
-                ))}
+                  );
+                })}
 
                 {/* Streaming message indicator */}
                 {isStreaming && streamingConversationId === selectedConversation && (
@@ -2007,162 +2013,6 @@ export default function ChatPage() {
                 <div ref={messagesEndRef} />
               </div>
             </ScrollArea>
-
-            {/* Input Area */}
-            <div className="border-t border-sidebar-border bg-sidebar/80 backdrop-blur-xl p-4 md:p-6">
-              <div className="max-w-4xl mx-auto space-y-3">
-                {/* Unified Autocomplete Dropdown - Above input */}
-                {showAutocomplete && autocompleteType === 'unified' && (
-                  <div className="bg-sidebar-accent/95 backdrop-blur-xl border border-sidebar-border rounded-xl shadow-lg max-h-64 overflow-y-auto">
-                    {unifiedSuggestions.length > 0 ? (
-                      unifiedSuggestions.map((suggestion, index) => (
-                        <div
-                          key={`${suggestion.type}-${suggestion.id}`}
-                          data-suggestion-index={index}
-                          className={`px-4 py-2.5 cursor-pointer flex items-center transition-colors ${
-                            index === selectedAutocompleteIndex
-                              ? 'bg-sidebar-primary text-white'
-                              : 'hover:bg-sidebar-accent text-sidebar-foreground'
-                          }`}
-                          style={{ paddingLeft: `${12 + suggestion.depth * 20}px` }}
-                          onClick={() => selectUnifiedSuggestion(suggestion)}
-                        >
-                          {suggestion.type === 'folder' ? (
-                            <>
-                              <div className="flex items-center space-x-3 min-w-0 flex-1">
-                                <Folder className={`h-4 w-4 flex-shrink-0 ${suggestion.has_children ? 'text-blue-400' : 'text-blue-300'}`} />
-                                <div className="min-w-0 flex-1">
-                                  <div className="text-sm font-medium">{suggestion.name}</div>
-                                  {suggestion.path && (
-                                    <div className="text-xs text-gray-400 truncate">{suggestion.path}</div>
-                                  )}
-                                </div>
-                                {suggestion.has_children && (
-                                  <div className="text-xs text-gray-400">
-                                    <span className="inline-block w-4 h-4 text-center">▶</span>
-                                  </div>
-                                )}
-                              </div>
-                            </>
-                          ) : (
-                            <>
-                              <div className="flex items-center space-x-3 min-w-0 flex-1">
-                                <FileText className="h-4 w-4 text-purple-400 flex-shrink-0" />
-                                <div className="min-w-0 flex-1">
-                                  <div className="text-sm font-medium truncate">{suggestion.name}</div>
-                                  <div className="text-xs text-gray-400 truncate">
-                                    in {suggestion.folder_name}
-                                  </div>
-                                </div>
-                                {suggestion.content_type && (
-                                  <Badge variant="outline" className="text-xs flex-shrink-0">
-                                    {suggestion.content_type.split('/')[0] || 'file'}
-                                  </Badge>
-                                )}
-                              </div>
-                            </>
-                          )}
-                        </div>
-                      ))
-                    ) : (
-                      <div className="px-4 py-3 text-sm text-sidebar-muted">
-                        {autocompleteQuery
-                          ? `No items found matching "${autocompleteQuery}"`
-                          : "No folders or files available"
-                        }
-                      </div>
-                    )}
-
-                    {/* Instructions */}
-                    <div className="px-4 py-2 text-xs text-sidebar-muted border-t border-sidebar-border bg-sidebar-accent/50 rounded-b-xl">
-                      ↑↓ Navigate • Tab/Enter Select • Esc Close
-                    </div>
-                  </div>
-                )}
-
-                {/* @ References Preview */}
-                {selectedContextItems.length > 0 && (
-                  <div className="p-3 bg-sidebar-accent/50 border border-sidebar-border rounded-xl">
-                    <div className="flex items-center space-x-2 text-sm text-sidebar-foreground mb-2">
-                      <Search className="h-3.5 w-3.5 text-sidebar-muted" />
-                      <span className="font-medium">Context ({selectedContextItems.length}):</span>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {selectedContextItems.map((item, index) => (
-                        <Badge
-                          key={index}
-                          variant="outline"
-                          className="text-xs flex items-center gap-1.5"
-                        >
-                          {item.type === 'folder' ? (
-                            <Folder className="h-3 w-3" />
-                          ) : (
-                            <FileText className="h-3 w-3" />
-                          )}
-                          @{item.name}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Input Bar */}
-                <div className="relative flex items-end space-x-3">
-                  {/* Upload Button */}
-                  <Button
-                    onClick={handleUploadClick}
-                    variant="ghost"
-                    className="h-12 w-12 rounded-lg bg-sidebar-accent hover:bg-sidebar-accent/80 text-sidebar-icon hover:text-sidebar-foreground transition-colors"
-                    title="Upload files to Memory"
-                  >
-                    <Upload className="h-4 w-4" />
-                  </Button>
-
-                  <div className="relative flex-1">
-                    <Input
-                      ref={inputRef}
-                      value={inputMessage}
-                      onChange={handleInputChange}
-                      onKeyDown={handleKeyPress}
-                      placeholder={placeholder}
-                      className="chat-input w-full h-12 px-4 py-3 text-sm bg-sidebar-accent/50 border border-sidebar-border rounded-lg shadow-sm hover:bg-sidebar-accent/60 focus:bg-sidebar-accent/60 transition-colors focus:border-sidebar-primary focus:outline-none focus:ring-0 placeholder:text-sidebar-muted text-sidebar-foreground"
-                      disabled={isLoading}
-                    />
-                  </div>
-
-                  <Button
-                    onClick={sendMessage}
-                    disabled={!inputMessage.trim() || isLoading}
-                    className={`h-12 w-12 rounded-lg transition-colors ${
-                      inputMessage.trim() && !isLoading
-                        ? 'bg-sidebar-primary hover:bg-sidebar-primary/90 text-white'
-                        : 'bg-sidebar-accent text-sidebar-muted hover:bg-sidebar-accent/80'
-                    }`}
-                  >
-                    {isLoading ? (
-                      <div className="animate-spin">
-                        <Brain className="h-4 w-4" />
-                      </div>
-                    ) : (
-                      <Send className="h-4 w-4" />
-                    )}
-                  </Button>
-                </div>
-
-                {/* Filter Hint */}
-                <div className="flex items-center justify-center space-x-1.5 text-xs text-sidebar-muted">
-                  <span>Use</span>
-                  <code className="bg-sidebar-accent text-sidebar-foreground px-1.5 py-0.5 rounded font-mono">@</code>
-                  <span>to reference files and folders</span>
-                </div>
-
-                {/* AI Disclaimer */}
-                <div className="flex items-center justify-center space-x-2 text-xs text-sidebar-muted bg-sidebar-accent/30 border border-sidebar-border rounded-lg px-3 py-2">
-                  <AlertTriangle className="h-3.5 w-3.5" />
-                  <span>AI responses may contain inaccuracies. Verify important information.</span>
-                </div>
-              </div>
-            </div>
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center">
@@ -2178,6 +2028,7 @@ export default function ChatPage() {
                   Chat with your AI assistant about your knowledge base. Use <code className="bg-sidebar-accent text-sidebar-foreground px-1.5 py-0.5 rounded font-mono text-xs">@</code> to reference files and folders.
                 </p>
               </div>
+
               <div className="flex flex-wrap justify-center gap-2">
                 <div className="flex items-center space-x-1.5 bg-sidebar-accent/50 border border-sidebar-border px-3 py-1.5 rounded-lg">
                   <Sparkles className="h-3.5 w-3.5 text-sidebar-icon" />
@@ -2195,6 +2046,162 @@ export default function ChatPage() {
             </div>
           </div>
         )}
+
+        {/* Input Area */}
+        <div className="border-t border-sidebar-border bg-sidebar/80 backdrop-blur-xl p-4 md:p-6">
+          <div className="max-w-4xl mx-auto space-y-3">
+            {/* Unified Autocomplete Dropdown - Above input */}
+            {showAutocomplete && autocompleteType === 'unified' && (
+              <div className="bg-sidebar-accent/95 backdrop-blur-xl border border-sidebar-border rounded-xl shadow-lg max-h-64 overflow-y-auto">
+                {unifiedSuggestions.length > 0 ? (
+                  unifiedSuggestions.map((suggestion, index) => (
+                    <div
+                      key={`${suggestion.type}-${suggestion.id}`}
+                      data-suggestion-index={index}
+                      className={`px-4 py-2.5 cursor-pointer flex items-center transition-colors ${
+                        index === selectedAutocompleteIndex
+                          ? 'bg-sidebar-primary text-white'
+                          : 'hover:bg-sidebar-accent text-sidebar-foreground'
+                      }`}
+                      style={{ paddingLeft: `${12 + suggestion.depth * 20}px` }}
+                      onClick={() => selectUnifiedSuggestion(suggestion)}
+                    >
+                      {suggestion.type === 'folder' ? (
+                        <>
+                          <div className="flex items-center space-x-3 min-w-0 flex-1">
+                            <Folder className={`h-4 w-4 flex-shrink-0 ${suggestion.has_children ? 'text-blue-400' : 'text-blue-300'}`} />
+                            <div className="min-w-0 flex-1">
+                              <div className="text-sm font-medium">{suggestion.name}</div>
+                              {suggestion.path && (
+                                <div className="text-xs text-gray-400 truncate">{suggestion.path}</div>
+                              )}
+                            </div>
+                            {suggestion.has_children && (
+                              <div className="text-xs text-gray-400">
+                                <span className="inline-block w-4 h-4 text-center">▶</span>
+                              </div>
+                            )}
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="flex items-center space-x-3 min-w-0 flex-1">
+                            <FileText className="h-4 w-4 text-purple-400 flex-shrink-0" />
+                            <div className="min-w-0 flex-1">
+                              <div className="text-sm font-medium truncate">{suggestion.name}</div>
+                              <div className="text-xs text-gray-400 truncate">
+                                in {suggestion.folder_name}
+                              </div>
+                            </div>
+                            {suggestion.content_type && (
+                              <Badge variant="outline" className="text-xs flex-shrink-0">
+                                {suggestion.content_type.split('/')[0] || 'file'}
+                              </Badge>
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ))
+                ) : (
+                  <div className="px-4 py-3 text-sm text-sidebar-muted">
+                    {autocompleteQuery
+                      ? `No items found matching "${autocompleteQuery}"`
+                      : "No folders or files available"
+                    }
+                  </div>
+                )}
+
+                {/* Instructions */}
+                <div className="px-4 py-2 text-xs text-sidebar-muted border-t border-sidebar-border bg-sidebar-accent/50 rounded-b-xl">
+                  ↑↓ Navigate • Tab/Enter Select • Esc Close
+                </div>
+              </div>
+            )}
+
+            {/* @ References Preview */}
+            {selectedContextItems.length > 0 && (
+              <div className="p-3 bg-sidebar-accent/50 border border-sidebar-border rounded-xl">
+                <div className="flex items-center space-x-2 text-sm text-sidebar-foreground mb-2">
+                  <Search className="h-3.5 w-3.5 text-sidebar-muted" />
+                  <span className="font-medium">Context ({selectedContextItems.length}):</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {selectedContextItems.map((item, index) => (
+                    <Badge
+                      key={index}
+                      variant="outline"
+                      className="text-xs flex items-center gap-1.5"
+                    >
+                      {item.type === 'folder' ? (
+                        <Folder className="h-3 w-3" />
+                      ) : (
+                        <FileText className="h-3 w-3" />
+                      )}
+                      @{item.name}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Input Bar */}
+            <div className="relative flex items-end space-x-3">
+              {/* Upload Button */}
+              <Button
+                onClick={handleUploadClick}
+                variant="ghost"
+                className="h-12 w-12 rounded-lg bg-sidebar-accent hover:bg-sidebar-accent/80 text-sidebar-icon hover:text-sidebar-foreground transition-colors"
+                title="Upload files to Memory"
+              >
+                <Upload className="h-4 w-4" />
+              </Button>
+
+              <div className="relative flex-1">
+                <Input
+                  ref={inputRef}
+                  value={inputMessage}
+                  onChange={handleInputChange}
+                  onKeyDown={handleKeyPress}
+                  placeholder={placeholder}
+                  className="chat-input w-full h-12 px-4 py-3 bg-sidebar-accent/50 border border-sidebar-border rounded-lg shadow-sm hover:bg-sidebar-accent/60 focus:bg-sidebar-accent/60 transition-colors focus:border-sidebar-primary focus:outline-none focus:ring-0 placeholder:text-sidebar-muted text-sidebar-foreground"
+                  disabled={isLoading}
+                />
+              </div>
+
+              <Button
+                onClick={sendMessage}
+                disabled={!inputMessage.trim() || isLoading}
+                className={`h-12 w-12 rounded-lg transition-colors ${
+                  inputMessage.trim() && !isLoading
+                    ? 'bg-sidebar-primary hover:bg-sidebar-primary/90 text-white'
+                    : 'bg-sidebar-accent text-sidebar-muted hover:bg-sidebar-accent/80'
+                }`}
+              >
+                {isLoading ? (
+                  <div className="animate-spin">
+                    <Brain className="h-4 w-4" />
+                  </div>
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
+
+            {/* Filter Hint */}
+            <div className="flex items-center justify-center space-x-1.5 text-xs text-sidebar-muted">
+              <span>Use</span>
+              <code className="bg-sidebar-accent text-sidebar-foreground px-1.5 py-0.5 rounded font-mono">@</code>
+              <span>to reference files and folders</span>
+            </div>
+
+            {/* AI Disclaimer */}
+            <div className="flex items-center justify-center space-x-2 text-xs text-sidebar-muted bg-sidebar-accent/30 border border-sidebar-border rounded-lg px-3 py-2">
+              <AlertTriangle className="h-3.5 w-3.5" />
+              <span>AI responses may contain inaccuracies. Verify important information.</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Source Content Dialog */}

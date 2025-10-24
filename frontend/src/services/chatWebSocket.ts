@@ -13,8 +13,8 @@ export type ChatEvent =
   | { type: 'conversation.created'; data: { conversation_id: string; title: string }; sequence_number: number }
   | { type: 'message.created'; data: { message_id: string; role: string; content: string }; sequence_number: number }
   | { type: 'text.delta'; data: { delta: string; conversation_id: string }; sequence_number: number }
-  | { type: 'tool.web_search.start'; data: { status: string }; sequence_number: number }
-  | { type: 'tool.web_search.complete'; data: { status: string }; sequence_number: number }
+  | { type: 'tool.web_search.start'; data: { status: string; query?: string }; sequence_number: number }
+  | { type: 'tool.web_search.complete'; data: { status: string; query?: string }; sequence_number: number }
   | { type: 'tool.file_search.start'; data: { status: string; queries: string[] }; sequence_number: number }
   | { type: 'tool.file_search.complete'; data: { status: string }; sequence_number: number }
   | { type: 'tool.code_interpreter.start'; data: { status: string }; sequence_number: number }
@@ -23,6 +23,15 @@ export type ChatEvent =
   | { type: 'response.completed'; data: { conversation_id: string; message_id: string; content: string; sources?: any[] }; sequence_number: number }
   | { type: 'error'; data?: { message: string }; message?: string; sequence_number?: number }
   | { type: 'pong' };
+
+export type UpdateConversationEvent = {
+  type: 'update_conversation';
+  data: {
+    conversation_id: string;
+    title?: string;
+    updated_at?: string;
+  };
+}
 
 type EventHandler = (event: ChatEvent) => void;
 

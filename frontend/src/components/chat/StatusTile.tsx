@@ -93,7 +93,7 @@ export function StatusTile({ status, message, details, className = '' }: StatusT
           ${config.bgColor}
           ${config.borderColor}
           border backdrop-blur-xl rounded-2xl px-5 py-4
-          shadow-xl max-w-md
+          shadow-xl max-w-lg
           ${className}
         `}
       >
@@ -114,7 +114,7 @@ export function StatusTile({ status, message, details, className = '' }: StatusT
               {displayMessage}
             </div>
             {details && (
-              <div className="text-xs text-gray-400 mt-1 truncate">
+              <div className="text-xs text-gray-400 mt-1 line-clamp-2 break-words">
                 {details}
               </div>
             )}

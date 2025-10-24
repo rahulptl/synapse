@@ -594,6 +594,54 @@ class ApiClient {
     }
   }
 
+  async uploadAvatar(file: File, auth: { userId: string; accessToken: string }) {
+    console.log('📤 API Client: Uploading avatar...', { file: file.name, size: file.size, type: file.type, auth });
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(this.buildUrl('/cloud-auth/profile/avatar'), {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${auth.accessToken}`,
+        'x-user-id': auth.userId,
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      console.error('❌ API Client: Avatar upload failed:', error);
+      throw new Error(error.detail || 'Failed to upload avatar');
+    }
+
+    const result = await response.json();
+    console.log('✅ API Client: Avatar uploaded successfully:', result);
+    return result;
+  }
+
+  async deleteAvatar(auth: { userId: string; accessToken: string }) {
+    console.log('🗑️ API Client: Deleting avatar...', auth);
+
+    const response = await fetch(this.buildUrl('/cloud-auth/profile/avatar'), {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${auth.accessToken}`,
+        'x-user-id': auth.userId,
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      console.error('❌ API Client: Avatar deletion failed:', error);
+      throw new Error(error.detail || 'Failed to delete avatar');
+    }
+
+    const result = await response.json();
+    console.log('✅ API Client: Avatar deleted successfully:', result);
+    return result;
+  }
+
 }
 
 export const apiClient = new ApiClient();

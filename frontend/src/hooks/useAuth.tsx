@@ -1,10 +1,13 @@
 import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
+import { apiClient } from '../services/apiClient';
 
 // Cloud SQL Auth User interface
 interface User {
   id: string;
   email: string;
   full_name: string | null;
+  avatar_url?: string;
+  profile_updated_at?: string;  // For avatar cache busting
   is_active: boolean;
   is_verified: boolean;
   created_at: string;
@@ -18,6 +21,7 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<{ error: { message: string } | null }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: { message: string } | null }>;
   signOut: () => Promise<void>;
+  refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -254,6 +258,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   };
 
+  const refreshProfile = async () => {
+    if (!accessToken || !user) return;
+
+    try {
+      const profile = await apiClient.getProfile({
+        userId: user.id,
+        accessToken,
+      });
+      setUser({ ...user, ...profile });
+    } catch (error) {
+      console.error('Failed to refresh profile:', error);
+    }
+  };
+
   const value = {
     user,
     accessToken,
@@ -261,6 +279,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     signIn,
     signUp,
     signOut,
+    refreshProfile,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

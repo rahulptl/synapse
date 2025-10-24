@@ -5,6 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ProfileWizard } from '@/components/profile/ProfileWizard';
+import { ProfileImageUpload } from '@/components/profile/ProfileImageUpload';
 import type { UserProfile, ProfileUpdateData } from '@/types/profile';
 import { cn } from '@/lib/utils';
 
@@ -70,6 +71,19 @@ export function ProfileSection({ userProfile, onProfileUpdate }: ProfileSectionP
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-3">
+                <div className="flex items-center justify-between p-4 hover:bg-sidebar-accent/50 rounded-lg transition-colors">
+                  <div>
+                    <div className="text-sm font-medium text-sidebar-foreground">Profile Picture</div>
+                    <div className="text-xs text-sidebar-muted mt-0.5">Your profile image</div>
+                  </div>
+                  <ProfileImageUpload
+                    avatarUrl={userProfile.avatar_url}
+                    userName={userProfile.full_name || userProfile.email}
+                    size="md"
+                    editable={true}
+                  />
+                </div>
+
                 <div className="flex items-start gap-3 p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
                   <User className="h-4 w-4 text-muted-foreground mt-0.5" />
                   <div className="flex-1 min-w-0">

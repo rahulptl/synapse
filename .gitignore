@@ -19,6 +19,10 @@ postgres_data/
 local_storage/
 backend/storage/
 
+# Scripts and Notebooks (may contain sensitive data)
+scripts/
+*.ipynb
+
 # Python
 __pycache__/
 *.pyc

@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
+import { ProfileImageUpload } from '@/components/profile/ProfileImageUpload';
 
 export function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
@@ -14,6 +15,7 @@ export function AuthPage() {
   const [fullName, setFullName] = useState('');
   const [loading, setLoading] = useState(false);
   const [redirecting, setRedirecting] = useState(false);
+  const [showAvatarUpload, setShowAvatarUpload] = useState(false);
 
   const { user, signIn, signUp, loading: authLoading } = useAuth();
   const { toast } = useToast();
@@ -68,15 +70,15 @@ export function AuthPage() {
         if (!isLogin) {
           // Signup successful
           toast({
-            title: "Welcome!",
-            description: "Your account has been created successfully.",
+            title: "Account Created!",
+            description: "Now add a profile picture (optional)",
             duration: 3000,
           });
 
-          // Set redirecting flag
-          setRedirecting(true);
+          // Show avatar upload instead of redirecting
+          setShowAvatarUpload(true);
 
-          // Note: useEffect will handle redirect once user is set
+          // Note: User will proceed after avatar upload or skip
         } else {
           // Login successful
           toast({
@@ -161,7 +163,49 @@ export function AuthPage() {
               {loading ? 'Processing...' : (isLogin ? 'Sign In' : 'Create Account')}
             </Button>
           </form>
-          
+
+          {/* Avatar Upload Step - Show after successful signup */}
+          {showAvatarUpload && user && (
+            <div className="mt-6 p-4 border border-border rounded-lg bg-accent/50">
+              <div className="text-center space-y-4">
+                <h3 className="font-semibold text-lg">Add Profile Picture</h3>
+                <p className="text-sm text-muted-foreground">
+                  Make your profile stand out (you can skip this step)
+                </p>
+
+                <div className="flex justify-center">
+                  <ProfileImageUpload
+                    avatarUrl={user.avatar_url}
+                    userName={user.full_name || user.email}
+                    size="lg"
+                    editable={true}
+                    onUploadComplete={() => {
+                      toast({
+                        title: "Perfect!",
+                        description: "Redirecting to your knowledge base...",
+                      });
+                      setTimeout(() => {
+                        setRedirecting(true);
+                        navigate('/knowledge', { replace: true });
+                      }, 1000);
+                    }}
+                  />
+                </div>
+
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setRedirecting(true);
+                    navigate('/knowledge', { replace: true });
+                  }}
+                  className="w-full"
+                >
+                  Skip for now
+                </Button>
+              </div>
+            </div>
+          )}
+
           <div className="mt-4 text-center">
             <Button
               variant="link"

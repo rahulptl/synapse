@@ -1,10 +1,11 @@
 """
 Cloud SQL-based authentication endpoints.
 """
-from fastapi import APIRouter, Depends, HTTPException, status, Header, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Header, Request, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 import logging
+from uuid import UUID
 
 from app.core.database import get_db
 from app.services.auth_service import auth_service
@@ -267,10 +268,12 @@ async def get_current_user(
     Get current authenticated user information.
     """
     from app.models.auth import User
+    from app.models.database import Profile
     from sqlalchemy import select
 
     user_id = auth_data["user_id"]
 
+    # Get user from auth table
     stmt = select(User).where(User.id == user_id)
     result = await db.execute(stmt)
     user = result.scalars().first()
@@ -281,7 +284,25 @@ async def get_current_user(
             detail="User not found"
         )
 
-    return UserResponse.model_validate(user)
+    # Get avatar_url and updated_at from profile table
+    profile_stmt = select(Profile).where(Profile.user_id == user_id)
+    profile_result = await db.execute(profile_stmt)
+    profile = profile_result.scalars().first()
+
+    # Create response with avatar_url and profile_updated_at for cache busting
+    user_dict = {
+        "id": user.id,
+        "email": user.email,
+        "full_name": user.full_name,
+        "avatar_url": profile.avatar_url if profile else None,
+        "profile_updated_at": profile.updated_at if profile else None,
+        "is_active": user.is_active,
+        "is_verified": user.is_verified,
+        "created_at": user.created_at,
+        "last_login": user.last_login
+    }
+
+    return UserResponse.model_validate(user_dict)
 
 
 @router.get("/profile", response_model=UserProfileResponse)
@@ -378,3 +399,105 @@ async def update_profile(
         "message": "Profile updated successfully",
         "profile": UserProfileResponse.model_validate(profile)
     }
+
+
+@router.post("/profile/avatar", response_model=dict)
+async def upload_avatar(
+    file: UploadFile = File(...),
+    auth_data: dict = Depends(validate_jwt_token),
+    db: AsyncSession = Depends(get_db)
+):
+    """Upload profile avatar image."""
+    user_id = auth_data["user_id"]
+
+    # Validate file type
+    allowed_types = ["image/jpeg", "image/png", "image/webp", "image/gif"]
+    if file.content_type not in allowed_types:
+        raise HTTPException(status_code=400, detail="Only image files allowed (JPEG, PNG, WebP, GIF)")
+
+    # Validate file size (max 5MB)
+    content = await file.read()
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Image must be smaller than 5MB")
+    await file.seek(0)
+
+    # Upload to GCS in avatars/ folder
+    from app.core.storage import storage_service
+    from app.config import settings
+    gcs_path = f"avatars/{user_id}/{file.filename}"
+
+    # Read file content
+    content = await file.read()
+    await file.seek(0)  # Reset file pointer for potential later use
+
+    # Upload using correct storage service method
+    avatar_url = await storage_service.upload_content(
+        gcs_path,
+        content,
+        file.content_type or "application/octet-stream"
+    )
+
+    # Use the avatar URL returned by storage service (handles Base64 conversion for local, GCS URLs for cloud)
+    logger.info(f"Avatar uploaded with URL: {avatar_url}")
+
+    # Update profile
+    from sqlalchemy import select, update
+    from app.models.database import Profile
+    await db.execute(
+        update(Profile).where(Profile.user_id == user_id).values(avatar_url=avatar_url)
+    )
+    await db.commit()
+
+    return {"avatar_url": avatar_url}
+
+
+@router.delete("/profile/avatar", response_model=dict)
+async def delete_avatar(
+    auth_data: dict = Depends(validate_jwt_token),
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete profile avatar."""
+    user_id = auth_data["user_id"]
+
+    # Get current avatar URL
+    from sqlalchemy import select, update
+    from app.models.database import Profile
+    result = await db.execute(select(Profile).where(Profile.user_id == user_id))
+    profile = result.scalar_one_or_none()
+
+    # Delete from GCS if exists
+    if profile and profile.avatar_url:
+        from app.core.storage import storage_service
+        from app.config import settings
+        from urllib.parse import urlparse
+
+        # Extract GCS path safely from full URL
+        try:
+            # Parse the URL to get the path component
+            parsed_url = urlparse(profile.avatar_url)
+            gcs_path = parsed_url.path.lstrip('/')  # Remove leading slash
+
+            # Fallback method if URL parsing fails
+            if not gcs_path:
+                # Try string split as backup
+                bucket_url_base = f"https://storage.googleapis.com/{settings.GCS_BUCKET_NAME}/"
+                if profile.avatar_url.startswith(bucket_url_base):
+                    gcs_path = profile.avatar_url[len(bucket_url_base):]
+
+            if gcs_path:
+                await storage_service.delete_content(gcs_path)
+                logger.info(f"Deleted avatar from GCS: {gcs_path}")
+            else:
+                logger.warning(f"Could not extract GCS path from avatar URL: {profile.avatar_url}")
+
+        except Exception as e:
+            logger.error(f"Failed to parse avatar URL for deletion: {e}")
+            # Don't block the operation - just log the error
+
+    # Clear avatar_url
+    await db.execute(
+        update(Profile).where(Profile.user_id == user_id).values(avatar_url=None)
+    )
+    await db.commit()
+
+    return {"message": "Avatar deleted"}

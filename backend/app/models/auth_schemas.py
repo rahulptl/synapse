@@ -40,6 +40,8 @@ class UserResponse(BaseModel):
     id: UUID
     email: str
     full_name: Optional[str]
+    avatar_url: Optional[str] = None
+    profile_updated_at: Optional[datetime] = None  # For avatar cache busting
     is_active: bool
     is_verified: bool
     created_at: datetime
@@ -157,6 +159,7 @@ class UserProfileResponse(BaseModel):
     use_cases: Optional[List[str]]
     preferred_response_length: Optional[str]
     topics_of_interest: Optional[List[str]]
+    avatar_url: Optional[str] = None
     profile_completed: bool
     profile_completed_at: Optional[datetime]
     created_at: datetime

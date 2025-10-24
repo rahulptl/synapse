@@ -70,7 +70,20 @@ class LocalStorageBackend(StorageBackend):
         with open(file_path, 'wb') as f:
             f.write(content)
 
-        return f"file://{file_path}"
+        # For local development, convert to base64 data URL for browser compatibility
+        # This avoids "Not allowed to load local resource" browser security error
+        try:
+            with open(file_path, 'rb') as f:
+                file_content = f.read()
+                import base64
+                base64_data = base64.b64encode(file_content).decode('utf-8')
+
+                # Return base64 data URL
+                return f"data:{content_type};base64,{base64_data}"
+        except Exception as e:
+            logger.error(f"Failed to convert to base64: {e}")
+            # Fallback to file URL if base64 conversion fails
+            return f"file://{file_path}"
 
     async def download_content(self, path: str) -> bytes:
         """Download content from local storage."""
