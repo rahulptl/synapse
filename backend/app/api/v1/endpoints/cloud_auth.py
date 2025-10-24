@@ -289,12 +289,22 @@ async def get_current_user(
     profile_result = await db.execute(profile_stmt)
     profile = profile_result.scalars().first()
 
+    # Convert avatar_url to proxy URL if needed
+    avatar_url = None
+    if profile and profile.avatar_url:
+        if profile.avatar_url.startswith('data:'):
+            # Base64 data URL - use as-is (local dev)
+            avatar_url = profile.avatar_url
+        else:
+            # GCS path or old GCS URL - return proxy URL
+            avatar_url = f"/api/v1/cloud-auth/profile/avatar/{user_id}"
+
     # Create response with avatar_url and profile_updated_at for cache busting
     user_dict = {
         "id": user.id,
         "email": user.email,
         "full_name": user.full_name,
-        "avatar_url": profile.avatar_url if profile else None,
+        "avatar_url": avatar_url,
         "profile_updated_at": profile.updated_at if profile else None,
         "is_active": user.is_active,
         "is_verified": user.is_verified,
@@ -333,7 +343,39 @@ async def get_profile(
         await db.commit()
         await db.refresh(profile)
 
-    return UserProfileResponse.model_validate(profile)
+    # Convert profile to dict and update avatar_url to proxy URL if needed
+    profile_dict = {
+        "id": profile.id,
+        "email": profile.email,
+        "full_name": profile.full_name,
+        "job_title": profile.job_title,
+        "company": profile.company,
+        "industry": profile.industry,
+        "interests": profile.interests,
+        "communication_style": profile.communication_style,
+        "timezone": profile.timezone,
+        "primary_goals": profile.primary_goals,
+        "use_cases": profile.use_cases,
+        "preferred_response_length": profile.preferred_response_length,
+        "topics_of_interest": profile.topics_of_interest,
+        "profile_completed": profile.profile_completed,
+        "profile_completed_at": profile.profile_completed_at,
+        "created_at": profile.created_at,
+        "updated_at": profile.updated_at,
+    }
+
+    # Convert avatar_url to proxy URL if needed
+    if profile.avatar_url:
+        if profile.avatar_url.startswith('data:'):
+            # Base64 data URL - use as-is (local dev)
+            profile_dict["avatar_url"] = profile.avatar_url
+        else:
+            # GCS path or old GCS URL - return proxy URL
+            profile_dict["avatar_url"] = f"/api/v1/cloud-auth/profile/avatar/{user_id}"
+    else:
+        profile_dict["avatar_url"] = None
+
+    return UserProfileResponse.model_validate(profile_dict)
 
 
 @router.put("/profile", response_model=dict)
@@ -405,7 +447,8 @@ async def update_profile(
 async def upload_avatar(
     file: UploadFile = File(...),
     auth_data: dict = Depends(validate_jwt_token),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    request: Request = None
 ):
     """Upload profile avatar image."""
     user_id = auth_data["user_id"]
@@ -430,17 +473,28 @@ async def upload_avatar(
     content = await file.read()
     await file.seek(0)  # Reset file pointer for potential later use
 
-    # Upload using correct storage service method
-    avatar_url = await storage_service.upload_content(
+    # Upload to storage backend (GCS/local)
+    storage_url = await storage_service.upload_content(
         gcs_path,
         content,
         file.content_type or "application/octet-stream"
     )
 
-    # Use the avatar URL returned by storage service (handles Base64 conversion for local, GCS URLs for cloud)
-    logger.info(f"Avatar uploaded with URL: {avatar_url}")
+    logger.info(f"Avatar uploaded to storage: {storage_url}")
 
-    # Update profile
+    # For local development with base64 data URLs, use as-is
+    # For cloud with GCS, return proxy URL instead of direct GCS URL
+    if storage_url.startswith('data:'):
+        # Local development - use base64 data URL directly
+        avatar_url = storage_url
+        logger.info(f"Using base64 data URL for local development")
+    else:
+        # Cloud deployment - use backend proxy URL to serve from GCS
+        # Store the GCS path in the database for the proxy to use
+        avatar_url = gcs_path
+        logger.info(f"Stored GCS path for proxy access: {avatar_url}")
+
+    # Update profile with avatar URL/path
     from sqlalchemy import select, update
     from app.models.database import Profile
     await db.execute(
@@ -448,7 +502,92 @@ async def upload_avatar(
     )
     await db.commit()
 
-    return {"avatar_url": avatar_url}
+    # Return the proxy URL to the client
+    if avatar_url.startswith('data:'):
+        # Return base64 URL as-is for local dev
+        return {"avatar_url": avatar_url}
+    else:
+        # Return backend proxy URL for cloud deployment
+        proxy_url = f"/api/v1/cloud-auth/profile/avatar/{user_id}"
+        logger.info(f"Returning proxy URL to client: {proxy_url}")
+        return {"avatar_url": proxy_url}
+
+
+@router.get("/profile/avatar/{user_id}")
+async def get_avatar(
+    user_id: UUID,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Serve user avatar image via backend proxy.
+    This endpoint fetches the avatar from GCS and serves it to the client.
+    Works with private GCS buckets that don't allow public access.
+    """
+    from fastapi.responses import Response
+    from sqlalchemy import select
+    from app.models.database import Profile
+    from app.core.storage import storage_service
+    from app.config import settings
+
+    # Get user profile
+    result = await db.execute(select(Profile).where(Profile.user_id == user_id))
+    profile = result.scalar_one_or_none()
+
+    if not profile or not profile.avatar_url:
+        raise HTTPException(status_code=404, detail="Avatar not found")
+
+    try:
+        # For local development with base64 data URLs
+        if profile.avatar_url.startswith('data:'):
+            # Extract the base64 data and content type
+            import re
+            match = re.match(r'data:([^;]+);base64,(.+)', profile.avatar_url)
+            if match:
+                content_type = match.group(1)
+                import base64
+                image_data = base64.b64decode(match.group(2))
+                return Response(
+                    content=image_data,
+                    media_type=content_type,
+                    headers={
+                        "Cache-Control": "public, max-age=3600",
+                        "ETag": f'"{user_id}-{int(profile.updated_at.timestamp())}"'
+                    }
+                )
+
+        # For GCS storage - extract the storage path from the URL
+        # Profile avatar_url might be a GCS URL or just the path
+        if profile.avatar_url.startswith('http'):
+            # Extract path from full URL
+            from urllib.parse import urlparse
+            parsed_url = urlparse(profile.avatar_url)
+            gcs_path = parsed_url.path.lstrip('/')
+            # Remove bucket name if present in path
+            if gcs_path.startswith(f"{settings.GCS_BUCKET_NAME}/"):
+                gcs_path = gcs_path[len(f"{settings.GCS_BUCKET_NAME}/"):]
+        else:
+            # Already a path
+            gcs_path = profile.avatar_url.lstrip('/')
+
+        # Download from GCS
+        content = await storage_service.download_content(gcs_path)
+
+        # Determine content type from filename
+        import mimetypes
+        content_type = mimetypes.guess_type(gcs_path)[0] or 'image/jpeg'
+
+        return Response(
+            content=content,
+            media_type=content_type,
+            headers={
+                "Cache-Control": "public, max-age=3600",  # Cache for 1 hour
+                "ETag": f'"{user_id}-{int(profile.updated_at.timestamp())}"'
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to fetch avatar from storage: {e}")
+        raise HTTPException(status_code=404, detail="Avatar not found")
 
 
 @router.delete("/profile/avatar", response_model=dict)
@@ -471,27 +610,31 @@ async def delete_avatar(
         from app.config import settings
         from urllib.parse import urlparse
 
-        # Extract GCS path safely from full URL
+        # Extract GCS path safely from full URL or path
         try:
-            # Parse the URL to get the path component
-            parsed_url = urlparse(profile.avatar_url)
-            gcs_path = parsed_url.path.lstrip('/')  # Remove leading slash
-
-            # Fallback method if URL parsing fails
-            if not gcs_path:
-                # Try string split as backup
-                bucket_url_base = f"https://storage.googleapis.com/{settings.GCS_BUCKET_NAME}/"
-                if profile.avatar_url.startswith(bucket_url_base):
-                    gcs_path = profile.avatar_url[len(bucket_url_base):]
-
-            if gcs_path:
-                await storage_service.delete_content(gcs_path)
-                logger.info(f"Deleted avatar from GCS: {gcs_path}")
+            # Skip deletion for base64 data URLs (local dev)
+            if profile.avatar_url.startswith('data:'):
+                logger.info("Skipping GCS deletion for base64 data URL")
             else:
-                logger.warning(f"Could not extract GCS path from avatar URL: {profile.avatar_url}")
+                # Extract path from URL or use as-is if already a path
+                if profile.avatar_url.startswith('http'):
+                    parsed_url = urlparse(profile.avatar_url)
+                    gcs_path = parsed_url.path.lstrip('/')
+                    # Remove bucket name if present
+                    if gcs_path.startswith(f"{settings.GCS_BUCKET_NAME}/"):
+                        gcs_path = gcs_path[len(f"{settings.GCS_BUCKET_NAME}/"):]
+                else:
+                    # Already a path (from proxy URL format)
+                    gcs_path = profile.avatar_url.lstrip('/')
+
+                if gcs_path:
+                    await storage_service.delete_content(gcs_path)
+                    logger.info(f"Deleted avatar from GCS: {gcs_path}")
+                else:
+                    logger.warning(f"Could not extract GCS path from avatar URL: {profile.avatar_url}")
 
         except Exception as e:
-            logger.error(f"Failed to parse avatar URL for deletion: {e}")
+            logger.error(f"Failed to delete avatar from storage: {e}")
             # Don't block the operation - just log the error
 
     # Clear avatar_url
