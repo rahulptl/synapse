@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ChevronDown, User, Key, Shield, Palette, Bell, Plug, FileDown, Lock, Settings as SettingsIcon } from 'lucide-react';
+import { ChevronDown, User, Key, Shield, Palette, Bell, Plug, FileDown, Lock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   Sidebar,
@@ -7,7 +7,6 @@ import {
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
-  SidebarHeader,
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuButton,
@@ -113,14 +112,6 @@ export function SettingsSidebar({ activeSection, onSectionChange }: SettingsSide
 
   return (
     <Sidebar className="sidebar-enhanced border-r border-sidebar-border">
-      <SidebarHeader className="border-b border-sidebar-border px-6 py-5">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-sidebar-primary to-purple-600">
-            <SettingsIcon className="h-5 w-5 text-white" />
-          </div>
-          <h2 className="text-lg font-semibold text-sidebar-foreground">Settings</h2>
-        </div>
-      </SidebarHeader>
 
       <SidebarContent className="sidebar-scroll px-3 py-4">
         {SIDEBAR_GROUPS.map((group, groupIndex) => {

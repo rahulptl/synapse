@@ -4,7 +4,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { Shield, Palette, Bell, Plug, FileDown, Lock } from 'lucide-react';
 import { apiClient } from '@/services/apiClient';
 import { useToast } from '@/hooks/use-toast';
-import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar';
+import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
 import { SettingsSidebar, SettingsSection as SettingsSectionType } from '@/components/settings/SettingsSidebar';
 import { ProfileSection } from '@/components/settings/sections/ProfileSection';
 import { ApiKeysSection } from '@/components/settings/sections/ApiKeysSection';
@@ -275,10 +275,6 @@ export default function SettingsPage() {
           onSectionChange={setActiveSection}
         />
         <SidebarInset>
-          <header className="flex h-16 shrink-0 items-center gap-2 border-b px-6">
-            <SidebarTrigger className="-ml-1" />
-            <div className="flex-1" />
-          </header>
           <main className="flex-1 p-6 md:p-8 max-w-5xl">
             {renderSection()}
           </main>

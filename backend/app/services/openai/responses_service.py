@@ -118,6 +118,7 @@ class ResponsesService(OpenAIBaseService):
             'input': query,
             'tools': tools,
             'instructions': instructions,
+            'reasoning' : { "effort": "low" },
         }
 
         # Only add temperature for non-reasoning models (o1 series doesn't support it)

@@ -109,7 +109,9 @@
       "Bash(sips:*)",
       "Bash(npx madge:*)",
       "Bash(alembic revision:*)",
-      "Bash(kill:*)"
+      "Bash(kill:*)",
+      "Bash(npx eslint:*)",
+      "Bash(npx tsc:*)"
     ],
     "deny": [],
     "ask": []
