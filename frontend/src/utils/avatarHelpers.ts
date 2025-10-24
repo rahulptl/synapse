@@ -10,21 +10,34 @@ export function getInitials(name: string): string {
 /**
  * Get cache-busted avatar URL by appending profile update timestamp
  * This ensures browsers fetch fresh avatars when profile changes on any device
+ * Also converts relative backend URLs to absolute URLs for cross-origin loading
  */
 export function getAvatarUrl(url?: string | null, profileUpdatedAt?: string | null): string | undefined {
   if (!url) return undefined;
 
-  // Don't add cache-busting params to data URLs (base64 images)
+  console.log('🖼️ Avatar URL Helper - Input:', url);
+
+  // Don't modify data URLs (base64 images)
   if (url.startsWith('data:')) {
+    console.log('🖼️ Avatar URL Helper - Data URL detected, returning as-is');
     return url;
   }
+
+  // Convert relative backend URLs to absolute URLs
+  // This is necessary when frontend and backend are on different domains
+  const API_BASE_URL = import.meta.env.VITE_BACKEND_API_URL || 'http://localhost:8000';
+  const fullUrl = url.startsWith('http') ? url : `${API_BASE_URL}${url}`;
+
+  console.log('🖼️ Avatar URL Helper - Full URL:', fullUrl);
 
   // If we have a profile update timestamp, append it as a cache-busting query param
   if (profileUpdatedAt) {
     const timestamp = new Date(profileUpdatedAt).getTime();
-    const separator = url.includes('?') ? '&' : '?';
-    return `${url}${separator}v=${timestamp}`;
+    const separator = fullUrl.includes('?') ? '&' : '?';
+    const finalUrl = `${fullUrl}${separator}v=${timestamp}`;
+    console.log('🖼️ Avatar URL Helper - Cache-busted URL:', finalUrl);
+    return finalUrl;
   }
 
-  return url;
+  return fullUrl;
 }
