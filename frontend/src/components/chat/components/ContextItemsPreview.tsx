@@ -7,7 +7,7 @@ interface ContextItemsPreviewProps {
 }
 
 export const ContextItemsPreview = ({ selectedContextItems }: ContextItemsPreviewProps) => {
-  if (selectedContextItems.length === 0) {
+  if (!selectedContextItems || selectedContextItems.length === 0) {
     return null;
   }
 

@@ -33,7 +33,7 @@ export function ModernConversationList({
   hasPendingResponse,
   collapsed = false,
 }: ModernConversationListProps) {
-  if (conversations.length === 0) {
+  if (!conversations || conversations.length === 0) {
     return (
       <div className="h-full flex flex-col">
         {/* New Conversation Button */}

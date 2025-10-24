@@ -46,7 +46,7 @@ export const ChatInput = ({
           {/* Unified Autocomplete Dropdown - Above input */}
           {showAutocomplete && autocompleteType === 'unified' && (
             <div className="bg-sidebar-accent/95 backdrop-blur-xl border border-sidebar-border rounded-xl shadow-lg max-h-64 overflow-y-auto">
-              {unifiedSuggestions.length > 0 ? (
+              {unifiedSuggestions && unifiedSuggestions.length > 0 ? (
                 unifiedSuggestions.map((suggestion, index) => (
                   <div
                     key={`${suggestion.type}-${suggestion.id}`}
@@ -98,7 +98,7 @@ export const ChatInput = ({
                 ))
               ) : (
                 <div className="px-4 py-3 text-sm text-sidebar-muted">
-                  {unifiedSuggestions.length === 0 && 'No folders or files available'}
+                  No folders or files available
                 </div>
               )}
 
@@ -139,7 +139,7 @@ export const ChatInput = ({
                 onChange={onInputChange}
                 onKeyDown={onKeyPress}
                 placeholder={placeholder}
-                className="chat-input w-full h-12 px-4 py-3 bg-sidebar-accent/50 border border-sidebar-border rounded-lg shadow-sm hover:bg-sidebar-accent/60 focus:bg-sidebar-accent/60 transition-colors focus:border-sidebar-primary focus:outline-none focus:ring-0 placeholder:text-sidebar-muted text-sidebar-foreground"
+                className="chat-input w-full h-12 px-4 py-3 bg-sidebar-accent/50 border border-sidebar-border rounded-lg shadow-sm hover:bg-sidebar-accent/60 focus:bg-sidebar-accent/60 transition-colors focus:border-sidebar-primary focus:outline-none focus:ring-0 placeholder:text-sidebar-muted text-sidebar-foreground text-base"
                 disabled={isLoading}
               />
             </div>

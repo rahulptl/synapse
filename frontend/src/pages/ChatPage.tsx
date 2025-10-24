@@ -13,8 +13,7 @@ import type { ChatEvent } from '@/services/chatWebSocket';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
-import { Plus, Bot, Trash2, Menu, Bookmark, PanelLeft, Download, Brain } from 'lucide-react';
+import { Plus, Bot, Trash2, Bookmark, PanelLeft, Download, Brain } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { apiClient } from '@/services/apiClient';
@@ -133,6 +132,7 @@ export default function ChatPage() {
     message?: string;
     details?: string;
   } | null>(null);
+  const [showMobileSidebar, setShowMobileSidebar] = useState(false);
 
   // Keep refs in sync with state for WebSocket event handler
   useEffect(() => {
@@ -1267,30 +1267,22 @@ export default function ChatPage() {
   
   return (
     <div className="flex h-[calc(100vh-4rem)] bg-background">
-      {/* Desktop Left Sidebar - Conversations */}
-      <div
-        className={cn(
-          'hidden md:flex transition-all duration-300 ease-in-out flex-shrink-0',
-          'bg-sidebar/95 backdrop-blur-xl border-r border-sidebar-border',
-          collapsed ? 'w-0 overflow-hidden' : 'w-80'
-        )}
-      >
-        <ConversationSidebar
-          conversations={conversations}
-          selectedConversation={selectedConversation}
-          onConversationSelect={handleConversationSelect}
-          onNewConversation={createNewConversation}
-          onRenameConversation={handleRenameConversation}
-          onExportConversation={handleExportConversation}
-          onDeleteConversation={initiateDeleteConversation}
-          hasPendingResponse={(conversationId) => chatStore.getHasPendingResponse(conversationId)}
-          collapsed={collapsed}
-          chatStore={chatStore}
-          onToggleCollapsed={toggleCollapsed}
-          showMobileSidebar={false}
-          setShowMobileSidebar={() => {}}
-        />
-      </div>
+      {/* Conversation Sidebar - Handles both desktop and mobile */}
+      <ConversationSidebar
+        conversations={conversations}
+        selectedConversation={selectedConversation}
+        onConversationSelect={handleConversationSelect}
+        onNewConversation={createNewConversation}
+        onRenameConversation={handleRenameConversation}
+        onExportConversation={handleExportConversation}
+        onDeleteConversation={initiateDeleteConversation}
+        hasPendingResponse={(conversationId) => chatStore.getHasPendingResponse(conversationId)}
+        collapsed={collapsed}
+        chatStore={chatStore}
+        onToggleCollapsed={toggleCollapsed}
+        showMobileSidebar={showMobileSidebar}
+        setShowMobileSidebar={setShowMobileSidebar}
+      />
 
       {/* Floating Toggle Button - Desktop */}
       <div
@@ -1327,25 +1319,6 @@ export default function ChatPage() {
 
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col">
-        {/* Mobile Menu Button */}
-        <div className="md:hidden flex items-center justify-between p-4">
-          <Sheet>
-            <SheetTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-sidebar-muted hover:text-sidebar-foreground hover:bg-sidebar-accent"
-              >
-                <Menu className="h-5 w-5 mr-2" />
-                Conversations
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="left" className="w-80 bg-sidebar/95 backdrop-blur-xl border-sidebar-border p-0">
-              <ConversationSidebar collapsed={false} />
-            </SheetContent>
-          </Sheet>
-        </div>
-
         {selectedConversation || messages.length > 0 || inputMessage.trim() ? (
           <>
             {/* Messages Area */}

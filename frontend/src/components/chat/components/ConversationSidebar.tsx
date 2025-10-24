@@ -62,15 +62,16 @@ export const ConversationSidebar = ({
       </div>
 
 
-      {/* Mobile Bottom Sheet - Conversations */}
+      {/* Mobile Header - Conversations */}
       <Sheet open={showMobileSidebar} onOpenChange={setShowMobileSidebar}>
         <SheetTrigger asChild>
           <Button
             variant="ghost"
-            className="md:hidden fixed bottom-4 left-4 z-40 bg-sidebar text-sidebar-foreground rounded-lg shadow-lg"
+            size="icon"
+            className="md:hidden fixed top-[4.5rem] left-4 z-50 h-12 w-12 bg-sidebar/95 backdrop-blur-xl text-sidebar-foreground rounded-lg shadow-lg border border-sidebar-border hover:bg-sidebar-accent transition-colors"
+            aria-label="Open conversations menu"
           >
             <Menu className="h-5 w-5" />
-            Conversations
           </Button>
         </SheetTrigger>
         <SheetContent side="left" className="w-80 bg-sidebar/95 backdrop-blur-xl border-sidebar-border p-0">
