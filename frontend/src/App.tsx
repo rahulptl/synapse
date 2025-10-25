@@ -12,6 +12,7 @@ import ResponsiveKnowledgePage from "./pages/ResponsiveKnowledgePage";
 import ChatPage from "./pages/ChatPage";
 import SettingsPage from "./pages/SettingsPage";
 import DocsPage from "./pages/DocsPage";
+import PricingPage from "./pages/PricingPage";
 import NotFound from "./pages/NotFound";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 
@@ -62,6 +63,7 @@ function AppContent() {
           <Route path="/" element={<LandingPage />} />
           <Route path="/auth" element={<AuthPage />} />
           <Route path="/docs" element={<DocsPage />} />
+          <Route path="/pricing" element={<PricingPage />} />
           <Route
             path="/knowledge"
             element={
@@ -70,21 +72,21 @@ function AppContent() {
               </ProtectedRoute>
             }
           />
-          <Route 
-            path="/chat" 
+          <Route
+            path="/chat"
             element={
               <ProtectedRoute>
                 <ChatPage />
               </ProtectedRoute>
-            } 
+            }
           />
-          <Route 
-            path="/settings" 
+          <Route
+            path="/settings"
             element={
               <ProtectedRoute>
                 <SettingsPage />
               </ProtectedRoute>
-            } 
+            }
           />
           <Route path="*" element={<NotFound />} />
         </Routes>

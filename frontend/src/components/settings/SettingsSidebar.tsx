@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { ChevronDown, User, Key, Shield, Palette, Bell, Plug, FileDown, Lock } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { ChevronDown, User, Key, Shield, Palette, Bell, Plug, FileDown, Lock, CreditCard, ArrowRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   Sidebar,
@@ -11,6 +12,7 @@ import {
   SidebarMenuItem,
   SidebarMenuButton,
 } from '@/components/ui/sidebar';
+import { Button } from '@/components/ui/button';
 
 export type SettingsSection =
   | 'profile'
@@ -75,6 +77,8 @@ const SIDEBAR_GROUPS: SidebarGroup[] = [
 const STORAGE_KEY = 'settings-sidebar-collapsed-sections';
 
 export function SettingsSidebar({ activeSection, onSectionChange }: SettingsSidebarProps) {
+  const navigate = useNavigate();
+
   // Load collapsed state from localStorage
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => {
     try {
@@ -178,6 +182,38 @@ export function SettingsSidebar({ activeSection, onSectionChange }: SettingsSide
             </SidebarGroup>
           );
         })}
+
+        {/* Pricing CTA Section */}
+        <div className="mt-6 px-3">
+          <div className="rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/30 p-4">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="p-2 rounded-lg bg-primary/20">
+                <CreditCard className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-sidebar-foreground">
+                  Upgrade Your Plan
+                </h3>
+                <p className="text-xs text-sidebar-muted">
+                  Unlock more features and storage
+                </p>
+              </div>
+            </div>
+
+            <Button
+              onClick={() => {
+                console.log('[SETTINGS_SIDEBAR] View pricing clicked - navigating to pricing page');
+                navigate('/pricing');
+              }}
+              className="w-full bg-primary hover:bg-primary/90 text-primary-foreground transition-all duration-200 text-sm h-9"
+            >
+              <span className="flex items-center justify-center gap-2">
+                View Pricing
+                <ArrowRight className="h-3 w-3" />
+              </span>
+            </Button>
+          </div>
+        </div>
       </SidebarContent>
     </Sidebar>
   );

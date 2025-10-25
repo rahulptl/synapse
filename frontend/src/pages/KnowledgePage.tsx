@@ -422,7 +422,8 @@ export default function KnowledgePage() {
   };
 
   const handleUpgrade = () => {
-    navigate('/settings?tab=billing');
+    console.log('[KNOWLEDGE_PAGE] Upgrade clicked - navigating to pricing page');
+    navigate('/pricing');
   };
 
   return (

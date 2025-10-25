@@ -119,8 +119,8 @@ export function ModernSidebar({
           </div>
         )}
 
-        {/* Scrollable Content */}
-        <ScrollArea className="flex-1 sidebar-scroll">
+        {/* Scrollable Content - Folders Area */}
+        <div className="flex-1 flex flex-col">
           {collapsed ? (
             /* Collapsed State - Icon Only */
             <div className="py-4 space-y-2 flex flex-col items-center">
@@ -154,66 +154,71 @@ export function ModernSidebar({
             </div>
           ) : (
             /* Expanded State - Full UI */
-            <div className="py-2">
-              {/* Search */}
-              <SidebarSearch
-                value={searchQuery}
-                onChange={setSearchQuery}
-                placeholder="Search folders..."
-              />
+            <div className="flex-1 flex flex-col">
+              {/* Search and Upload - Fixed at top */}
+              <div className="py-2">
+                {/* Search */}
+                <SidebarSearch
+                  value={searchQuery}
+                  onChange={setSearchQuery}
+                  placeholder="Search folders..."
+                />
 
-              {/* Upload Action */}
-              <div className="mb-3 px-3">
-                <Button
-                  onClick={onUpload}
-                  className="w-full h-9 bg-sidebar-primary hover:bg-sidebar-primary/90 text-white transition-colors text-sm"
-                >
-                  <Upload className="h-4 w-4" />
-                  <span className="ml-2">Upload</span>
-                </Button>
+                {/* Upload Action */}
+                <div className="mb-3 px-3">
+                  <Button
+                    onClick={onUpload}
+                    className="w-full h-9 bg-sidebar-primary hover:bg-sidebar-primary/90 text-white transition-colors text-sm"
+                  >
+                    <Upload className="h-4 w-4" />
+                    <span className="ml-2">Upload</span>
+                  </Button>
+                </div>
               </div>
 
-              {/* Storage Card */}
-              <div className="my-4">
+              {/* Scrollable Folders Section */}
+              <ScrollArea className="flex-1 sidebar-scroll">
+                <SidebarSection
+                  title="FOLDERS"
+                  isExpanded={sections.folders}
+                  onToggle={() => toggleSection('folders')}
+                  collapsible={true}
+                  extraAction={
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleCreateRootFolder}
+                      className="h-7 w-7 p-0 hover:bg-sidebar-accent text-sidebar-foreground rounded"
+                      title="Create new folder"
+                    >
+                      <FolderPlus className="h-3 w-3" />
+                    </Button>
+                  }
+                >
+                  <SidebarFolderTree
+                    folders={folders}
+                    selectedFolder={selectedFolder}
+                    onFolderSelect={onFolderSelect}
+                    onCreateFolder={onCreateFolder}
+                    onDeleteFolder={onDeleteFolder}
+                    onRenameFolder={onRenameFolder}
+                    searchQuery={searchQuery}
+                    triggerRootFolderCreate={triggerRootFolderCreate}
+                  />
+                </SidebarSection>
+              </ScrollArea>
+
+              {/* Storage Card - Fixed at bottom */}
+              <div className="border-t border-sidebar-border/50">
                 <SidebarStorageCard
                   usedBytes={storageUsed}
                   totalBytes={storageTotal}
                   onUpgrade={onUpgrade}
                 />
               </div>
-
-              {/* Folders Section */}
-              <SidebarSection
-                title="FOLDERS"
-                isExpanded={sections.folders}
-                onToggle={() => toggleSection('folders')}
-                collapsible={true}
-                extraAction={
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleCreateRootFolder}
-                    className="h-7 w-7 p-0 hover:bg-sidebar-accent text-sidebar-foreground rounded"
-                    title="Create new folder"
-                  >
-                    <FolderPlus className="h-3 w-3" />
-                  </Button>
-                }
-              >
-                <SidebarFolderTree
-                  folders={folders}
-                  selectedFolder={selectedFolder}
-                  onFolderSelect={onFolderSelect}
-                  onCreateFolder={onCreateFolder}
-                  onDeleteFolder={onDeleteFolder}
-                  onRenameFolder={onRenameFolder}
-                  searchQuery={searchQuery}
-                  triggerRootFolderCreate={triggerRootFolderCreate}
-                />
-              </SidebarSection>
             </div>
           )}
-        </ScrollArea>
+        </div>
       </div>
     </aside>
   );
