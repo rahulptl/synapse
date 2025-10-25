@@ -50,11 +50,6 @@ export function StorageUsageIndicator() {
     }
   };
 
-  const getProgressBackground = (percentage: number): string => {
-    const color = getProgressColor(percentage);
-    return `linear-gradient(to right, ${color} ${percentage}%, rgba(255, 255, 255, 0.1) ${percentage}%)`;
-  };
-
   const getStorageStatusText = (percentage: number): { text: string; color: string } => {
     if (percentage < 50) {
       return { text: 'Plenty of space', color: 'text-slate-300' };
@@ -155,18 +150,18 @@ export function StorageUsageIndicator() {
   }
 
   const statusInfo = getStorageStatusText(storage.used_percentage);
-  const progressStyle = {
-    background: getProgressBackground(storage.used_percentage),
-  };
+  const humanReadableTotal =
+    storage.total_bytes === STORAGE_LIMIT_BYTES ? '1 GB' : storage.total_formatted;
+  const usageSummary = `${storage.used_formatted} of ${humanReadableTotal} (${storage.used_percentage.toFixed(
+    1,
+  )}%)`;
 
   return (
     <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-lg p-4 hover:bg-white/8 transition-colors">
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <span className="text-sm font-medium text-gray-300">Storage Usage</span>
-        <span className={`text-sm font-medium ${statusInfo.color}`}>
-          {storage.used_formatted} / {storage.total_formatted}
-        </span>
+        <span className={`text-sm font-medium ${statusInfo.color}`}>{usageSummary}</span>
       </div>
 
       {/* Progress Bar */}
@@ -186,9 +181,6 @@ export function StorageUsageIndicator() {
       <div className="flex items-center justify-between">
         <span className={`text-sm ${statusInfo.color} font-normal`}>
           {statusInfo.text}
-        </span>
-        <span className="text-sm text-gray-400 font-medium">
-          {storage.used_percentage.toFixed(1)}%
         </span>
       </div>
     </div>

@@ -16,6 +16,7 @@ export function SidebarStorageCard({ usedBytes, totalBytes, onUpgrade, className
   const usagePercentage = totalBytes > 0 ? (usedBytes / totalBytes) * 100 : 0;
   const isNearCapacity = usagePercentage > 80;
   const isAlmostFull = usagePercentage > 90;
+  const STORAGE_LIMIT_BYTES = 1024 * 1024 * 1024;
 
   const formatBytes = (bytes: number) => {
     const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -23,6 +24,10 @@ export function SidebarStorageCard({ usedBytes, totalBytes, onUpgrade, className
     const i = Math.floor(Math.log(bytes) / Math.log(1024));
     return `${Math.round(bytes / Math.pow(1024, i) * 100) / 100} ${sizes[i]}`;
   };
+  const formattedUsed = formatBytes(usedBytes);
+  const formattedTotal =
+    totalBytes === STORAGE_LIMIT_BYTES ? '1 GB' : formatBytes(totalBytes);
+  const usageSummary = `${formattedUsed} of ${formattedTotal} (${usagePercentage.toFixed(1)}%)`;
 
   const handleUpgrade = () => {
     console.log('[SIDEBAR_STORAGE_CARD] Upgrade clicked - navigating to pricing page');
@@ -62,7 +67,7 @@ export function SidebarStorageCard({ usedBytes, totalBytes, onUpgrade, className
               Storage Usage
             </h3>
             <p className="text-xs text-sidebar-muted">
-              {formatBytes(usedBytes)} of {formatBytes(totalBytes)}
+              {usageSummary}
             </p>
           </div>
         </div>
@@ -79,18 +84,11 @@ export function SidebarStorageCard({ usedBytes, totalBytes, onUpgrade, className
           />
         </div>
 
-        {/* Usage Percentage */}
-        <div className="flex items-center justify-between">
-          <span className={cn(
-            'text-xs font-medium',
-            isAlmostFull ? 'text-red-400' : isNearCapacity ? 'text-orange-400' : 'text-sidebar-muted'
-          )}>
-            {usagePercentage.toFixed(1)}% used
-          </span>
-          {isNearCapacity && (
+        {isNearCapacity && (
+          <div className="mt-1 flex items-center justify-end">
             <TrendingUp className="h-3 w-3 text-orange-400" />
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Upgrade CTA Card */}

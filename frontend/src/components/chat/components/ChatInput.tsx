@@ -174,7 +174,7 @@ export const ChatInput = ({
                 onChange={onInputChange}
                 onKeyDown={onKeyPress}
                 placeholder={placeholder}
-                className="chat-input w-full h-12 px-4 py-3 bg-sidebar-accent/50 border border-sidebar-border rounded-lg shadow-sm hover:bg-sidebar-accent/60 focus:bg-sidebar-accent/60 transition-colors focus:border-sidebar-primary focus:outline-none focus:ring-0 placeholder:text-sidebar-muted text-sidebar-foreground text-base"
+                className="chat-input w-full h-12 px-4 py-3 bg-sidebar-accent/50 border border-sidebar-border rounded-lg shadow-sm hover:bg-sidebar-accent/60 focus:bg-sidebar-accent/60 transition-colors focus:border-sidebar-primary focus:outline-none focus:ring-0 placeholder:text-sidebar-muted text-sidebar-foreground text-lg"
                 disabled={isLoading}
               />
             </div>

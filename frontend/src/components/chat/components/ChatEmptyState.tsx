@@ -52,10 +52,13 @@ export const ChatEmptyState = ({ user }: ChatEmptyStateProps) => {
     return () => clearInterval(interval);
   }, []);
   return (
-    <div className="flex-1 flex items-center justify-center">
-      <div className="text-center space-y-6 px-6">
-        <div className="p-8 rounded-2xl bg-sidebar-accent/30 w-fit mx-auto">
-          <Bot className="h-16 w-16 text-sidebar-icon" />
+    <div className="flex flex-1 flex-col items-center justify-center px-6 min-h-full">
+      <div className="text-center space-y-6">
+        <div className="relative w-fit mx-auto">
+          <div className="absolute inset-0 bg-gradient-to-r from-blue-400/30 via-emerald-400/30 to-indigo-400/30 rounded-full blur-2xl animate-pulse" />
+          <div className="relative p-8 rounded-2xl bg-sidebar-accent/30 shadow-2xl">
+            <Bot className="h-16 w-16 text-sidebar-icon drop-shadow-lg" />
+          </div>
         </div>
         <div className="space-y-4">
           <div className="flex items-center justify-center space-x-3">
@@ -65,11 +68,14 @@ export const ChatEmptyState = ({ user }: ChatEmptyStateProps) => {
               {GREETINGS[greetingIndex].script}
             </h3>
             <div className="relative">
+
               <span className="text-3xl font-black bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 bg-clip-text text-transparent drop-shadow-lg animate-pulse">
-                {getUsername(user)}
+                {getUsername(user)} 
               </span>
+              
               <div className="absolute inset-0 blur-xl bg-gradient-to-r from-blue-500/20 via-purple-500/20 to-pink-500/20 -z-10"></div>
             </div>
+            
           </div>
         </div>
       </div>
