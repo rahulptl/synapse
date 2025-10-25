@@ -4,7 +4,7 @@ Simple Chat Service using OpenAI Responses API.
 This service provides conversational AI interactions using OpenAI's Responses API
 with vector stores for the simplified 3-table architecture.
 """
-from typing import List, Optional, Dict, Any, AsyncGenerator
+from typing import List, Optional, Dict, Any, AsyncGenerator, Set
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc, func
@@ -187,6 +187,14 @@ class ChatService:
             # Get previous response ID for conversation continuity
             previous_response_id = conversation.last_response_id if conversation else None
 
+            container_id = await self._ensure_conversation_container(db, conversation)
+            try:
+                before_snapshot = await self._snapshot_container_files(container_id)
+            except ValueError:
+                logger.info(f"[CONTAINER] Existing container invalid for conversation {conversation.id}; creating new one")
+                container_id = await self._ensure_conversation_container(db, conversation, force_new=True)
+                before_snapshot = await self._snapshot_container_files(container_id)
+
             # Create response with OpenAI (with both file_search and web_search enabled)
             response = await self.responses_service.chat(
                 query=cleaned_message if cleaned_message.strip() else chat_request.message,
@@ -199,7 +207,8 @@ class ChatService:
                 top_p=settings.AI_RESPONSE_TOP_P,
                 presence_penalty=settings.AI_PRESENCE_PENALTY,
                 frequency_penalty=settings.AI_FREQUENCY_PENALTY,
-                filters=search_filters  # Apply folder/file filtering via OpenAI metadata
+                filters=search_filters,  # Apply folder/file filtering via OpenAI metadata
+                container_id=container_id
             )
 
             # Extract response content and citations
@@ -209,14 +218,39 @@ class ChatService:
             # Build sources from citations
             sources = await self._build_sources_from_citations(db, citations, user_id)
 
+            # Detect and ingest newly generated files
+            generated_files: List[Dict[str, Any]] = []
+            try:
+                after_snapshot = await self._snapshot_container_files(container_id)
+                generated_files = await self._process_container_file_diff(
+                    db=db,
+                    user_id=user_id,
+                    container_id=container_id,
+                    before_snapshot=before_snapshot,
+                    after_snapshot=after_snapshot
+                )
+
+                if generated_files:
+                    for gf in generated_files:
+                        sandbox_link = f"[{gf['filename']}](sandbox:/mnt/data/{gf['filename']})"
+                        if sandbox_link in ai_response:
+                            ai_response = ai_response.replace(sandbox_link, f"**{gf['filename']}**")
+            except Exception as container_exc:
+                logger.error(f"[CONTAINER] Failed to process container diff: {container_exc}", exc_info=True)
+
             # Store assistant message WITH sources in metadata
+            metadata = {
+                "openai_response_id": response.id,
+                "citations": citations,
+                "sources": sources  # Store sources so they're available when reloading messages
+            }
+
+            if generated_files:
+                metadata["generated_files"] = generated_files
+
             await self._store_message(
                 db, user_id, conversation.id, MessageRole.ASSISTANT, ai_response,
-                metadata={
-                    "openai_response_id": response.id,
-                    "citations": citations,
-                    "sources": sources  # Store sources so they're available when reloading messages
-                }
+                metadata=metadata
             )
 
             # Update conversation with last_response_id for continuity
@@ -439,6 +473,14 @@ class ChatService:
             # Get previous response ID for conversation continuity
             previous_response_id = conversation.last_response_id if conversation else None
 
+            container_id = await self._ensure_conversation_container(db, conversation)
+            try:
+                before_snapshot = await self._snapshot_container_files(container_id)
+            except ValueError:
+                logger.info(f"[CONTAINER] Existing container invalid for conversation {conversation.id}; creating new one")
+                container_id = await self._ensure_conversation_container(db, conversation, force_new=True)
+                before_snapshot = await self._snapshot_container_files(container_id)
+
             # Start streaming response (don't await - it's an async generator)
             stream = self.responses_service.chat_stream(
                 query=cleaned_message if cleaned_message.strip() else chat_request.message,
@@ -451,7 +493,8 @@ class ChatService:
                 top_p=settings.AI_RESPONSE_TOP_P,
                 presence_penalty=settings.AI_PRESENCE_PENALTY,
                 frequency_penalty=settings.AI_FREQUENCY_PENALTY,
-                filters=search_filters
+                filters=search_filters,
+                container_id=container_id
             )
 
             assistant_content = ""
@@ -460,6 +503,7 @@ class ChatService:
             web_search_items = {}  # Track web search items by item_id
 
             # Process stream events
+            processed_container_file_ids: Set[str] = set()
             async for event in stream:
                 event_type = event.type
 
@@ -663,90 +707,37 @@ class ChatService:
 
                     if container_annotations:
                         logger.info(f"[ANNOTATION_DEBUG] Processing {len(container_annotations)} container annotation(s)")
-                        from app.services.openai.container_file_service import container_file_service
-                        from app.services.content_service import content_service
-                        from app.services.folder_service import folder_service
-
-                        # Get/create AI Artifacts folder (lazy creation)
-                        ai_folder = await folder_service.get_or_create_ai_artifacts_folder(db, user_id)
 
                         for annotation in container_annotations:
                             try:
-                                # Download file from OpenAI
-                                logger.info(
-                                    f"Downloading generated file: {annotation['filename']} "
-                                    f"(container: {annotation['container_id']}, file: {annotation['file_id']})"
-                                )
-                                file_bytes, filename = await container_file_service.download_container_file(
-                                    annotation["container_id"],
-                                    annotation["file_id"]
-                                )
-
-                                # Use annotation filename if header parsing gave us generic name
-                                if filename == annotation["file_id"] and annotation.get("filename"):
-                                    filename = annotation["filename"]
-                                    logger.debug(f"Using annotation filename: {filename}")
-
-                                # Save to knowledge base
-                                knowledge_item = await content_service.create_knowledge_item_from_bytes(
+                                generated = await self._ingest_container_file(
                                     db=db,
                                     user_id=user_id,
-                                    folder_id=ai_folder.id,
-                                    filename=filename,
-                                    file_bytes=file_bytes,
-                                    metadata={
-                                        "container_id": annotation["container_id"],
-                                        "file_id": annotation["file_id"],
-                                        "original_filename": filename,
-                                        "generated_by": "code_interpreter",
-                                        "source_type": "upload"  # Treat as regular upload for processing
-                                    }
+                                    container_id=annotation["container_id"],
+                                    file_id=annotation["file_id"],
+                                    filename=annotation.get("filename")
                                 )
 
-                                # Trigger background processing for text extraction and OpenAI indexing
-                                import asyncio
-                                from app.services.processing_service import processing_service
-                                asyncio.create_task(
-                                    processing_service.process_knowledge_item(knowledge_item.id)
-                                )
-                                logger.info(f"[CODE_INTERPRETER_PROCESSING] Queued background processing for {filename} (item_id: {knowledge_item.id})")
+                                if generated:
+                                    generated_files.append(generated)
+                                    processed_container_file_ids.add(generated["file_id"])
 
-                                # Return relative URL for API - frontend will construct full URL
-                                download_url = f"/api/v1/files/download/{knowledge_item.id}"
-
-                                generated_files.append({
-                                    "id": str(knowledge_item.id),
-                                    "filename": filename,
-                                    "container_id": annotation["container_id"],
-                                    "file_id": annotation["file_id"],
-                                    "download_url": download_url,  # Relative for frontend to construct
-                                    "created_at": knowledge_item.created_at.isoformat(),
-                                    "content_type": knowledge_item.content_type
-                                })
-
-                                # Remove sandbox link from message content (won't work with auth anyway)
-                                # OpenAI returns links like: [filename](sandbox:/mnt/data/filename)
-                                # We'll show downloadable files in the "Generated Files" section instead
-                                sandbox_link_pattern = f"[{filename}](sandbox:/mnt/data/{filename})"
-                                if sandbox_link_pattern in assistant_content:
-                                    # Replace with just the filename (no link)
-                                    assistant_content = assistant_content.replace(
-                                        sandbox_link_pattern,
-                                        f"**{filename}**"
-                                    )
-                                    logger.debug(f"Removed sandbox link for {filename}, file available in Generated Files section")
-
-                                logger.info(
-                                    f"Saved generated file '{filename}' to AI Artifacts folder "
-                                    f"(knowledge_item_id: {knowledge_item.id})"
-                                )
+                                    sandbox_link_pattern = f"[{generated['filename']}](sandbox:/mnt/data/{generated['filename']})"
+                                    if sandbox_link_pattern in assistant_content:
+                                        assistant_content = assistant_content.replace(
+                                            sandbox_link_pattern,
+                                            f"**{generated['filename']}**"
+                                        )
+                                        logger.debug(
+                                            f"Removed sandbox link for {generated['filename']}, file available in Generated Files section"
+                                        )
 
                             except Exception as e:
                                 logger.error(
                                     f"Failed to save generated file {annotation.get('filename', 'unknown')}: {e}",
                                     exc_info=True
                                 )
-                                # Continue with other files even if one fails
+                                continue
                     else:
                         logger.info("[ANNOTATION_DEBUG] No container file annotations found in response")
 
@@ -755,6 +746,31 @@ class ChatService:
                     # Don't fail the whole response if file processing fails
             else:
                 logger.info("[ANNOTATION_DEBUG] Event does not have response.output - cannot extract annotations")
+
+            # Fallback: detect new files via container diff
+            try:
+                after_snapshot = await self._snapshot_container_files(container_id)
+                diff_generated = await self._process_container_file_diff(
+                    db=db,
+                    user_id=user_id,
+                    container_id=container_id,
+                    before_snapshot=before_snapshot,
+                    after_snapshot=after_snapshot,
+                    skip_file_ids=processed_container_file_ids
+                )
+
+                if diff_generated:
+                    for gf in diff_generated:
+                        if gf["file_id"] not in processed_container_file_ids:
+                            generated_files.append(gf)
+                            processed_container_file_ids.add(gf["file_id"])
+                            sandbox_link = f"[{gf['filename']}](sandbox:/mnt/data/{gf['filename']})"
+                            if sandbox_link in assistant_content:
+                                assistant_content = assistant_content.replace(sandbox_link, f"**{gf['filename']}**")
+
+                before_snapshot = after_snapshot
+            except Exception as diff_exc:
+                logger.error(f"[CONTAINER] Failed to diff container files: {diff_exc}", exc_info=True)
 
             # Store assistant message WITH sources and generated files in metadata
             message_metadata = {
@@ -1208,11 +1224,174 @@ class ChatService:
                 return conversation
 
         # Create new conversation
-        conversation = Conversation(user_id=user_id, title="New Conversation")
+        conversation = Conversation(user_id=user_id, title="New Conversation", openai_metadata={})
         db.add(conversation)
         await db.commit()
         await db.refresh(conversation)
         return conversation
+
+    async def _ensure_conversation_container(
+        self,
+        db: AsyncSession,
+        conversation: Conversation,
+        force_new: bool = False
+    ) -> str:
+        """Ensure the conversation has an associated code interpreter container."""
+        metadata = conversation.openai_metadata or {}
+        container_info = metadata.get("code_interpreter_container") or {}
+        existing_id = container_info.get("id")
+
+        if existing_id and not force_new:
+            return existing_id
+
+        logger.info(f"[CONTAINER] Creating new container for conversation {conversation.id}")
+        container = await self.responses_service.client.containers.create(
+            name=f"conversation-{conversation.id}"
+        )
+
+        metadata["code_interpreter_container"] = {
+            "id": container.id,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        conversation.openai_metadata = metadata
+        await db.commit()
+        await db.refresh(conversation)
+
+        return container.id
+
+    async def _snapshot_container_files(self, container_id: str) -> Dict[str, Dict[str, Any]]:
+        """Get current files within a container keyed by file_id."""
+        from app.services.openai.container_file_service import container_file_service
+
+        files = await container_file_service.list_container_files(container_id)
+        return {file["id"]: file for file in files}
+
+    async def _ingest_container_file(
+        self,
+        db: AsyncSession,
+        user_id: UUID,
+        container_id: str,
+        file_id: str,
+        filename: Optional[str]
+    ) -> Optional[Dict[str, Any]]:
+        """Download a container file and store it as a knowledge item."""
+        from app.services.openai.container_file_service import container_file_service
+        from app.services.content_service import content_service
+        from app.services.folder_service import folder_service
+        import asyncio
+        from app.services.processing_service import processing_service
+
+        # Check if we already ingested this file
+        existing_stmt = select(KnowledgeItem).where(
+            KnowledgeItem.user_id == user_id,
+            KnowledgeItem.item_metadata["container_id"].as_string() == container_id,
+            KnowledgeItem.item_metadata["file_id"].as_string() == file_id
+        )
+        existing_result = await db.execute(existing_stmt)
+        existing_item = existing_result.scalar_one_or_none()
+
+        if existing_item:
+            logger.debug(f"[CONTAINER] File {file_id} already ingested as knowledge item {existing_item.id}")
+            download_url = f"/api/v1/files/download/{existing_item.id}"
+            return {
+                "id": str(existing_item.id),
+                "filename": existing_item.filename or filename or file_id,
+                "container_id": container_id,
+                "file_id": file_id,
+                "download_url": download_url,
+                "created_at": existing_item.created_at.isoformat(),
+                "content_type": existing_item.content_type
+            }
+
+        # Download file
+        file_bytes, inferred_name = await container_file_service.download_container_file(
+            container_id,
+            file_id,
+            filename
+        )
+
+        final_filename = filename or inferred_name or file_id
+
+        # Ensure AI Artifacts folder
+        ai_folder = await folder_service.get_or_create_ai_artifacts_folder(db, user_id)
+
+        knowledge_item = await content_service.create_knowledge_item_from_bytes(
+            db=db,
+            user_id=user_id,
+            folder_id=ai_folder.id,
+            filename=final_filename,
+            file_bytes=file_bytes,
+            metadata={
+                "container_id": container_id,
+                "file_id": file_id,
+                "original_filename": final_filename,
+                "generated_by": "code_interpreter",
+                "source_type": "upload"
+            }
+        )
+
+        asyncio.create_task(
+            processing_service.process_knowledge_item(knowledge_item.id)
+        )
+        logger.info(
+            f"[CODE_INTERPRETER_PROCESSING] Queued processing for {final_filename} "
+            f"(item_id: {knowledge_item.id})"
+        )
+
+        download_url = f"/api/v1/files/download/{knowledge_item.id}"
+        return {
+            "id": str(knowledge_item.id),
+            "filename": final_filename,
+            "container_id": container_id,
+            "file_id": file_id,
+            "download_url": download_url,
+            "created_at": knowledge_item.created_at.isoformat(),
+            "content_type": knowledge_item.content_type
+        }
+
+    async def _process_container_file_diff(
+        self,
+        db: AsyncSession,
+        user_id: UUID,
+        container_id: str,
+        before_snapshot: Dict[str, Dict[str, Any]],
+        after_snapshot: Dict[str, Dict[str, Any]],
+        skip_file_ids: Optional[Set[str]] = None
+    ) -> List[Dict[str, Any]]:
+        """Process new files by comparing container snapshots."""
+        generated_files: List[Dict[str, Any]] = []
+        new_file_ids = set(after_snapshot.keys()) - set(before_snapshot.keys())
+
+        if skip_file_ids:
+            new_file_ids -= skip_file_ids
+
+        if not new_file_ids:
+            return generated_files
+
+        logger.info(f"[CONTAINER] Detected {len(new_file_ids)} new file(s) in container {container_id}")
+
+        for file_id in new_file_ids:
+            file_info = after_snapshot.get(file_id, {})
+            filename = file_info.get("filename") or file_info.get("name")
+
+            try:
+                generated = await self._ingest_container_file(
+                    db=db,
+                    user_id=user_id,
+                    container_id=container_id,
+                    file_id=file_id,
+                    filename=filename
+                )
+                if generated:
+                    generated_files.append(generated)
+            except Exception as exc:
+                logger.error(
+                    f"[CONTAINER] Failed to ingest file {file_id} from container {container_id}: {exc}",
+                    exc_info=True
+                )
+                continue
+
+        return generated_files
 
     async def _store_message(
         self,

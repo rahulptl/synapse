@@ -57,15 +57,12 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile.dev  # Use development Dockerfile
-      args:
-        # Frontend calls backend using Docker service name for development
-        VITE_BACKEND_API_URL: http://localhost:8000
     container_name: synapse-frontend
     ports:
       - "3000:8080"  # Vite dev server port (matches vite.config.ts)
     environment:
-      # Override for Docker Compose
-      VITE_BACKEND_API_URL: http://localhost:8000
+      # Allow frontend code to derive backend URL while defaulting to port 8000
+      VITE_BACKEND_API_PORT: 8000
     volumes:
       # Mount source code for hot reload
       - ./frontend/src:/app/src

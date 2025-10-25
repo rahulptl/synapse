@@ -1,3 +1,5 @@
+import { resolveBackendBaseUrl } from '@/utils/backendUrl';
+
 export function getInitials(name: string): string {
   return name
     .split(' ')
@@ -25,7 +27,7 @@ export function getAvatarUrl(url?: string | null, profileUpdatedAt?: string | nu
 
   // Convert relative backend URLs to absolute URLs
   // This is necessary when frontend and backend are on different domains
-  const API_BASE_URL = import.meta.env.VITE_BACKEND_API_URL || 'http://localhost:8000';
+  const API_BASE_URL = resolveBackendBaseUrl();
   const fullUrl = url.startsWith('http') ? url : `${API_BASE_URL}${url}`;
 
   console.log('🖼️ Avatar URL Helper - Full URL:', fullUrl);

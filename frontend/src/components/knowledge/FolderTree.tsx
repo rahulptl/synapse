@@ -243,8 +243,15 @@ function FolderNode({
               className="h-7 w-7 p-0 hover:bg-blue-500/20 hover:text-blue-400 transition-colors text-gray-400"
               onClick={(e) => {
                 e.stopPropagation();
+                const sanitizedName = folder.name.replace(/"/g, '\\"');
+                const mention = folder.name.includes(' ')
+                  ? `@"${sanitizedName}"`
+                  : `@${sanitizedName}`;
                 navigate('/chat', {
                   state: {
+                    prefillMention: mention,
+                    prefillContextLabel: folder.name,
+                    prefillContextType: 'folder',
                     preSelectedFolder: {
                       id: folder.id,
                       name: folder.name,

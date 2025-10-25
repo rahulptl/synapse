@@ -1,3 +1,5 @@
+import { resolveBackendBaseUrl, resolveBackendWebSocketUrl } from '@/utils/backendUrl';
+
 /**
  * ChatWebSocket Service with Native WebSocket and Custom Reconnection
  *
@@ -67,8 +69,11 @@ export class ChatWebSocketService {
   private backgroundModeActive = false;
   private currentConversationId: string | null = null;
 
-  constructor(private baseUrl: string) {
-    // Lazy initialization - do not create WebSocket in constructor
+  private baseUrl: string;
+
+  constructor(baseUrl?: string) {
+    // Resolve backend base URL lazily to support LAN access
+    this.baseUrl = resolveBackendBaseUrl(baseUrl);
   }
 
   /**
@@ -283,7 +288,7 @@ export class ChatWebSocketService {
     this.reconnectAttempts = 0;
 
     // Determine WebSocket URL
-    const wsUrlBase = this.baseUrl.replace('http://', 'ws://').replace('https://', 'wss://');
+    const wsUrlBase = resolveBackendWebSocketUrl(this.baseUrl);
     this.wsUrl = `${wsUrlBase}/api/v1/chat/ws`;
 
     // Create authentication promise
@@ -407,7 +412,7 @@ let chatWSInstance: ChatWebSocketService | null = null;
  */
 export function getChatWebSocket(baseUrl?: string): ChatWebSocketService {
   if (!chatWSInstance) {
-    const url = baseUrl || import.meta.env.VITE_BACKEND_API_URL || 'http://localhost:8000';
+    const url = resolveBackendBaseUrl(baseUrl);
     console.log('Creating new ChatWebSocketService instance with base URL:', url);
     chatWSInstance = new ChatWebSocketService(url);
   }

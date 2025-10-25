@@ -10,7 +10,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useStorageUsage } from '@/hooks/useStorageUsage';
 import { KnowledgeItem, Folder } from '@/types/knowledge';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Menu, FolderOpen, Upload } from 'lucide-react';
+import { Menu, FolderOpen, Upload, FolderPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 
@@ -35,6 +35,11 @@ export default function KnowledgePage() {
     }),
     []
   );
+
+  const formatMention = (name: string) => {
+    const sanitized = name.replace(/"/g, '\\"');
+    return name.includes(' ') ? `@"${sanitized}"` : `@${sanitized}`;
+  };
 
   const getAuthData = () => {
     if (!user || !accessToken) {
@@ -323,8 +328,12 @@ export default function KnowledgePage() {
   
   // Function to start conversation with a specific item
   const chatWithItem = (itemId: string, itemTitle: string) => {
+    const mention = formatMention(itemTitle);
     navigate('/chat', {
       state: {
+        prefillMention: mention,
+        prefillContextLabel: itemTitle,
+        prefillContextType: 'item',
         preSelectedItem: {
           id: itemId,
           title: itemTitle,
@@ -391,6 +400,84 @@ export default function KnowledgePage() {
     setTriggerRootFolderCreate(true);
     // Reset trigger after a short delay to allow multiple triggers
     setTimeout(() => setTriggerRootFolderCreate(false), 100);
+  };
+
+  const handleCreateTextEntry = async (
+    folderId: string,
+    note: { title: string; content: string }
+  ) => {
+    try {
+      const auth = getAuthData();
+
+      await apiClient.createTextEntry(
+        {
+          folder_id: folderId,
+          title: note.title,
+          content: note.content,
+        },
+        auth
+      );
+
+      toast({
+        title: "Success",
+        description: "Text note created successfully",
+      });
+
+      window.dispatchEvent(new CustomEvent('knowledge-item-added', {
+        detail: {
+          folderId,
+          title: note.title,
+          contentType: 'text',
+        },
+      }));
+
+      await loadFolders();
+      if (selectedFolder === folderId) {
+        await loadFolderItems(selectedFolder);
+      }
+
+      setShowFileUploadDialog(false);
+    } catch (error) {
+      console.error('Failed to create text note:', error);
+      toast({
+        title: "Creation Failed",
+        description: error instanceof Error ? error.message : "Failed to create text note",
+        variant: "destructive",
+      });
+      throw error;
+    }
+  };
+
+  const handleCreateSubfolder = async () => {
+    if (!selectedFolder) {
+      toast({
+        title: "Select a folder",
+        description: "Choose a folder first, then create a subfolder.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const name = prompt('Subfolder name');
+    const folderName = name?.trim();
+    if (!folderName) {
+      return;
+    }
+
+    try {
+      await createFolder(selectedFolder, folderName);
+      toast({
+        title: "Folder created",
+        description: `Added "${folderName}" inside this folder.`,
+      });
+    } catch (error) {
+      console.error('Failed to create subfolder:', error);
+      toast({
+        title: "Creation failed",
+        description: error instanceof Error ? error.message : "Could not create subfolder",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleFileUpload = async (file: File, folderId: string, customTitle?: string) => {
@@ -488,6 +575,11 @@ export default function KnowledgePage() {
         onOpenChange={setShowFileUploadDialog}
         folders={convertFoldersToFileUploadFormat(folders)}
         onUpload={handleFileUpload}
+        enableFolderSelection={!selectedFolder}
+        defaultFolderId={selectedFolder}
+        defaultFolderName={getSelectedFolderName() || undefined}
+        allowTextEntry
+        onCreateTextEntry={handleCreateTextEntry}
       />
 
       {/* Main Content Area */}
@@ -510,6 +602,15 @@ export default function KnowledgePage() {
               </Button>
               <div className="flex items-center gap-2">
                 <Button
+                  onClick={handleCreateSubfolder}
+                  size="sm"
+                  variant="outline"
+                  className="border-white/10 text-white hover:bg-white/10"
+                >
+                  <FolderPlus className="h-4 w-4 mr-2" />
+                  New Folder
+                </Button>
+                <Button
                   onClick={handleUpload}
                   size="sm"
                   className="bg-sidebar-primary hover:bg-sidebar-primary/90 text-white"
@@ -527,7 +628,16 @@ export default function KnowledgePage() {
                 selectedItem ? 'hidden lg:flex lg:flex-col' : 'flex flex-col'
               }`}>
                 {/* Desktop Header */}
-                <div className="hidden md:flex px-4 py-3 border-b border-sidebar-border items-center justify-center">
+                <div className="hidden md:flex px-4 py-3 border-b border-sidebar-border items-center justify-between">
+                  <Button
+                    onClick={handleCreateSubfolder}
+                    size="sm"
+                    variant="outline"
+                    className="border-sidebar-border text-sidebar-foreground hover:bg-sidebar-accent"
+                  >
+                    <FolderPlus className="h-4 w-4 mr-2" />
+                    New Folder
+                  </Button>
                   <Button
                     onClick={handleUpload}
                     size="sm"

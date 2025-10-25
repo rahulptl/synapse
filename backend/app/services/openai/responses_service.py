@@ -64,6 +64,7 @@ class ResponsesService(OpenAIBaseService):
         presence_penalty: Optional[float] = None,
         frequency_penalty: Optional[float] = None,
         filters: Optional[Dict[str, Any]] = None,
+        container_id: Optional[str] = None,
     ) -> Response:
         """Create a response with both file search and web search enabled.
 
@@ -103,15 +104,18 @@ class ResponsesService(OpenAIBaseService):
         if filters:
             file_search_tool["filters"] = filters
 
+        code_interpreter_tool: Dict[str, Any] = {"type": "code_interpreter"}
+        if container_id:
+            code_interpreter_tool["container"] = container_id
+        else:
+            code_interpreter_tool["container"] = {"type": "auto"}
+
         tools = [
             file_search_tool,
             {
                 "type": "web_search_preview"
             },
-            {
-            "type": "code_interpreter",
-            "container": {"type": "auto"}
-            }
+            code_interpreter_tool
         ]
 
         kwargs = {
@@ -136,6 +140,7 @@ class ResponsesService(OpenAIBaseService):
             kwargs['frequency_penalty'] = frequency_penalty
         if previous_response_id is not None:
             kwargs['previous_response_id'] = previous_response_id
+        # No additional params required when using explicit container assignment on the tool
 
         try:
             response = await self.client.responses.create(**kwargs)
@@ -162,6 +167,7 @@ class ResponsesService(OpenAIBaseService):
         presence_penalty: Optional[float] = None,
         frequency_penalty: Optional[float] = None,
         filters: Optional[Dict[str, Any]] = None,
+        container_id: Optional[str] = None,
     ):
         """Create a streaming response with both file search and web search enabled.
 
@@ -201,15 +207,18 @@ class ResponsesService(OpenAIBaseService):
         if filters:
             file_search_tool["filters"] = filters
 
+        code_interpreter_tool: Dict[str, Any] = {"type": "code_interpreter"}
+        if container_id:
+            code_interpreter_tool["container"] = container_id
+        else:
+            code_interpreter_tool["container"] = {"type": "auto"}
+
         tools = [
             file_search_tool,
             {
                 "type": "web_search_preview"
             },
-            {
-            "type": "code_interpreter",
-            "container": {"type": "auto"}
-            }
+            code_interpreter_tool
         ]
 
         kwargs = {
@@ -230,6 +239,7 @@ class ResponsesService(OpenAIBaseService):
             kwargs['max_output_tokens'] = max_output_tokens
         if previous_response_id is not None:
             kwargs['previous_response_id'] = previous_response_id
+        # No additional params required when using explicit container assignment on the tool
 
         try:
             stream = await self.client.responses.create(**kwargs)

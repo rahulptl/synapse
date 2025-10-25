@@ -11,7 +11,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Folder, FolderOpen, Upload, X, FileIcon, ChevronRight, ChevronDown } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Folder, FolderOpen, Upload, X, FileIcon, ChevronRight, ChevronDown, FileText } from 'lucide-react';
 
 interface FolderItem {
   id: string;
@@ -19,11 +21,21 @@ interface FolderItem {
   children?: FolderItem[];
 }
 
+type UploadTab = 'file' | 'text';
+
 interface FileUploadDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   folders: FolderItem[];
   onUpload: (file: File, folderId: string, customTitle?: string) => Promise<void>;
+  allowTextEntry?: boolean;
+  enableFolderSelection?: boolean;
+  defaultFolderId?: string | null;
+  defaultFolderName?: string;
+  onCreateTextEntry?: (
+    folderId: string,
+    note: { title: string; content: string }
+  ) => Promise<void>;
 }
 
 export function FileUploadDialog({
@@ -31,24 +43,49 @@ export function FileUploadDialog({
   onOpenChange,
   folders,
   onUpload,
+  allowTextEntry = false,
+  enableFolderSelection = true,
+  defaultFolderId = null,
+  defaultFolderName,
+  onCreateTextEntry,
 }: FileUploadDialogProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [customTitle, setCustomTitle] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [activeTab, setActiveTab] = useState<UploadTab>('file');
+  const [noteTitle, setNoteTitle] = useState('');
+  const [noteContent, setNoteContent] = useState('');
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (open) {
-      // Reset state when dialog opens
-      setSelectedFile(null);
-      setSelectedFolderId(null);
-      setCustomTitle('');
-      setExpandedFolders(new Set());
-      console.log('[FILE_UPLOAD_DIALOG] Opened with folders:', folders);
+    if (!open) {
+      return;
     }
-  }, [open, folders]);
+
+    // Reset state when dialog opens
+    setSelectedFile(null);
+    setCustomTitle('');
+    setActiveTab('file');
+    setNoteTitle('');
+    setNoteContent('');
+    setExpandedFolders(new Set());
+    console.log('[FILE_UPLOAD_DIALOG] Opened');
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    setSelectedFolderId(defaultFolderId ?? null);
+  }, [open, defaultFolderId]);
+
+  useEffect(() => {
+    if (!allowTextEntry && activeTab === 'text') {
+      setActiveTab('file');
+    }
+  }, [allowTextEntry, activeTab]);
 
   useEffect(() => {
     // Auto-fill title when file is selected
@@ -83,6 +120,27 @@ export function FileUploadDialog({
   };
 
   const handleConfirm = async () => {
+    if (isProcessing) return;
+
+    if (activeTab === 'text') {
+      if (!allowTextEntry || !onCreateTextEntry) return;
+      if (!noteTitle.trim() || !noteContent.trim() || !selectedFolderId) return;
+
+      setIsProcessing(true);
+      try {
+        await onCreateTextEntry(selectedFolderId, {
+          title: noteTitle.trim(),
+          content: noteContent.trim(),
+        });
+        onOpenChange(false);
+      } catch (error) {
+        console.error('Failed to create text entry:', error);
+      } finally {
+        setIsProcessing(false);
+      }
+      return;
+    }
+
     if (!selectedFile || !selectedFolderId) return;
 
     setIsProcessing(true);
@@ -178,6 +236,62 @@ export function FileUploadDialog({
     });
   };
 
+  const renderFolderSelection = (shouldShow: boolean) => {
+    if (!shouldShow) {
+      return null;
+    }
+
+    if (!enableFolderSelection) {
+      if (!selectedFolderId) {
+        return (
+          <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+            Select a folder in the sidebar before adding content.
+          </div>
+        );
+      }
+      return null;
+    }
+
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <Label className="text-gray-300 text-sm font-medium">
+            Select Destination Folder
+          </Label>
+          {selectedFolderId && (
+            <span className="text-xs text-blue-400">
+              ✓ Folder selected
+            </span>
+          )}
+        </div>
+        <div className="border border-slate-700 rounded-lg overflow-hidden bg-slate-800/30">
+          <ScrollArea className="h-[240px] p-3">
+            {folders.length > 0 ? (
+              <div className="space-y-1">
+                {renderFolderTree(folders)}
+              </div>
+            ) : (
+              <div className="text-center py-12 text-gray-400">
+                <Folder className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                <p className="text-sm font-medium">No folders available</p>
+                <p className="text-xs mt-1.5 text-gray-500">Create a folder in Memory Bay first</p>
+              </div>
+            )}
+          </ScrollArea>
+        </div>
+        {selectedFolderId ? (
+          <div className="text-xs text-gray-500 flex items-center space-x-1">
+            <span>💡 Tip: Click chevron icons to expand/collapse folders</span>
+          </div>
+        ) : (
+          <div className="text-xs text-gray-500">
+            Select a folder where this content should live
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const formatFileSize = (bytes: number): string => {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
@@ -186,127 +300,166 @@ export function FileUploadDialog({
     return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
   };
 
+  const dialogTitle = allowTextEntry ? 'Add Content to Memory' : 'Upload File to Memory';
+  const dialogDescription = allowTextEntry
+    ? enableFolderSelection
+      ? 'Upload a file or write a text note, then choose where to save it.'
+      : 'Upload a file or write a text note to add it to the current folder.'
+    : enableFolderSelection
+      ? 'Select a file and choose where to save it.'
+      : 'Select a file to add it to the current folder.';
+  const isFileTab = activeTab === 'file';
+  const primaryButtonLabel = isFileTab
+    ? isProcessing ? 'Uploading...' : 'Upload to Memory'
+    : isProcessing ? 'Creating...' : 'Create Text Note';
+  const isActionDisabled = isFileTab
+    ? !selectedFile || !selectedFolderId || isProcessing
+    : !allowTextEntry || !onCreateTextEntry || !noteTitle.trim() || !noteContent.trim() || !selectedFolderId || isProcessing;
+  const primaryButtonClass = isFileTab
+    ? 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700'
+    : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700';
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[550px] bg-slate-900 border-slate-700">
         <DialogHeader>
-          <DialogTitle className="text-white">Upload File to Memory</DialogTitle>
+          <DialogTitle className="text-white">{dialogTitle}</DialogTitle>
           <DialogDescription className="text-gray-400">
-            Select a file and choose where to save it
+            {dialogDescription}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6 py-4">
-          {/* File Upload Section */}
-          <div className="space-y-3">
-            <Label className="text-gray-300">Select File</Label>
-
-            {!selectedFile ? (
-              <div
-                onClick={() => fileInputRef.current?.click()}
-                className="border-2 border-dashed border-slate-600 rounded-lg p-8 hover:border-blue-500 hover:bg-slate-800/50 transition-all cursor-pointer group"
-              >
-                <div className="flex flex-col items-center justify-center space-y-3">
-                  <div className="p-3 rounded-full bg-slate-800 group-hover:bg-blue-500/20 transition-colors">
-                    <Upload className="h-8 w-8 text-gray-400 group-hover:text-blue-400" />
-                  </div>
-                  <div className="text-center">
-                    <p className="text-sm font-medium text-gray-300">Click to select a file</p>
-                    <p className="text-xs text-gray-500 mt-1">
-                      PDF, DOC, Images, Audio, Video supported
-                    </p>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="border border-slate-600 rounded-lg p-4 bg-slate-800/50">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3 flex-1 min-w-0">
-                    <div className="p-2 rounded bg-blue-500/20">
-                      <FileIcon className="h-5 w-5 text-blue-400" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-200 truncate">
-                        {selectedFile.name}
-                      </p>
-                      <p className="text-xs text-gray-400">
-                        {formatFileSize(selectedFile.size)}
-                      </p>
-                    </div>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleRemoveFile}
-                    className="h-8 w-8 p-0 hover:bg-red-500/20 hover:text-red-400"
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            <input
-              ref={fileInputRef}
-              type="file"
-              className="hidden"
-              onChange={handleFileChange}
-              accept=".pdf,.txt,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.gif,.mp3,.wav,.m4a,.mp4,.avi,.mov"
-            />
-          </div>
-
-          {/* Title Input */}
-          {selectedFile && (
-            <div className="space-y-2">
-              <Label htmlFor="title" className="text-gray-300">
-                Title (optional)
-              </Label>
-              <Input
-                id="title"
-                value={customTitle}
-                onChange={(e) => setCustomTitle(e.target.value)}
-                placeholder="Enter a custom title..."
-                className="bg-slate-800 border-slate-600 text-gray-200"
-              />
-            </div>
+        <Tabs
+          value={activeTab}
+          onValueChange={(value) => setActiveTab(value as UploadTab)}
+          className="w-full"
+        >
+          {allowTextEntry && (
+            <TabsList className="grid w-full grid-cols-2 bg-slate-800">
+              <TabsTrigger value="file" className="data-[state=active]:bg-blue-600">
+                <Upload className="h-4 w-4 mr-2" />
+                Upload File
+              </TabsTrigger>
+              <TabsTrigger value="text" className="data-[state=active]:bg-purple-600">
+                <FileText className="h-4 w-4 mr-2" />
+                Write Note
+              </TabsTrigger>
+            </TabsList>
           )}
 
-          {/* Folder Selection */}
-          {selectedFile && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Label className="text-gray-300 text-sm font-medium">
-                  Select Destination Folder
-                </Label>
-                {selectedFolderId && (
-                  <span className="text-xs text-blue-400">
-                    ✓ Folder selected
-                  </span>
+          <TabsContent value="file">
+            <div className="space-y-6 py-4">
+              <div className="space-y-3">
+                <Label className="text-gray-300">Select File</Label>
+
+                {!selectedFile ? (
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    className="border-2 border-dashed border-slate-600 rounded-lg p-8 hover:border-blue-500 hover:bg-slate-800/50 transition-all cursor-pointer group"
+                  >
+                    <div className="flex flex-col items-center justify-center space-y-3">
+                      <div className="p-3 rounded-full bg-slate-800 group-hover:bg-blue-500/20 transition-colors">
+                        <Upload className="h-8 w-8 text-gray-400 group-hover:text-blue-400" />
+                      </div>
+                      <div className="text-center">
+                        <p className="text-sm font-medium text-gray-300">Click to select a file</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          PDF, DOC, Images, Audio, Video supported
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="border border-slate-600 rounded-lg p-4 bg-slate-800/50">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-3 flex-1 min-w-0">
+                        <div className="p-2 rounded bg-blue-500/20">
+                          <FileIcon className="h-5 w-5 text-blue-400" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-200 truncate">
+                            {selectedFile.name}
+                          </p>
+                          <p className="text-xs text-gray-400">
+                            {formatFileSize(selectedFile.size)}
+                          </p>
+                        </div>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleRemoveFile}
+                        className="h-8 w-8 p-0 hover:bg-red-500/20 hover:text-red-400"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
                 )}
               </div>
-              <div className="border border-slate-700 rounded-lg overflow-hidden bg-slate-800/30">
-                <ScrollArea className="h-[240px] p-3">
-                  {folders.length > 0 ? (
-                    <div className="space-y-1">
-                      {renderFolderTree(folders)}
-                    </div>
-                  ) : (
-                    <div className="text-center py-12 text-gray-400">
-                      <Folder className="h-12 w-12 mx-auto mb-3 opacity-30" />
-                      <p className="text-sm font-medium">No folders available</p>
-                      <p className="text-xs mt-1.5 text-gray-500">Create a folder in Memory Bay first</p>
-                    </div>
-                  )}
-                </ScrollArea>
-              </div>
-              {selectedFolderId && (
-                <div className="text-xs text-gray-500 flex items-center space-x-1">
-                  <span>💡 Tip: Click chevron icons to expand/collapse folders</span>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                onChange={handleFileChange}
+                accept=".pdf,.txt,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.gif,.mp3,.wav,.m4a,.mp4,.avi,.mov"
+              />
+
+              {selectedFile && (
+                <div className="space-y-2">
+                  <Label htmlFor="title" className="text-gray-300">
+                    Title (optional)
+                  </Label>
+                  <Input
+                    id="title"
+                    value={customTitle}
+                    onChange={(e) => setCustomTitle(e.target.value)}
+                    placeholder="Enter a custom title..."
+                    className="bg-slate-800 border-slate-600 text-gray-200"
+                  />
                 </div>
               )}
+
+              {renderFolderSelection(enableFolderSelection ? Boolean(selectedFile) : true)}
             </div>
+          </TabsContent>
+
+          {allowTextEntry && (
+            <TabsContent value="text">
+              <div className="space-y-6 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="note-title" className="text-gray-300">
+                    Title *
+                  </Label>
+                  <Input
+                    id="note-title"
+                    value={noteTitle}
+                    onChange={(e) => setNoteTitle(e.target.value)}
+                    placeholder="Give your note a title"
+                    className="bg-slate-800 border-slate-600 text-gray-200"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="note-content" className="text-gray-300">
+                    Content *
+                  </Label>
+                  <Textarea
+                    id="note-content"
+                    value={noteContent}
+                    onChange={(e) => setNoteContent(e.target.value)}
+                    placeholder="Write your note here..."
+                    rows={8}
+                    className="bg-slate-800 border-slate-600 text-gray-200 font-mono text-sm"
+                  />
+                </div>
+
+                {renderFolderSelection(true)}
+              </div>
+            </TabsContent>
           )}
-        </div>
+        </Tabs>
 
         <DialogFooter>
           <Button
@@ -319,10 +472,10 @@ export function FileUploadDialog({
           </Button>
           <Button
             onClick={handleConfirm}
-            disabled={!selectedFile || !selectedFolderId || isProcessing}
-            className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+            disabled={isActionDisabled}
+            className={`${primaryButtonClass} text-white`}
           >
-            {isProcessing ? 'Uploading...' : 'Upload to Memory'}
+            {primaryButtonLabel}
           </Button>
         </DialogFooter>
       </DialogContent>

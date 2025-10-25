@@ -1,4 +1,5 @@
 import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
+import { resolveBackendBaseUrl } from '@/utils/backendUrl';
 import { apiClient } from '../services/apiClient';
 
 // Cloud SQL Auth User interface
@@ -26,7 +27,45 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const API_BASE_URL = import.meta.env.VITE_BACKEND_API_URL || 'http://localhost:8000';
+const API_BASE_URL = resolveBackendBaseUrl();
+
+const DEFAULT_SIGNUP_ERROR = 'Signup failed';
+
+function parseErrorMessage(errorData: unknown, fallback: string = DEFAULT_SIGNUP_ERROR): string {
+  if (!errorData) {
+    return fallback;
+  }
+
+  if (typeof errorData === 'string') {
+    return errorData;
+  }
+
+  if (Array.isArray(errorData)) {
+    const messages = errorData
+      .map((item) => parseErrorMessage(item, ''))
+      .filter((msg): msg is string => Boolean(msg && msg.trim()));
+
+    return messages[0] ?? fallback;
+  }
+
+  if (typeof errorData === 'object') {
+    const data = errorData as Record<string, unknown>;
+
+    if (typeof data.msg === 'string' && data.msg.trim().length > 0) {
+      return data.msg;
+    }
+
+    if (typeof data.message === 'string' && data.message.trim().length > 0) {
+      return data.message;
+    }
+
+    if (data.detail !== undefined) {
+      return parseErrorMessage(data.detail, fallback);
+    }
+  }
+
+  return fallback;
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -218,10 +257,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         return { error: null };
       } else {
-        const errorData = await response.json();
+        let errorMessage = DEFAULT_SIGNUP_ERROR;
+
+        try {
+          const errorData = await response.json();
+          errorMessage = parseErrorMessage(errorData, DEFAULT_SIGNUP_ERROR);
+        } catch (parseError) {
+          console.error('Failed to parse signup error response:', parseError);
+        }
+
         return {
           error: {
-            message: errorData.detail || 'Signup failed'
+            message: errorMessage
           }
         };
       }

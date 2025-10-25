@@ -1,6 +1,7 @@
-import { FileText, ExternalLink, Loader2, CheckCircle, AlertCircle, Clock } from 'lucide-react';
+import { FileText, ExternalLink, Loader2, CheckCircle, AlertCircle, Clock, MessageSquare } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ItemActionsMenu } from './ItemActionsMenu';
+import { Button } from '@/components/ui/button';
 
 interface ModernItemListItemProps {
   id: string;
@@ -142,8 +143,22 @@ export function ModernItemListItem({
         </div>
       </div>
 
-      {/* Actions Menu */}
-      <div className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+      {/* Actions */}
+      <div className="flex-shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        {onChat && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 w-7 p-0 text-sidebar-icon hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
+            onClick={(e) => {
+              e.stopPropagation();
+              onChat();
+            }}
+            title="Chat about this item"
+          >
+            <MessageSquare className="h-4 w-4" />
+          </Button>
+        )}
         <ItemActionsMenu
           itemId={id}
           itemTitle={title}

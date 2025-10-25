@@ -58,6 +58,11 @@ import { useViewportInfo } from '@/hooks/useViewportInfo';
 // Lazy load MarkdownMessage to prevent highlight.js initialization issues
 const MarkdownMessage = lazy(() => import('@/components/chat/MarkdownMessage').then(module => ({ default: module.MarkdownMessage })));
 
+const formatMention = (name: string) => {
+  const sanitized = name.replace(/"/g, '\\"');
+  return name.includes(' ') ? `@"${sanitized}"` : `@${sanitized}`;
+};
+
 
 export default function ChatPage() {
   const { user, loading, accessToken } = useAuth();
@@ -150,6 +155,7 @@ export default function ChatPage() {
   // Refs need to be declared before hooks that use them
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const preserveInputRef = useRef(false);
   const isCreatingNewConversation = useRef(false);
 
   // Use extracted autocomplete hook
@@ -237,44 +243,69 @@ export default function ChatPage() {
   useEffect(() => {
     const state = location.state as any;
 
-    if (state?.preSelectedFolder) {
-      // Pre-populate with folder hashtag
-      const folderName = state.preSelectedFolder.name;
-      setInputMessage(`#${folderName} `);
+    if (!state) {
+      return;
+    }
 
-      // Focus input
+    if (state.prefillMention) {
+      const mention: string = state.prefillMention;
+      const contextLabel: string | undefined = state.prefillContextLabel;
+
+      setInputMessage(`${mention} `);
       setTimeout(() => {
         inputRef.current?.focus();
+        preserveInputRef.current = false;
       }, 100);
 
-      // Show helper toast
+      toast({
+        title: "Chat Context Set",
+        description: contextLabel ? `Ask questions about "${contextLabel}"` : 'Context mention inserted.',
+      });
+
+      preserveInputRef.current = true;
+      window.history.replaceState({}, document.title);
+      return;
+    }
+
+    if (state?.preSelectedFolder) {
+      const folderName = state.preSelectedFolder.name;
+      const mention = formatMention(folderName);
+      setInputMessage(`${mention} `);
+
+      setTimeout(() => {
+        inputRef.current?.focus();
+        preserveInputRef.current = false;
+      }, 100);
+
       toast({
         title: "Chat Context Set",
         description: `Ask questions about "${folderName}"`,
       });
 
-      // Clear the navigation state to prevent re-triggering
+      preserveInputRef.current = true;
       window.history.replaceState({}, document.title);
-    } else if (state?.preSelectedItem) {
-      // Pre-populate with item reference
-      const itemTitle = state.preSelectedItem.title;
-      setInputMessage(`@${itemTitle} `);
+      return;
+    }
 
-      // Focus input
+    if (state?.preSelectedItem) {
+      const itemTitle = state.preSelectedItem.title;
+      const mention = formatMention(itemTitle);
+      setInputMessage(`${mention} `);
+
       setTimeout(() => {
         inputRef.current?.focus();
+        preserveInputRef.current = false;
       }, 100);
 
-      // Show helper toast
       toast({
         title: "Chat Context Set",
         description: `Ask questions about "${itemTitle}"`,
       });
 
-      // Clear the navigation state to prevent re-triggering
+      preserveInputRef.current = true;
       window.history.replaceState({}, document.title);
     }
-  }, [location.state]);
+  }, [location.state, toast]);
 
   // Save current draft before switching conversations
   const saveCurrentDraft = (conversationId: string | null) => {
@@ -296,10 +327,16 @@ export default function ChatPage() {
     console.log('[DRAFT] restoreDraft called for:', conversationId);
     if (conversationId && conversationDrafts[conversationId]) {
       console.log('[DRAFT] ✅ Restoring draft:', conversationDrafts[conversationId].substring(0, 50));
-      setInputMessage(conversationDrafts[conversationId]);
+      if (!preserveInputRef.current) {
+        setInputMessage(conversationDrafts[conversationId]);
+      } else {
+        console.log('[DRAFT] 🔁 Skipping restore to preserve prefilled input');
+      }
     } else {
       console.log('[DRAFT] 🗑️ No draft to restore, clearing input');
-      setInputMessage('');
+      if (!preserveInputRef.current) {
+        setInputMessage('');
+      }
     }
   };
 
@@ -322,7 +359,11 @@ export default function ChatPage() {
     } else {
       console.log('[EFFECT] 🗑️ Clearing messages - no conversation selected');
       setMessages([]);
-      setInputMessage('');
+      if (preserveInputRef.current) {
+        preserveInputRef.current = false;
+      } else {
+        setInputMessage('');
+      }
       // Don't clear streaming state - let it persist for background conversations
     }
   }, [selectedConversation]);
@@ -1135,9 +1176,10 @@ export default function ChatPage() {
         console.log('[FILE_UPLOAD] Added to context:', uploadedItem);
 
         // Focus the input
-        setTimeout(() => {
-          inputRef.current?.focus();
-        }, 100);
+      setTimeout(() => {
+        inputRef.current?.focus();
+        preserveInputRef.current = false;
+      }, 100);
       }
 
       // Emit event for real-time KB update

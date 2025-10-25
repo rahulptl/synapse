@@ -16,6 +16,7 @@ export function AuthPage() {
   const [loading, setLoading] = useState(false);
   const [redirecting, setRedirecting] = useState(false);
   const [showAvatarUpload, setShowAvatarUpload] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
 
   const { user, signIn, signUp, loading: authLoading } = useAuth();
   const { toast } = useToast();
@@ -30,6 +31,12 @@ export function AuthPage() {
       }, 100);
     }
   }, [user, redirecting, navigate]);
+
+  useEffect(() => {
+    if (isLogin) {
+      setPasswordError(null);
+    }
+  }, [isLogin]);
 
   // Show loading state while auth is processing
   if (authLoading && redirecting) {
@@ -48,11 +55,41 @@ export function AuthPage() {
     return <Navigate to="/knowledge" replace />;
   }
 
+  const validatePassword = (value: string) => {
+    if (value.length < 8) {
+      return 'Password must be at least 8 characters long';
+    }
+    if (!/[A-Z]/.test(value)) {
+      return 'Password must contain at least one uppercase letter';
+    }
+    if (!/[a-z]/.test(value)) {
+      return 'Password must contain at least one lowercase letter';
+    }
+    if (!/[0-9]/.test(value)) {
+      return 'Password must contain at least one digit';
+    }
+    return null;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     try {
+      if (!isLogin) {
+        const validationMessage = validatePassword(password);
+        if (validationMessage) {
+          setPasswordError(validationMessage);
+          toast({
+            title: "Error",
+            description: validationMessage,
+            variant: "destructive",
+          });
+          setRedirecting(false);
+          return;
+        }
+      }
+
       const { error } = isLogin
         ? await signIn(email, password)
         : await signUp(email, password, fullName);
@@ -63,11 +100,15 @@ export function AuthPage() {
           description: error.message,
           variant: "destructive",
         });
-        setLoading(false);
         setRedirecting(false);
+        const errorMessage = error.message || '';
+        if (!isLogin && errorMessage.toLowerCase().includes('password')) {
+          setPasswordError(errorMessage);
+        }
       } else {
         // Success!
         if (!isLogin) {
+          setPasswordError(null);
           // Signup successful
           toast({
             title: "Account Created!",
@@ -97,8 +138,9 @@ export function AuthPage() {
         description: "An unexpected error occurred. Please try again.",
         variant: "destructive",
       });
-      setLoading(false);
       setRedirecting(false);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -147,12 +189,25 @@ export function AuthPage() {
                 id="password"
                 type="password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  if (!isLogin && passwordError) {
+                    setPasswordError(null);
+                  }
+                }}
                 required
                 minLength={8}
                 maxLength={100}
                 title="Password must be at least 8 characters and include uppercase, lowercase, and numeric characters"
               />
+              {!isLogin && (
+                <p className={`text-xs ${passwordError ? 'text-destructive' : 'text-muted-foreground'}`}>
+                  Password must be at least 8 characters and include uppercase, lowercase, and numeric characters.
+                </p>
+              )}
+              {passwordError && (
+                <p className="text-xs text-destructive">{passwordError}</p>
+              )}
             </div>
             
             <Button

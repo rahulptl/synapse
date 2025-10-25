@@ -31,6 +31,8 @@ def setup_cors(app: FastAPI) -> None:
             "https://synapse-frontend-dev-7e75zz4oja-el.a.run.app",
             "https://synapse-frontend-dev-11007620517.asia-south1.run.app",
         ]
+        # Allow any LAN host/IP during local development to support device testing
+        allowed_origin_regex = r"http://(localhost|127\.0\.0\.1|\d{1,3}(?:\.\d{1,3}){3})(:\d+)?$"
     else:
         # In production, be more restrictive
         allowed_origins = [
@@ -38,10 +40,12 @@ def setup_cors(app: FastAPI) -> None:
             "https://synapse-frontend-prod-11007620517.asia-south1.run.app",
             # Add your custom domain here if you have one
         ]
+        allowed_origin_regex = None
 
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins,
+        allow_origin_regex=allowed_origin_regex,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
         allow_headers=[

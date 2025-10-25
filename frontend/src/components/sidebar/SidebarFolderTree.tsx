@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { ChevronDown, ChevronRight, Folder as FolderIcon, FolderOpen, Plus, Edit2, Trash2, MoreHorizontal, X } from 'lucide-react';
-import { SidebarMenuItem } from './SidebarMenuItem';
+import { useNavigate } from 'react-router-dom';
+import { ChevronDown, ChevronRight, Folder as FolderIcon, FolderOpen, Plus, Edit2, Trash2, MessageSquare } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import {
@@ -11,12 +11,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import type { Folder } from '@/types/knowledge';
 
@@ -41,6 +35,11 @@ interface FolderNodeProps {
   searchQuery?: string;
 }
 
+const formatMention = (name: string) => {
+  const sanitized = name.replace(/"/g, '\\"');
+  return name.includes(' ') ? `@"${sanitized}"` : `@${sanitized}`;
+};
+
 function FolderNode({
   folder,
   selectedFolder,
@@ -50,6 +49,7 @@ function FolderNode({
   onRenameFolder,
   searchQuery,
 }: FolderNodeProps) {
+  const navigate = useNavigate();
   const [isExpanded, setIsExpanded] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
@@ -189,7 +189,59 @@ function FolderNode({
             {/* Actions */}
             {isHovered && (
               <div className="flex items-center gap-1 pr-2">
-                {/* Direct Delete Button */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const mention = formatMention(folder.name);
+                    navigate('/chat', {
+                      state: {
+                        prefillMention: mention,
+                        prefillContextLabel: folder.name,
+                        prefillContextType: 'folder',
+                        preSelectedFolder: {
+                          id: folder.id,
+                          name: folder.name,
+                          type: 'folder'
+                        }
+                      }
+                    });
+                  }}
+                  className="h-6 w-6 p-0 hover:bg-blue-500/20 hover:text-blue-400 transition-colors"
+                  title="Chat about this folder"
+                >
+                  <MessageSquare className="h-3.5 w-3.5 text-sidebar-icon" />
+                </Button>
+
+                {onRenameFolder && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsRenaming(true);
+                    }}
+                    className="h-6 w-6 p-0 hover:bg-sidebar-accent"
+                    title="Rename folder"
+                  >
+                    <Edit2 className="h-3.5 w-3.5 text-sidebar-icon" />
+                  </Button>
+                )}
+
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsCreating(true);
+                  }}
+                  className="h-6 w-6 p-0 hover:bg-sidebar-accent"
+                  title="New subfolder"
+                >
+                  <Plus className="h-3.5 w-3.5 text-sidebar-icon" />
+                </Button>
+
                 <Button
                   variant="ghost"
                   size="sm"
@@ -202,36 +254,6 @@ function FolderNode({
                 >
                   <Trash2 className="h-3.5 w-3.5 text-sidebar-icon group-hover/delete:text-destructive transition-colors" />
                 </Button>
-
-                {/* More Options Menu */}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 w-6 p-0 hover:bg-sidebar-accent"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <MoreHorizontal className="h-3.5 w-3.5 text-sidebar-icon" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-48">
-                    <DropdownMenuItem onClick={() => setIsCreating(true)}>
-                      <Plus className="mr-2 h-4 w-4" />
-                      New Subfolder
-                    </DropdownMenuItem>
-                    {onRenameFolder && (
-                      <DropdownMenuItem onClick={() => setIsRenaming(true)}>
-                        <Edit2 className="mr-2 h-4 w-4" />
-                        Rename
-                      </DropdownMenuItem>
-                    )}
-                    <DropdownMenuItem onClick={handleDeleteClick} className="text-destructive">
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      Delete
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
               </div>
             )}
           </div>

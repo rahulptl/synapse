@@ -60,6 +60,11 @@ export function KnowledgeItemContextMenu({
   const [isRenaming, setIsRenaming] = useState(false);
   const [isMoving, setIsMoving] = useState(false);
 
+  const formatMention = (name: string) => {
+    const sanitized = name.replace(/"/g, '\\"');
+    return name.includes(' ') ? `@"${sanitized}"` : `@${sanitized}`;
+  };
+
   const handleRename = async () => {
     if (!newTitle.trim() || newTitle === itemTitle) {
       setShowRenameDialog(false);
@@ -155,8 +160,12 @@ export function KnowledgeItemContextMenu({
 
           <ContextMenuItem
             onClick={() => {
+              const mention = formatMention(itemTitle);
               navigate('/chat', {
                 state: {
+                  prefillMention: mention,
+                  prefillContextLabel: itemTitle,
+                  prefillContextType: 'item',
                   preSelectedItem: {
                     id: itemId,
                     title: itemTitle,

@@ -3,6 +3,8 @@
  * Handles all authenticated requests to the Cloud SQL backend
  */
 
+import { resolveBackendBaseUrl } from '@/utils/backendUrl';
+
 export interface ApiResponse<T = unknown> {
   success?: boolean;
   data?: T;
@@ -21,7 +23,7 @@ class ApiClient {
   private defaultHeaders: Record<string, string>;
 
   constructor() {
-    const rawBaseUrl = import.meta.env.VITE_BACKEND_API_URL || 'http://localhost:8000';
+    const rawBaseUrl = resolveBackendBaseUrl();
     // Remove trailing slash and ensure we don't double-add /api
     const normalizedBaseUrl = rawBaseUrl.replace(/\/$/, '');
 
