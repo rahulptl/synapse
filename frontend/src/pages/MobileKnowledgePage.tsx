@@ -349,7 +349,6 @@ export default function MobileKnowledgePage() {
                       isSelected={selectedItem === item.id}
                       onSelect={() => setSelectedItem(item.id)}
                       onDelete={() => deleteItem(item.id)}
-                      onReprocess={() => reprocessItem(item.id)}
                     />
                   ))
                 ) : (

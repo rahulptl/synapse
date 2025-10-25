@@ -10,6 +10,7 @@ interface SidebarSectionProps {
   onToggle?: () => void;
   collapsible?: boolean;
   className?: string;
+  extraAction?: ReactNode;
 }
 
 export function SidebarSection({
@@ -20,6 +21,7 @@ export function SidebarSection({
   onToggle,
   collapsible = true,
   className,
+  extraAction,
 }: SidebarSectionProps) {
   const [internalExpanded, setInternalExpanded] = useState(defaultExpanded);
 
@@ -36,27 +38,30 @@ export function SidebarSection({
   return (
     <div className={cn('border-b border-sidebar-border last:border-0', className)}>
       {/* Section Header */}
-      <button
-        onClick={collapsible ? handleToggle : undefined}
-        className={cn(
-          'w-full px-4 py-3 flex items-center justify-between',
-          'sidebar-section-header',
-          'transition-colors duration-200',
-          collapsible && 'hover:bg-sidebar-accent/30 cursor-pointer',
-          !collapsible && 'cursor-default'
-        )}
-      >
-        <span className="text-sidebar-muted">{title}</span>
-        {collapsible && (
-          <div className="text-sidebar-muted transition-transform duration-200">
-            {isExpanded ? (
-              <ChevronDown className="h-3.5 w-3.5" />
-            ) : (
-              <ChevronRight className="h-3.5 w-3.5" />
-            )}
-          </div>
-        )}
-      </button>
+      <div className="px-4 py-3 flex items-center justify-between">
+        <button
+          onClick={collapsible ? handleToggle : undefined}
+          className={cn(
+            'flex-1 flex items-center gap-2',
+            'sidebar-section-header',
+            'transition-colors duration-200',
+            collapsible && 'hover:bg-sidebar-accent/30 cursor-pointer',
+            !collapsible && 'cursor-default'
+          )}
+        >
+          <span className="text-sidebar-muted">{title}</span>
+          {collapsible && (
+            <div className="text-sidebar-muted transition-transform duration-200">
+              {isExpanded ? (
+                <ChevronDown className="h-3.5 w-3.5" />
+              ) : (
+                <ChevronRight className="h-3.5 w-3.5" />
+              )}
+            </div>
+          )}
+        </button>
+        {extraAction}
+      </div>
 
       {/* Section Content */}
       <div

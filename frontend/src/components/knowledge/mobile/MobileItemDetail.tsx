@@ -1,21 +1,14 @@
 import { useState } from 'react';
 import {
   X,
-  ExternalLink,
   FileText,
-  Database,
   Clock,
-  Copy,
-  Share2,
-  Trash2,
-  CheckCircle,
-  Loader2,
-  AlertCircle,
   Download,
+  Trash2,
+  Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { apiClient } from '@/services/apiClient';
@@ -198,44 +191,11 @@ export function MobileItemDetail({
       case 'processing':
         return <Loader2 className="h-4 w-4 animate-spin text-yellow-400" />;
       case 'completed':
-        return <CheckCircle className="h-4 w-4 text-green-400" />;
+        return <Loader2 className="h-4 w-4 text-green-400" />;
       case 'failed':
-        return <AlertCircle className="h-4 w-4 text-red-400" />;
+        return <Loader2 className="h-4 w-4 text-red-400" />;
       default:
         return null;
-    }
-  };
-
-  const handleCopyContent = async () => {
-    try {
-      await navigator.clipboard.writeText(item.content);
-      toast({
-        title: 'Copied',
-        description: 'Content copied to clipboard',
-      });
-    } catch (error) {
-      toast({
-        title: 'Failed',
-        description: 'Could not copy content',
-        variant: 'destructive',
-      });
-    }
-  };
-
-  const handleShare = async () => {
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: item.title,
-          text: item.content.substring(0, 200),
-          url: item.source_url,
-        });
-      } catch (error) {
-        // User cancelled share or share failed
-      }
-    } else {
-      // Fallback: copy to clipboard
-      handleCopyContent();
     }
   };
 
@@ -344,137 +304,57 @@ export function MobileItemDetail({
                 <Clock className="h-3.5 w-3.5 text-blue-400" />
                 <span>Created {formatDate(item.created_at)}</span>
               </div>
-              {item.updated_at !== item.created_at && (
-                <div className="flex items-center gap-1.5">
-                  <Clock className="h-3.5 w-3.5 text-emerald-400" />
-                  <span>Updated {formatDate(item.updated_at)}</span>
+            </div>
+          </div>
+
+          {/* Content Section */}
+          <div className="flex-1 overflow-y-auto px-4 pb-4 mt-3">
+            <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-4">
+              {item.content?.startsWith('[FILE:') && hasDownloadableFile ? (
+                <div className="space-y-2 text-center py-8">
+                  <FileText className="h-12 w-12 mx-auto text-gray-400" />
+                  <p className="text-sm text-gray-400">
+                    File preview not available in this version.
+                  </p>
+                  {metadata?.original_filename && (
+                    <p className="text-xs text-gray-500">
+                      Filename: {metadata.original_filename}
+                    </p>
+                  )}
                 </div>
+              ) : (
+                <pre className="whitespace-pre-wrap break-words text-sm leading-relaxed text-gray-200">
+                  {item.content || 'No content available'}
+                </pre>
               )}
             </div>
           </div>
 
-          {/* Tabs */}
-          <Tabs defaultValue="content" className="flex-1 flex flex-col overflow-hidden">
-            <TabsList className="mx-4 mt-3 grid w-auto grid-cols-3 bg-white/10">
-              <TabsTrigger value="content" className="data-[state=active]:bg-blue-600">
-                <FileText className="h-4 w-4 mr-1.5" />
-                Content
-              </TabsTrigger>
-              {hasDownloadableFile && (
-                <TabsTrigger value="source" className="data-[state=active]:bg-green-600">
-                  <ExternalLink className="h-4 w-4 mr-1.5" />
-                  Source
-                </TabsTrigger>
-              )}
-              {item.metadata && Object.keys(item.metadata).length > 0 && (
-                <TabsTrigger value="metadata" className="data-[state=active]:bg-purple-600">
-                  <Database className="h-4 w-4 mr-1.5" />
-                  Metadata
-                </TabsTrigger>
-              )}
-            </TabsList>
-
-            {/* Content Tab */}
-            <TabsContent
-              value="content"
-              className="flex-1 overflow-y-auto px-4 pb-4 mt-3"
-            >
-              <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-4">
-                {item.content?.startsWith('[FILE:') && hasDownloadableFile ? (
-                  <div className="space-y-2 text-center py-8">
-                    <FileText className="h-12 w-12 mx-auto text-gray-400" />
-                    <p className="text-sm text-gray-400">
-                      File preview not available in this version.
-                    </p>
-                    {metadata?.original_filename && (
-                      <p className="text-xs text-gray-500">
-                        Filename: {metadata.original_filename}
-                      </p>
-                    )}
-                  </div>
-                ) : (
-                  <pre className="whitespace-pre-wrap break-words text-sm leading-relaxed text-gray-200">
-                    {item.content || 'No content available'}
-                  </pre>
-                )}
-              </div>
-            </TabsContent>
-
-            {/* Source Tab */}
-            {hasDownloadableFile && (
-              <TabsContent
-                value="source"
-                className="flex-1 overflow-y-auto px-4 pb-4 mt-3"
-              >
-                <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-4 space-y-4">
-                  <div>
-                    <h4 className="text-sm font-semibold text-white mb-2">Source File</h4>
-                    <code className="text-sm text-gray-400 block mb-3 truncate">
-                      {metadata?.original_filename || 'Stored file'}
-                    </code>
-                    <p className="text-xs text-gray-500">
-                      File size: {typeof metadata?.file_size === 'number' ? `${(metadata.file_size / 1024 / 1024).toFixed(2)} MB` : 'Unknown'}
-                    </p>
-                  </div>
-                  <Button
-                    onClick={handleViewSource}
-                    disabled={isLoadingUrl}
-                    className="w-full bg-emerald-600 hover:bg-emerald-700"
-                  >
-                    {isLoadingUrl ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Loading...
-                      </>
-                    ) : (
-                      <>
-                        <Download className="h-4 w-4 mr-2" />
-                        View/Download File
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </TabsContent>
-            )}
-
-            {/* Metadata Tab */}
-            {item.metadata && Object.keys(item.metadata).length > 0 && (
-              <TabsContent
-                value="metadata"
-                className="flex-1 overflow-y-auto px-4 pb-4 mt-3"
-              >
-                <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-4">
-                  <pre className="whitespace-pre-wrap break-words text-xs text-gray-300 leading-relaxed">
-                    {JSON.stringify(item.metadata, null, 2)}
-                  </pre>
-                </div>
-              </TabsContent>
-            )}
-          </Tabs>
-
           {/* Action Bar */}
           <div className="px-4 py-3 border-t border-white/10 bg-slate-900/50 backdrop-blur-xl">
-            <div className="flex gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <Button
-                onClick={handleCopyContent}
+                onClick={handleViewSource}
+                disabled={isLoadingUrl}
                 variant="outline"
-                className="flex-1 bg-white/10 border-white/20 hover:bg-white/15"
+                className="bg-white/10 border-white/20 hover:bg-white/15"
               >
-                <Copy className="h-4 w-4 mr-2" />
-                Copy
-              </Button>
-              <Button
-                onClick={handleShare}
-                variant="outline"
-                className="flex-1 bg-white/10 border-white/20 hover:bg-white/15"
-              >
-                <Share2 className="h-4 w-4 mr-2" />
-                Share
+                {isLoadingUrl ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Loading...
+                  </>
+                ) : (
+                  <>
+                    <Download className="h-4 w-4 mr-2" />
+                    Download
+                  </>
+                )}
               </Button>
               <Button
                 onClick={() => setShowDeleteConfirm(true)}
                 variant="outline"
-                className="flex-1 bg-red-500/10 border-red-500/30 hover:bg-red-500/20 text-red-400"
+                className="bg-red-500/10 border-red-500/30 hover:bg-red-500/20 text-red-400"
               >
                 <Trash2 className="h-4 w-4 mr-2" />
                 Delete

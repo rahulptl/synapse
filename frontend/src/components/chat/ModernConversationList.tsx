@@ -20,6 +20,7 @@ interface ModernConversationListProps {
   onDeleteConversation?: (conversationId: string) => void;
   hasPendingResponse?: (conversationId: string) => boolean;
   collapsed?: boolean;
+  hideHeader?: boolean;
 }
 
 export function ModernConversationList({
@@ -32,6 +33,7 @@ export function ModernConversationList({
   onDeleteConversation,
   hasPendingResponse,
   collapsed = false,
+  hideHeader = false,
 }: ModernConversationListProps) {
   if (!conversations || conversations.length === 0) {
     return (
@@ -75,11 +77,13 @@ export function ModernConversationList({
       </div>
 
       {/* Header */}
-      <div className="px-4 py-3 border-b border-sidebar-border">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-sidebar-muted">
-          Conversations ({conversations.length})
-        </h3>
-      </div>
+      {!hideHeader && (
+        <div className="px-4 py-3 border-b border-sidebar-border">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-sidebar-muted">
+            Conversations ({conversations.length})
+          </h3>
+        </div>
+      )}
 
       {/* Conversation List */}
       <ScrollArea className="flex-1">

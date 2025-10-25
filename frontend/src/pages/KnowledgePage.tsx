@@ -5,12 +5,12 @@ import { apiClient } from '@/services/apiClient';
 import { ModernSidebar } from '@/components/sidebar';
 import { ModernItemList } from '@/components/knowledge/ModernItemList';
 import { ItemDetails } from '@/components/knowledge/ItemDetails';
-import { UploadDialog } from '@/components/knowledge/UploadDialog';
+import { FileUploadDialog } from '@/components/chat/FileUploadDialog';
 import { useToast } from '@/hooks/use-toast';
 import { useStorageUsage } from '@/hooks/useStorageUsage';
 import { KnowledgeItem, Folder } from '@/types/knowledge';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Menu, FolderOpen } from 'lucide-react';
+import { Menu, FolderOpen, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 
@@ -24,7 +24,8 @@ export default function KnowledgePage() {
   const [selectedItem, setSelectedItem] = useState<string | null>(null);
   const [selectedItemData, setSelectedItemData] = useState<KnowledgeItem | null>(null);
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
-  const [uploadTrigger, setUploadTrigger] = useState(0);
+  const [showFileUploadDialog, setShowFileUploadDialog] = useState(false);
+  const [triggerRootFolderCreate, setTriggerRootFolderCreate] = useState(false);
   const { toast } = useToast();
 
   const getAuthData = () => {
@@ -362,9 +363,62 @@ export default function KnowledgePage() {
     return folder?.name || null;
   };
 
+  // Convert folders to FileUploadDialog format
+  const convertFoldersToFileUploadFormat = (folders: Folder[]): any[] => {
+    const convert = (folder: Folder): any => ({
+      id: folder.id,
+      name: folder.name,
+      children: folder.children?.map(convert)
+    });
+    return folders.map(convert);
+  };
+
   const handleUpload = () => {
-    // Trigger upload dialog by incrementing counter
-    setUploadTrigger(prev => prev + 1);
+    // Show file upload dialog directly like chat page
+    setShowFileUploadDialog(true);
+  };
+
+  const handleCreateRootFolderInline = () => {
+    // Trigger inline folder creation in SidebarFolderTree
+    setTriggerRootFolderCreate(true);
+    // Reset trigger after a short delay to allow multiple triggers
+    setTimeout(() => setTriggerRootFolderCreate(false), 100);
+  };
+
+  const handleFileUpload = async (file: File, folderId: string, customTitle?: string) => {
+    try {
+      const auth = getAuthData();
+
+      // Create FormData for file upload
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('folder_id', folderId);
+      if (customTitle) {
+        formData.append('title', customTitle);
+      }
+
+      await apiClient.uploadFile(formData, auth);
+
+      toast({
+        title: "Success",
+        description: "File uploaded successfully",
+      });
+
+      // Refresh folder items and folders list
+      await loadFolders();
+      if (selectedFolder) {
+        await loadFolderItems(selectedFolder);
+      }
+
+      setShowFileUploadDialog(false);
+    } catch (error) {
+      console.error('Upload failed:', error);
+      toast({
+        title: "Upload Failed",
+        description: error instanceof Error ? error.message : "Failed to upload file",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleUpgrade = () => {
@@ -386,6 +440,8 @@ export default function KnowledgePage() {
           onUpgrade={handleUpgrade}
           storageUsed={storage.used_bytes}
           storageTotal={storage.total_bytes}
+          triggerRootFolderCreate={triggerRootFolderCreate}
+          onRequestInlineFolderCreate={handleCreateRootFolderInline}
         />
       </div>
 
@@ -410,22 +466,20 @@ export default function KnowledgePage() {
               onUpgrade={handleUpgrade}
               storageUsed={storage.used_bytes}
               storageTotal={storage.total_bytes}
+              triggerRootFolderCreate={triggerRootFolderCreate}
+              onRequestInlineFolderCreate={handleCreateRootFolderInline}
             />
           </div>
         </SheetContent>
       </Sheet>
 
-      {/* Upload Dialog - Triggered from sidebar */}
-      {selectedFolder && uploadTrigger > 0 && (
-        <UploadDialog
-          folderId={selectedFolder}
-          onUploadComplete={() => {
-            loadFolderItems(selectedFolder);
-            setUploadTrigger(0);
-          }}
-          showButton={false}
-        />
-      )}
+      {/* File Upload Dialog - Triggered from sidebar */}
+      <FileUploadDialog
+        open={showFileUploadDialog}
+        onOpenChange={setShowFileUploadDialog}
+        folders={convertFoldersToFileUploadFormat(folders)}
+        onUpload={handleFileUpload}
+      />
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col bg-background">
@@ -446,10 +500,14 @@ export default function KnowledgePage() {
                 </span>
               </Button>
               <div className="flex items-center gap-2">
-                <UploadDialog
-                  folderId={selectedFolder}
-                  onUploadComplete={() => loadFolderItems(selectedFolder)}
-                />
+                <Button
+                  onClick={handleUpload}
+                  size="sm"
+                  className="bg-sidebar-primary hover:bg-sidebar-primary/90 text-white"
+                >
+                  <Upload className="h-4 w-4 mr-2" />
+                  Upload
+                </Button>
               </div>
             </div>
 
@@ -461,10 +519,14 @@ export default function KnowledgePage() {
               }`}>
                 {/* Desktop Header */}
                 <div className="hidden md:flex px-4 py-3 border-b border-sidebar-border items-center justify-center">
-                  <UploadDialog
-                    folderId={selectedFolder}
-                    onUploadComplete={() => loadFolderItems(selectedFolder)}
-                  />
+                  <Button
+                    onClick={handleUpload}
+                    size="sm"
+                    className="bg-sidebar-primary hover:bg-sidebar-primary/90 text-white"
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    Upload Content
+                  </Button>
                 </div>
                 <ModernItemList
                   items={folderItems}

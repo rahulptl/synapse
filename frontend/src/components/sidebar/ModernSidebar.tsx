@@ -24,6 +24,8 @@ interface ModernSidebarProps {
   storageUsed: number;
   storageTotal: number;
   className?: string;
+  triggerRootFolderCreate?: boolean;
+  onRequestInlineFolderCreate?: () => void;
 }
 
 export function ModernSidebar({
@@ -38,6 +40,8 @@ export function ModernSidebar({
   storageUsed,
   storageTotal,
   className,
+  triggerRootFolderCreate,
+  onRequestInlineFolderCreate,
 }: ModernSidebarProps) {
   const {
     collapsed,
@@ -63,10 +67,10 @@ export function ModernSidebar({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [toggleCollapsed]);
 
-  const handleCreateRootFolder = async () => {
-    const folderName = prompt('Enter folder name:');
-    if (folderName?.trim()) {
-      await onCreateFolder(null, folderName.trim());
+  const handleCreateRootFolder = () => {
+    // Trigger inline folder creation
+    if (onRequestInlineFolderCreate) {
+      onRequestInlineFolderCreate();
     }
   };
 
@@ -92,40 +96,48 @@ export function ModernSidebar({
 
       {/* Sidebar Content */}
       <div className="h-full flex flex-col">
-        {/* Header with Toggle */}
-        <div className="flex items-center justify-between p-4 border-b border-sidebar-border">
-          {!collapsed && (
+        {/* Header - Hidden when collapsed to maintain alignment */}
+        {!collapsed && (
+          <div className="flex items-center justify-between p-4 border-b border-sidebar-border">
             <h2 className="text-sm font-bold text-sidebar-foreground uppercase tracking-wide">
               Memory
             </h2>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={toggleCollapsed}
-            className={cn(
-              'h-8 w-8 p-0',
-              'hover:bg-sidebar-accent',
-              'text-sidebar-icon hover:text-sidebar-foreground',
-              'transition-colors duration-200',
-              collapsed && 'mx-auto'
-            )}
-            title={collapsed ? 'Expand sidebar (⌘B)' : 'Collapse sidebar (⌘B)'}
-          >
-            {collapsed ? <Menu className="h-4 w-4" /> : <X className="h-4 w-4" />}
-          </Button>
-        </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleCollapsed}
+              className={cn(
+                'h-8 w-8 p-0',
+                'hover:bg-sidebar-accent',
+                'text-sidebar-icon hover:text-sidebar-foreground',
+                'transition-colors duration-200'
+              )}
+              title="Collapse sidebar (⌘B)"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
 
         {/* Scrollable Content */}
         <ScrollArea className="flex-1 sidebar-scroll">
           {collapsed ? (
             /* Collapsed State - Icon Only */
-            <div className="py-4 space-y-2">
+            <div className="py-4 space-y-2 flex flex-col items-center">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={toggleCollapsed}
+                className="h-10 w-10 p-0 hover:bg-sidebar-accent"
+                title="Expand sidebar (⌘B)"
+              >
+                <Menu className="h-4 w-4 text-sidebar-icon" />
+              </Button>
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={onUpload}
-                className="h-10 w-10 mx-auto p-0 hover:bg-sidebar-accent"
+                className="h-10 w-10 p-0 hover:bg-sidebar-accent"
                 title="Upload"
               >
                 <Upload className="h-4 w-4 text-sidebar-icon" />
@@ -134,7 +146,7 @@ export function ModernSidebar({
                 variant="ghost"
                 size="sm"
                 onClick={handleCreateRootFolder}
-                className="h-10 w-10 mx-auto p-0 hover:bg-sidebar-accent"
+                className="h-10 w-10 p-0 hover:bg-sidebar-accent"
                 title="New Folder"
               >
                 <FolderPlus className="h-4 w-4 text-sidebar-icon" />
@@ -149,6 +161,17 @@ export function ModernSidebar({
                 onChange={setSearchQuery}
                 placeholder="Search folders..."
               />
+
+              {/* Upload Action */}
+              <div className="mb-3 px-3">
+                <Button
+                  onClick={onUpload}
+                  className="w-full h-9 bg-sidebar-primary hover:bg-sidebar-primary/90 text-white transition-colors text-sm"
+                >
+                  <Upload className="h-4 w-4" />
+                  <span className="ml-2">Upload</span>
+                </Button>
+              </div>
 
               {/* Storage Card */}
               <div className="my-4">
@@ -165,6 +188,17 @@ export function ModernSidebar({
                 isExpanded={sections.folders}
                 onToggle={() => toggleSection('folders')}
                 collapsible={true}
+                extraAction={
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleCreateRootFolder}
+                    className="h-7 w-7 p-0 hover:bg-sidebar-accent text-sidebar-foreground rounded"
+                    title="Create new folder"
+                  >
+                    <FolderPlus className="h-3 w-3" />
+                  </Button>
+                }
               >
                 <SidebarFolderTree
                   folders={folders}
@@ -174,25 +208,7 @@ export function ModernSidebar({
                   onDeleteFolder={onDeleteFolder}
                   onRenameFolder={onRenameFolder}
                   searchQuery={searchQuery}
-                />
-              </SidebarSection>
-
-              {/* Quick Actions Section */}
-              <SidebarSection
-                title="QUICK ACTIONS"
-                isExpanded={sections.quickActions}
-                onToggle={() => toggleSection('quickActions')}
-                collapsible={true}
-              >
-                <SidebarMenuItem
-                  icon={Upload}
-                  label="Upload Content"
-                  onClick={onUpload}
-                />
-                <SidebarMenuItem
-                  icon={FolderPlus}
-                  label="New Folder"
-                  onClick={handleCreateRootFolder}
+                  triggerRootFolderCreate={triggerRootFolderCreate}
                 />
               </SidebarSection>
             </div>

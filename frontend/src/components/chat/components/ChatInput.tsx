@@ -109,9 +109,9 @@ export const ChatInput = ({
             </div>
           )}
 
-          {/* Input Bar */}
-          <div className="relative flex items-end space-x-3">
-            {/* File Upload Button */}
+          {/* Input Bar - Desktop Layout */}
+          <div className="hidden sm:flex relative items-end space-x-3">
+            {/* File Upload Button - Desktop */}
             <Button
               onClick={onFileUploadClick}
               variant="ghost"
@@ -121,7 +121,7 @@ export const ChatInput = ({
               <Upload className="h-4 w-4" />
             </Button>
 
-            {/* Save Conversation Button */}
+            {/* Save Conversation Button - Desktop */}
             <Button
               onClick={onSaveConversationClick}
               variant="ghost"
@@ -131,7 +131,7 @@ export const ChatInput = ({
               <Bookmark className="h-4 w-4" />
             </Button>
 
-            {/* Input Field */}
+            {/* Input Field - Desktop */}
             <div className="relative flex-1">
               <Input
                 ref={inputRef}
@@ -144,7 +144,7 @@ export const ChatInput = ({
               />
             </div>
 
-            {/* Send Button */}
+            {/* Send Button - Desktop */}
             <Button
               onClick={onSendMessage}
               disabled={!inputMessage.trim() || isLoading}
@@ -164,17 +164,72 @@ export const ChatInput = ({
             </Button>
           </div>
 
+          {/* Input Bar - Mobile Layout */}
+          <div className="sm:hidden flex flex-col space-y-3">
+            {/* Input Field - Mobile (no send button here) */}
+            <div className="relative">
+              <Input
+                ref={inputRef}
+                value={inputMessage}
+                onChange={onInputChange}
+                onKeyDown={onKeyPress}
+                placeholder={placeholder}
+                className="chat-input w-full h-12 px-4 py-3 bg-sidebar-accent/50 border border-sidebar-border rounded-lg shadow-sm hover:bg-sidebar-accent/60 focus:bg-sidebar-accent/60 transition-colors focus:border-sidebar-primary focus:outline-none focus:ring-0 placeholder:text-sidebar-muted text-sidebar-foreground text-base"
+                disabled={isLoading}
+              />
+            </div>
+
+            {/* Action Buttons - Mobile (below input in responsive grid) */}
+            <div className={`grid grid-cols-2 gap-3 ${inputMessage.trim() && !isLoading ? 'grid-cols-3' : ''}`}>
+              {/* File Upload Button - Mobile */}
+              <Button
+                onClick={onFileUploadClick}
+                variant="ghost"
+                className="h-12 px-4 rounded-lg bg-sidebar-accent hover:bg-sidebar-accent/80 text-sidebar-icon hover:text-sidebar-foreground transition-colors flex items-center justify-center space-x-2"
+                title="Upload files to Memory"
+              >
+                <Upload className="h-4 w-4 flex-shrink-0" />
+                <span className="text-sm font-medium">Upload</span>
+              </Button>
+
+              {/* Save Conversation Button - Mobile */}
+              <Button
+                onClick={onSaveConversationClick}
+                variant="ghost"
+                className="h-12 px-4 rounded-lg bg-sidebar-accent hover:bg-sidebar-accent/80 text-sidebar-icon hover:text-sidebar-foreground transition-colors flex items-center justify-center space-x-2"
+                title="Save conversation to Memory"
+              >
+                <Bookmark className="h-4 w-4 flex-shrink-0" />
+                <span className="text-sm font-medium">Save</span>
+              </Button>
+
+              {/* Send Button - Mobile (appears in grid when text is typed) */}
+              {(inputMessage.trim() && !isLoading) && (
+                <Button
+                  onClick={onSendMessage}
+                  className="h-12 px-4 rounded-lg bg-sidebar-primary hover:bg-sidebar-primary/90 text-white transition-colors flex items-center justify-center space-x-2 animate-in slide-in-from-right duration-200"
+                  title="Send message"
+                >
+                  {isLoading ? (
+                    <div className="animate-spin">
+                      <Brain className="h-4 w-4 flex-shrink-0" />
+                    </div>
+                  ) : (
+                    <>
+                      <Send className="h-4 w-4 flex-shrink-0" />
+                      <span className="text-sm font-medium">Send</span>
+                    </>
+                  )}
+                </Button>
+              )}
+            </div>
+          </div>
+
           {/* Filter Hint */}
           <div className="flex items-center justify-center space-x-1.5 text-xs text-sidebar-muted">
             <span>Use</span>
             <code className="bg-sidebar-accent text-sidebar-foreground px-1.5 py-0.5 rounded font-mono">@</code>
             <span>to reference files and folders</span>
-          </div>
-
-          {/* AI Disclaimer */}
-          <div className="flex items-center justify-center space-x-2 text-xs text-sidebar-muted bg-sidebar-accent/30 border border-sidebar-border rounded-lg px-3 py-2">
-            <AlertTriangle className="h-3.5 w-3.5" />
-            <span>{AI_DISCLAIMER}</span>
           </div>
         </div>
       </div>

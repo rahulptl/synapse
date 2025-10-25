@@ -1,8 +1,16 @@
-import { useState } from 'react';
-import { ChevronDown, ChevronRight, Folder as FolderIcon, FolderOpen, Plus, Edit2, Trash2, MoreHorizontal } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { ChevronDown, ChevronRight, Folder as FolderIcon, FolderOpen, Plus, Edit2, Trash2, MoreHorizontal, X } from 'lucide-react';
 import { SidebarMenuItem } from './SidebarMenuItem';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,6 +28,7 @@ interface SidebarFolderTreeProps {
   onDeleteFolder: (folderId: string, force?: boolean) => Promise<void>;
   onRenameFolder?: (folderId: string, newName: string) => Promise<void>;
   searchQuery?: string;
+  triggerRootFolderCreate?: boolean;
 }
 
 interface FolderNodeProps {
@@ -47,6 +56,7 @@ function FolderNode({
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(folder.name);
   const [isHovered, setIsHovered] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   const hasChildren = folder.children && folder.children.length > 0;
   const isSelected = selectedFolder === folder.id;
@@ -84,9 +94,14 @@ function FolderNode({
     }
   };
 
-  const handleDelete = async () => {
+  const handleDeleteClick = () => {
+    setShowDeleteDialog(true);
+  };
+
+  const handleConfirmDelete = async () => {
     try {
       await onDeleteFolder(folder.id, false);
+      setShowDeleteDialog(false);
     } catch (error) {
       console.error('Failed to delete folder:', error);
     }
@@ -171,9 +186,24 @@ function FolderNode({
               <span className="flex-1 text-left truncate">{folder.name}</span>
             </button>
 
-            {/* Actions Menu */}
+            {/* Actions */}
             {isHovered && (
-              <div className="pr-2">
+              <div className="flex items-center gap-1 pr-2">
+                {/* Direct Delete Button */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeleteClick();
+                  }}
+                  className="h-6 w-6 p-0 hover:bg-red-500/10 group/delete transition-colors"
+                  title="Delete folder"
+                >
+                  <Trash2 className="h-3.5 w-3.5 text-sidebar-icon group-hover/delete:text-destructive transition-colors" />
+                </Button>
+
+                {/* More Options Menu */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
@@ -196,7 +226,7 @@ function FolderNode({
                         Rename
                       </DropdownMenuItem>
                     )}
-                    <DropdownMenuItem onClick={handleDelete} className="text-destructive">
+                    <DropdownMenuItem onClick={handleDeleteClick} className="text-destructive">
                       <Trash2 className="mr-2 h-4 w-4" />
                       Delete
                     </DropdownMenuItem>
@@ -246,6 +276,33 @@ function FolderNode({
           ))}
         </div>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Delete Folder</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete the folder "{folder.name}"?
+              This is a non-reversible operation and all contents within this folder will be permanently deleted.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowDeleteDialog(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmDelete}
+            >
+              Delete Folder
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -258,9 +315,71 @@ export function SidebarFolderTree({
   onDeleteFolder,
   onRenameFolder,
   searchQuery,
+  triggerRootFolderCreate,
 }: SidebarFolderTreeProps) {
+  const [isCreatingRoot, setIsCreatingRoot] = useState(false);
+  const [newRootFolderName, setNewRootFolderName] = useState('');
+
+  // Trigger root folder creation when prop changes
+  useEffect(() => {
+    if (triggerRootFolderCreate && !isCreatingRoot) {
+      setIsCreatingRoot(true);
+      setNewRootFolderName('');
+    }
+  }, [triggerRootFolderCreate, isCreatingRoot]);
+
+  const handleCreateRootFolder = async () => {
+    if (!newRootFolderName.trim()) {
+      setIsCreatingRoot(false);
+      setNewRootFolderName('');
+      return;
+    }
+    try {
+      await onCreateFolder(null, newRootFolderName.trim());
+      setNewRootFolderName('');
+      setIsCreatingRoot(false);
+    } catch (error) {
+      console.error('Failed to create folder:', error);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleCreateRootFolder();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setIsCreatingRoot(false);
+      setNewRootFolderName('');
+    }
+  };
+
+  const handleBlur = () => {
+    // Don't create folder if input is empty when clicking away
+    if (!newRootFolderName.trim()) {
+      setIsCreatingRoot(false);
+      setNewRootFolderName('');
+    }
+  };
+
   return (
     <div className="space-y-0.5">
+      {/* Root-level inline folder creation */}
+      {isCreatingRoot && (
+        <div className="flex items-center gap-2 px-2 py-1.5">
+          <div className="w-4 h-4" /> {/* Spacer for alignment */}
+          <Input
+            value={newRootFolderName}
+            onChange={(e) => setNewRootFolderName(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onBlur={handleBlur}
+            placeholder="Folder name..."
+            className="flex-1 h-7 text-sm bg-sidebar-accent/50 border-sidebar-border focus:bg-sidebar-accent focus:border-sidebar-primary"
+            autoFocus
+          />
+        </div>
+      )}
+
       {folders.map((folder) => (
         <FolderNode
           key={folder.id}

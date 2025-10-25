@@ -1284,39 +1284,7 @@ export default function ChatPage() {
         setShowMobileSidebar={setShowMobileSidebar}
       />
 
-      {/* Floating Toggle Button - Desktop */}
-      <div
-        className={cn(
-          'hidden md:flex fixed top-1/2 -translate-y-1/2 z-50',
-          'transition-all duration-300 ease-in-out',
-          collapsed ? 'left-[-24px]' : 'left-[296px]' // Peeking from screen edge / sidebar edge
-        )}
-      >
-        <Button
-          onClick={toggleCollapsed}
-          variant="ghost"
-          size="lg"
-          className={cn(
-            'w-12 h-12 rounded-full bg-sidebar/90 backdrop-blur-xl',
-            'border border-sidebar-border transition-all duration-300',
-            'hover:bg-sidebar hover:scale-110 active:scale-95',
-            'text-sidebar-foreground flex items-center justify-center',
-            // Enhanced shadows for depth
-            collapsed
-              ? 'shadow-[2px_0_8px_rgba(0,0,0,0.1)] shadow-[4px_0_16px_rgba(0,0,0,0.05)]' // Shadow extending right when attached to screen
-              : 'shadow-[-2px_0_8px_rgba(0,0,0,0.1)] shadow-[-4px_0_16px_rgba(0,0,0,0.05)]', // Shadow extending left when attached to sidebar
-            // Directional styling for attachment
-            collapsed
-              ? 'border-r-2 border-r-sidebar-border/60 hover:border-r-sidebar-border' // Right edge highlight when attached to screen
-              : 'border-l-2 border-l-sidebar-border/60 hover:border-l-sidebar-border',   // Left edge highlight when attached to sidebar
-            // Hover glow effect
-            'hover:shadow-xl'
-          )}
-          title={collapsed ? "Open sidebar (⌘B)" : "Close sidebar (⌘B)"}
-        >
-          <PanelLeft className="h-5 w-5" />        </Button>
-      </div>
-
+      
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col">
         {selectedConversation || messages.length > 0 || inputMessage.trim() ? (
@@ -1362,7 +1330,7 @@ export default function ChatPage() {
             </ScrollArea>
           </>
         ) : (
-          <ChatEmptyState />
+          <ChatEmptyState user={user} />
         )}
 
         <ChatInput
