@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
+import { useState, useEffect, useRef, useCallback, lazy, Suspense, useMemo } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useChatWebSocket } from '@/hooks/useChatWebSocket';
@@ -53,6 +53,7 @@ import { StreamingMessage } from '@/components/chat/components/StreamingMessage'
 import { SourceContentDialog } from '@/components/chat/components/SourceContentDialog';
 import { DeleteConversationDialog } from '@/components/chat/components/DeleteConversationDialog';
 import { ConversationSidebar } from '@/components/chat/components/ConversationSidebar';
+import { useViewportInfo } from '@/hooks/useViewportInfo';
 
 // Lazy load MarkdownMessage to prevent highlight.js initialization issues
 const MarkdownMessage = lazy(() => import('@/components/chat/MarkdownMessage').then(module => ({ default: module.MarkdownMessage })));
@@ -61,6 +62,7 @@ const MarkdownMessage = lazy(() => import('@/components/chat/MarkdownMessage').t
 export default function ChatPage() {
   const { user, loading, accessToken } = useAuth();
   const location = useLocation();
+  const { isKeyboardVisible } = useViewportInfo();
 
   // Store and notification hooks for background generation
   const chatStore = useChatStore();
@@ -1266,8 +1268,16 @@ export default function ChatPage() {
   }
 
   
+  const chatLayoutStyle = useMemo(
+    () => ({
+      minHeight: 'calc(var(--app-vh, 100vh) - 3.5rem)',
+      height: 'calc(var(--app-vh, 100vh) - 3.5rem)',
+    }),
+    []
+  );
+
   return (
-    <div className="flex h-[calc(100vh-4rem)] bg-background">
+    <div className="flex bg-background" style={chatLayoutStyle}>
       {/* Conversation Sidebar - Handles both desktop and mobile */}
       <ConversationSidebar
         conversations={conversations}
@@ -1287,7 +1297,7 @@ export default function ChatPage() {
 
 
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden min-h-0">
         {selectedConversation || messages.length > 0 || inputMessage.trim() ? (
           <>
             {/* Messages Area */}
@@ -1331,8 +1341,8 @@ export default function ChatPage() {
             </ScrollArea>
           </>
         ) : (
-          <div className="flex-1 overflow-hidden">
-            <ChatEmptyState user={user} />
+          <div className="flex-1 overflow-hidden min-h-0">
+            <ChatEmptyState user={user} isKeyboardOpen={isKeyboardVisible} />
           </div>
         )}
 

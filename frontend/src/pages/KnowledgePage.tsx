@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { apiClient } from '@/services/apiClient';
@@ -27,6 +27,14 @@ export default function KnowledgePage() {
   const [showFileUploadDialog, setShowFileUploadDialog] = useState(false);
   const [triggerRootFolderCreate, setTriggerRootFolderCreate] = useState(false);
   const { toast } = useToast();
+
+  const layoutStyle = useMemo(
+    () => ({
+      minHeight: 'calc(var(--app-vh, 100vh) - 3.5rem)',
+      height: 'calc(var(--app-vh, 100vh) - 3.5rem)',
+    }),
+    []
+  );
 
   const getAuthData = () => {
     if (!user || !accessToken) {
@@ -427,7 +435,7 @@ export default function KnowledgePage() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-4rem)]">
+    <div className="flex" style={layoutStyle}>
       {/* Desktop Modern Sidebar */}
       <div className="hidden md:block">
         <ModernSidebar

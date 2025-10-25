@@ -10,6 +10,7 @@ All colors MUST be HSL.
   :root {
     --background: 222 47% 11%;
     --foreground: 213 31% 91%;
+    --app-vh: 100vh;
 
     --card: 222 84% 5%;
     --card-foreground: 213 31% 91%;
@@ -133,6 +134,7 @@ All colors MUST be HSL.
 
   body {
     @apply bg-background text-foreground;
+    min-height: var(--app-vh);
     /* Enhanced scrollbar */
     scrollbar-width: thin;
     scrollbar-color: hsl(var(--primary) / 0.3) transparent;

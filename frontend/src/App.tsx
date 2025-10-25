@@ -15,6 +15,7 @@ import DocsPage from "./pages/DocsPage";
 import PricingPage from "./pages/PricingPage";
 import NotFound from "./pages/NotFound";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { useViewportInfo } from "./hooks/useViewportInfo";
 
 const queryClient = new QueryClient();
 
@@ -54,11 +55,12 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 function AppContent() {
   const { user } = useAuth();
+  useViewportInfo();
   
   return (
-    <div className="min-h-screen bg-background">
+    <div className="bg-background flex flex-col" style={{ minHeight: 'var(--app-vh, 100vh)' }}>
       {user && <Header />}
-      <main className={user ? "" : ""}>
+      <main className="flex-1">
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route path="/auth" element={<AuthPage />} />

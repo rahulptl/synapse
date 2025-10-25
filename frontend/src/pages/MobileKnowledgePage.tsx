@@ -56,6 +56,14 @@ export default function MobileKnowledgePage() {
   });
   const [isDetailOpen, setIsDetailOpen] = useState(false);
 
+  const layoutStyle = useMemo(
+    () => ({
+      minHeight: 'calc(var(--app-vh, 100vh) - 3.5rem)',
+      height: 'calc(var(--app-vh, 100vh) - 3.5rem)',
+    }),
+    []
+  );
+
   const getAuthData = () => {
     if (!user || !accessToken) {
       throw new Error('User not authenticated');
@@ -301,7 +309,10 @@ export default function MobileKnowledgePage() {
   }
 
   return (
-    <div className="h-[calc(100vh-4rem)] bg-gradient-to-br from-slate-950 via-gray-900 to-slate-800 flex flex-col overflow-hidden">
+    <div
+      className="bg-gradient-to-br from-slate-950 via-gray-900 to-slate-800 flex flex-col overflow-hidden"
+      style={layoutStyle}
+    >
       {selectedFolder ? (
         <>
           {/* Header with Folder Name */}
