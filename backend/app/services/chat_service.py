@@ -299,7 +299,7 @@ class ChatService:
             context_items_data = None
             if chat_request.context_items:
                 context_items_data = [
-                    {"id": item.id, "type": item.type}
+                    {"id": item.id, "type": item.type, "name": item.name}
                     for item in chat_request.context_items
                 ]
 
@@ -463,6 +463,28 @@ class ChatService:
             async for event in stream:
                 event_type = event.type
 
+                # [ANNOTATION_DEBUG] Log event type and whether it has response object
+                has_response_obj = hasattr(event, 'response')
+                logger.debug(f"[ANNOTATION_DEBUG] Event: {event_type}, has_response: {has_response_obj}")
+
+                # [ANNOTATION_DEBUG] Check for annotations in each event
+                has_annotations = False
+                annotation_count = 0
+                if hasattr(event, 'response') and hasattr(event.response, 'output'):
+                    try:
+                        message_outputs = [item for item in event.response.output if hasattr(item, '__class__') and item.__class__.__name__ == 'ResponseOutputMessage']
+                        for msg_output in message_outputs:
+                            if hasattr(msg_output, 'content'):
+                                for content_item in msg_output.content:
+                                    if hasattr(content_item, 'annotations') and content_item.annotations:
+                                        has_annotations = True
+                                        annotation_count += len(content_item.annotations)
+                    except Exception as e:
+                        logger.debug(f"[ANNOTATION_DEBUG] Error checking annotations: {e}")
+
+                if has_annotations:
+                    logger.info(f"[ANNOTATION_DEBUG] Event type '{event_type}' has {annotation_count} annotation(s)")
+
                 # Map OpenAI event types to our event types
                 if event_type == "response.output_item.added":
                     # Track file search tool calls when they are added
@@ -623,14 +645,24 @@ class ChatService:
 
             # Process generated files from code interpreter
             generated_files = []
-            logger.info(f"Checking for generated files. Has response: {hasattr(event, 'response')}, Has output: {hasattr(event.response, 'output') if hasattr(event, 'response') else False}")
+            logger.info(f"[ANNOTATION_DEBUG] Checking for generated files. Has response: {hasattr(event, 'response')}, Has output: {hasattr(event.response, 'output') if hasattr(event, 'response') else False}")
             if hasattr(event, 'response') and hasattr(event.response, 'output'):
                 try:
-                    logger.info("Extracting container file annotations from response")
+                    logger.info(f"[ANNOTATION_DEBUG] Extracting container file annotations from final event (type: {event.type})")
                     container_annotations = self.responses_service.extract_container_file_annotations(event.response)
-                    logger.info(f"Found {len(container_annotations)} container file annotation(s)")
+                    logger.info(f"[ANNOTATION_DEBUG] Found {len(container_annotations)} container file annotation(s)")
+
+                    # Log details of each annotation
+                    for idx, annotation in enumerate(container_annotations):
+                        logger.info(
+                            f"[ANNOTATION_DEBUG] Annotation {idx + 1}: "
+                            f"filename='{annotation.get('filename')}', "
+                            f"container_id={annotation.get('container_id')}, "
+                            f"file_id={annotation.get('file_id')}"
+                        )
 
                     if container_annotations:
+                        logger.info(f"[ANNOTATION_DEBUG] Processing {len(container_annotations)} container annotation(s)")
                         from app.services.openai.container_file_service import container_file_service
                         from app.services.content_service import content_service
                         from app.services.folder_service import folder_service
@@ -667,15 +699,17 @@ class ChatService:
                                         "file_id": annotation["file_id"],
                                         "original_filename": filename,
                                         "generated_by": "code_interpreter",
-                                        "source_type": "code_interpreter"
+                                        "source_type": "upload"  # Treat as regular upload for processing
                                     }
                                 )
 
-                                # Add to background processing queue
+                                # Trigger background processing for text extraction and OpenAI indexing
+                                import asyncio
                                 from app.services.processing_service import processing_service
-                                # Note: process_knowledge_item is typically called via BackgroundTasks
-                                # For now, we'll skip background processing to keep the flow simple
-                                # The file is already uploaded and the knowledge item is created
+                                asyncio.create_task(
+                                    processing_service.process_knowledge_item(knowledge_item.id)
+                                )
+                                logger.info(f"[CODE_INTERPRETER_PROCESSING] Queued background processing for {filename} (item_id: {knowledge_item.id})")
 
                                 # Return relative URL for API - frontend will construct full URL
                                 download_url = f"/api/v1/files/download/{knowledge_item.id}"
@@ -713,10 +747,14 @@ class ChatService:
                                     exc_info=True
                                 )
                                 # Continue with other files even if one fails
+                    else:
+                        logger.info("[ANNOTATION_DEBUG] No container file annotations found in response")
 
                 except Exception as e:
                     logger.error(f"Failed to process generated files: {e}", exc_info=True)
                     # Don't fail the whole response if file processing fails
+            else:
+                logger.info("[ANNOTATION_DEBUG] Event does not have response.output - cannot extract annotations")
 
             # Store assistant message WITH sources and generated files in metadata
             message_metadata = {
@@ -964,6 +1002,8 @@ class ChatService:
             return []
 
         sources = []
+        seen_knowledge_items = set()  # Track unique knowledge items by ID
+
         for citation in citations:
             try:
                 # Look up OpenAI file and get knowledge item
@@ -982,15 +1022,19 @@ class ChatService:
 
                 if openai_file and openai_file.knowledge_item:
                     knowledge_item = openai_file.knowledge_item
-                    sources.append({
-                        "id": str(knowledge_item.id),
-                        "title": knowledge_item.title,
-                        "source": "Knowledge Base",
-                        "similarity": 1.0,
-                        "content_type": knowledge_item.content_type,
-                        "openai_file_id": citation["file_id"],
-                        "citation_index": citation.get("index", 0)
-                    })
+
+                    # Only add if we haven't seen this knowledge item before
+                    if knowledge_item.id not in seen_knowledge_items:
+                        seen_knowledge_items.add(knowledge_item.id)
+                        sources.append({
+                            "id": str(knowledge_item.id),
+                            "title": knowledge_item.title,
+                            "source": "Knowledge Base",
+                            "similarity": 1.0,
+                            "content_type": knowledge_item.content_type,
+                            "openai_file_id": citation["file_id"],
+                            "citation_index": citation.get("index", 0)
+                        })
 
             except Exception as e:
                 logger.warning(f"Failed to resolve citation {citation}: {e}")

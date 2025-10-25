@@ -37,6 +37,7 @@ FORMATTING REQUIREMENTS:
 - **Lists**: Use `-` or `*` for unordered lists, `1.` for ordered lists
 - **Emphasis**: Use `**bold**` for bold, `*italic*` for italic
 - **Citations**: Do NOT use inline citation markers - file citations will be automatically extracted
+- **Download Links**: Do NOT use inline download links markers - files will be automatically extracted
 
 TONE:
 - Professional yet approachable
@@ -282,6 +283,8 @@ class ResponsesService(OpenAIBaseService):
         Returns:
             Text with citation markers replaced by filenames
         """
+        import re
+
         try:
             # Get the message output
             message_outputs = [
@@ -304,6 +307,17 @@ class ResponsesService(OpenAIBaseService):
                             # The citations will be shown in the sources section instead
                             if citation_text:
                                 text = text.replace(citation_text, '')
+
+            # Also use regex to catch any remaining citation markers that weren't in annotations
+            # Pattern matches: fileciteturn0file1, fileciteturn0file1turn0file2, etc.
+            text = re.sub(r'fileciteturn\d+file\d+(?:turn\d+file\d+)*', '', text)
+
+            # Clean up multiple spaces on the same line (but preserve newlines for markdown formatting!)
+            # Only collapse horizontal spaces, not newlines
+            text = re.sub(r'[^\S\n]{2,}', ' ', text)
+
+            # Clean up space before punctuation (but not at start of line)
+            text = re.sub(r' +([.,;:!?])', r'\1', text)
 
             return text
         except Exception as e:

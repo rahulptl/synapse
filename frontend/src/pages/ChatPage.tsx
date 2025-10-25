@@ -770,10 +770,11 @@ export default function ChatPage() {
     });
 
     try {
-      // Prepare context items for backend
+      // Prepare context items for backend (include name for display)
       const contextItems = contextItemsCopy.map(item => ({
         id: item.id,
-        type: item.type
+        type: item.type,
+        name: item.name
       }));
 
       // Send via WebSocket
@@ -1284,9 +1285,9 @@ export default function ChatPage() {
         setShowMobileSidebar={setShowMobileSidebar}
       />
 
-      
+
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col overflow-hidden">
         {selectedConversation || messages.length > 0 || inputMessage.trim() ? (
           <>
             {/* Messages Area */}
@@ -1330,25 +1331,29 @@ export default function ChatPage() {
             </ScrollArea>
           </>
         ) : (
-          <ChatEmptyState user={user} />
+          <div className="flex-1 overflow-hidden">
+            <ChatEmptyState user={user} />
+          </div>
         )}
 
-        <ChatInput
-          inputMessage={inputMessage}
-          isLoading={isLoading}
-          placeholder={placeholder}
-          showAutocomplete={showAutocomplete}
-          autocompleteType={autocompleteType}
-          unifiedSuggestions={unifiedSuggestions}
-          selectedAutocompleteIndex={selectedAutocompleteIndex}
-          inputRef={inputRef}
-          onInputChange={handleInputChange}
-          onKeyPress={handleKeyPress}
-          onFileUploadClick={handleFileUploadClick}
-          onSendMessage={sendMessage}
-          onSaveConversationClick={handleUploadClick}
-          onSelectUnifiedSuggestion={selectUnifiedSuggestion}
-        />
+        <div className="flex-shrink-0">
+          <ChatInput
+            inputMessage={inputMessage}
+            isLoading={isLoading}
+            placeholder={placeholder}
+            showAutocomplete={showAutocomplete}
+            autocompleteType={autocompleteType}
+            unifiedSuggestions={unifiedSuggestions}
+            selectedAutocompleteIndex={selectedAutocompleteIndex}
+            inputRef={inputRef}
+            onInputChange={handleInputChange}
+            onKeyPress={handleKeyPress}
+            onFileUploadClick={handleFileUploadClick}
+            onSendMessage={sendMessage}
+            onSaveConversationClick={handleUploadClick}
+            onSelectUnifiedSuggestion={selectUnifiedSuggestion}
+          />
+        </div>
       </div>
 
       <SourceContentDialog

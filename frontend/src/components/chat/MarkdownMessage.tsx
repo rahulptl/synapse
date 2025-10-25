@@ -13,26 +13,38 @@ interface MarkdownMessageProps {
 export function MarkdownMessage({ content, className = '' }: MarkdownMessageProps) {
   // Debug: Log the content to see what we're receiving
   console.log('[MarkdownMessage] Rendering content:', content.substring(0, 100));
+  console.log('[MarkdownMessage] Content has newlines:', content.includes('\n'));
+  console.log('[MarkdownMessage] Content length:', content.length);
 
-  return (
-    <div className={`markdown-content ${className}`}>
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeRaw, rehypeHighlight]}
-        components={{
+  // Safer rendering with error boundary
+  try {
+    return (
+      <div className={`markdown-content break-words overflow-wrap-anywhere ${className}`}>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          rehypePlugins={[rehypeRaw, rehypeHighlight]}
+          components={{
           // Customize rendering of specific elements
           h1: ({ node, ...props }) => (
-            <h1 className="text-2xl font-bold mt-4 mb-2" {...props} />
+            <h1 className="text-2xl font-bold mt-4 mb-2 break-words" {...props} />
           ),
           h2: ({ node, ...props }) => (
-            <h2 className="text-xl font-bold mt-3 mb-2" {...props} />
+            <h2 className="text-xl font-bold mt-3 mb-2 break-words" {...props} />
           ),
           h3: ({ node, ...props }) => (
-            <h3 className="text-lg font-semibold mt-2 mb-1" {...props} />
+            <h3 className="text-lg font-semibold mt-2 mb-1 break-words" {...props} />
           ),
-          p: ({ node, ...props }) => (
-            <p className="mb-2 leading-relaxed" {...props} />
-          ),
+          p: ({ node, children, ...props }) => {
+            // Check if children contains table elements
+            const hasTable = node?.children?.some((child: any) => child.tagName === 'table');
+
+            // If paragraph contains a table, render as div to avoid invalid HTML
+            if (hasTable) {
+              return <div className="mb-2 leading-relaxed break-words" {...props}>{children}</div>;
+            }
+
+            return <p className="mb-2 leading-relaxed break-words" {...props}>{children}</p>;
+          },
           ul: ({ node, ...props }) => (
             <ul className="list-disc list-inside mb-2 space-y-1" {...props} />
           ),
@@ -52,7 +64,7 @@ export function MarkdownMessage({ content, className = '' }: MarkdownMessageProp
             if (inline) {
               return (
                 <code
-                  className="bg-gray-800 text-pink-400 px-1.5 py-0.5 rounded text-sm font-mono"
+                  className="bg-gray-800 text-pink-400 px-1.5 py-0.5 rounded text-sm font-mono break-all"
                   {...props}
                 >
                   {children}
@@ -61,7 +73,7 @@ export function MarkdownMessage({ content, className = '' }: MarkdownMessageProp
             }
             return (
               <code
-                className={`${className} block bg-gray-900 p-3 rounded-lg overflow-x-auto text-sm`}
+                className={`${className} block bg-gray-900 p-3 rounded-lg overflow-x-auto text-sm break-words`}
                 {...props}
               >
                 {children}
@@ -102,5 +114,14 @@ export function MarkdownMessage({ content, className = '' }: MarkdownMessageProp
         {content}
       </ReactMarkdown>
     </div>
-  );
+    );
+  } catch (error) {
+    console.error('[MarkdownMessage] Rendering error:', error);
+    // Fallback to plain text if ReactMarkdown fails
+    return (
+      <div className={`markdown-content break-words overflow-wrap-anywhere ${className}`}>
+        <div className="text-gray-100 whitespace-pre-wrap">{content}</div>
+      </div>
+    );
+  }
 }

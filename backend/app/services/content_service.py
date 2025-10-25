@@ -552,7 +552,7 @@ class ContentService:
             title=filename,
             content=file_content_text,
             content_type=content_type,
-            source_type=metadata.get('source_type', 'code_interpreter') if metadata else 'code_interpreter',
+            source_type=metadata.get('source_type', 'upload') if metadata else 'upload',
             filename=filename,
             size_bytes=file_size,
             item_metadata=item_metadata,

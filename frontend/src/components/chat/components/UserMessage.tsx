@@ -48,14 +48,14 @@ export const UserMessage = ({ message, user, hashtagInfo, onSaveMessage }: UserM
             {message.metadata?.context_items && message.metadata.context_items.length > 0 && (
               <div className="mt-2 pt-2 border-t border-white/20">
                 <div className="flex flex-wrap gap-1.5">
-                  {message.metadata.context_items.map((item: { id: string; type: string }, idx: number) => (
+                  {message.metadata.context_items.map((item: { id: string; type: string; name?: string }, idx: number) => (
                     <Badge
                       key={idx}
                       variant="secondary"
                       className="text-xs bg-white/15 text-white/90 border-white/20"
                     >
                       {item.type === 'folder' ? <Folder className="h-3 w-3 mr-1" /> : <FileText className="h-3 w-3 mr-1" />}
-                      @{item.id}
+                      @{item.name || item.id}
                     </Badge>
                   ))}
                 </div>

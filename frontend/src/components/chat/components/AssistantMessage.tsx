@@ -14,6 +14,15 @@ interface AssistantMessageProps {
 }
 
 export const AssistantMessage = ({ message, onViewSource, onDownloadGeneratedFile, onSaveMessage }: AssistantMessageProps) => {
+  // Deduplicate sources by ID to show unique knowledge items only
+  const uniqueSources = message.metadata?.sources
+    ? Array.from(
+        new Map(
+          message.metadata.sources.map((source: any) => [source.id, source])
+        ).values()
+      )
+    : [];
+
   return (
     <div className="flex justify-start group">
       <div className="flex items-start space-x-4 max-w-[85%]">
@@ -27,7 +36,7 @@ export const AssistantMessage = ({ message, onViewSource, onDownloadGeneratedFil
         <div className="space-y-3 flex-1 min-w-0">
           {/* Message Bubble */}
           <div className="relative bg-sidebar-accent/50 border border-sidebar-border rounded-2xl rounded-tl-md shadow-sm px-5 py-4 transition-colors duration-200 hover:bg-sidebar-accent/60">
-            <div className="text-sm leading-7 text-gray-100">
+            <div className="text-sm leading-7 text-gray-100 break-words overflow-wrap-anywhere">
               <Suspense fallback={<div className="text-gray-400">Loading...</div>}>
                 <MarkdownMessage content={message.content} />
               </Suspense>
@@ -53,16 +62,16 @@ export const AssistantMessage = ({ message, onViewSource, onDownloadGeneratedFil
           </div>
 
           {/* Sources for AI messages - Compact Tile Design */}
-          {message.metadata?.sources && message.metadata.sources.length > 0 && (
+          {uniqueSources.length > 0 && (
             <div className="bg-sidebar-accent/30 border border-sidebar-border rounded-xl px-4 py-3">
               <div className="flex items-center space-x-2 mb-3">
                 <Search className="h-4 w-4 text-sidebar-muted" />
-                <h4 className="text-sm font-semibold text-sidebar-foreground">Knowledge Sources ({message.metadata.sources.length})</h4>
+                <h4 className="text-sm font-semibold text-sidebar-foreground">Knowledge Sources ({uniqueSources.length})</h4>
               </div>
               <div className="flex flex-wrap gap-2">
-                {message.metadata.sources.map((source, idx) => (
+                {uniqueSources.map((source, idx) => (
                   <button
-                    key={idx}
+                    key={source.id || idx}
                     onClick={() => onViewSource(source)}
                     className="group bg-sidebar-accent/60 hover:bg-sidebar-accent/80 border border-sidebar-border rounded-lg p-3 flex-1 min-w-[200px] transition-all duration-200 hover:shadow-md hover:scale-[1.02]"
                     title={`View source: ${source.title}`}

@@ -231,6 +231,7 @@ class ContextItem(BaseSchema):
     """Context item for chat (folder or file)."""
     id: str  # UUID as string
     type: str  # 'folder' or 'file'
+    name: Optional[str] = None  # Name for display purposes
 
 
 class ChatRequest(BaseSchema):
