@@ -700,7 +700,7 @@ export default function ChatPage() {
 
       // If this is the currently selected conversation, use current messages
       // Otherwise, we'd need to fetch them
-      let messagesToExport = conversationId === selectedConversation ? messages : [];
+      const messagesToExport = conversationId === selectedConversation ? messages : [];
 
       if (messagesToExport.length === 0) {
         toast({

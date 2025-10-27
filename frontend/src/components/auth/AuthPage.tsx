@@ -7,6 +7,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { ProfileImageUpload } from '@/components/profile/ProfileImageUpload';
+import { VaultLoginAnimation } from './VaultLoginAnimation';
+import { VaultCreationAnimation } from './VaultCreationAnimation';
 
 export function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
@@ -15,6 +17,8 @@ export function AuthPage() {
   const [fullName, setFullName] = useState('');
   const [loading, setLoading] = useState(false);
   const [redirecting, setRedirecting] = useState(false);
+  const [showVaultAnimation, setShowVaultAnimation] = useState(false);
+  const [showVaultCreationAnimation, setShowVaultCreationAnimation] = useState(false);
   const [showAvatarUpload, setShowAvatarUpload] = useState(false);
   const [passwordError, setPasswordError] = useState<string | null>(null);
 
@@ -25,18 +29,59 @@ export function AuthPage() {
   // Handle redirect after user is set
   useEffect(() => {
     if (user && redirecting) {
-      // Small delay to ensure state is fully updated
-      setTimeout(() => {
-        navigate('/knowledge', { replace: true });
-      }, 100);
+      if (isLogin) {
+        // Show vault animation for login
+        setShowVaultAnimation(true);
+      } else {
+        // Show vault creation animation for signup
+        setShowVaultCreationAnimation(true);
+      }
     }
-  }, [user, redirecting, navigate]);
+  }, [user, redirecting, navigate, isLogin]);
+
+  // Handle vault animation completion
+  const handleVaultAnimationComplete = () => {
+    console.log('[AUTH_PAGE] Vault animation completed, navigating to knowledge');
+    setShowVaultAnimation(false);
+    setTimeout(() => {
+      navigate('/knowledge', { replace: true });
+    }, 100);
+  };
+
+  // Handle vault creation animation completion
+  const handleVaultCreationAnimationComplete = () => {
+    console.log('[AUTH_PAGE] Vault creation animation completed, navigating to memory page');
+    setShowVaultCreationAnimation(false);
+    setTimeout(() => {
+      navigate('/knowledge', { replace: true });
+    }, 100);
+  };
 
   useEffect(() => {
     if (isLogin) {
       setPasswordError(null);
     }
   }, [isLogin]);
+
+  // Show vault creation animation for successful signup
+  if (showVaultCreationAnimation) {
+    return (
+      <VaultCreationAnimation
+        isVisible={showVaultCreationAnimation}
+        onComplete={handleVaultCreationAnimationComplete}
+      />
+    );
+  }
+
+  // Show vault animation for successful login
+  if (showVaultAnimation) {
+    return (
+      <VaultLoginAnimation
+        isVisible={showVaultAnimation}
+        onComplete={handleVaultAnimationComplete}
+      />
+    );
+  }
 
   // Show loading state while auth is processing
   if (authLoading && redirecting) {
@@ -110,22 +155,22 @@ export function AuthPage() {
         if (!isLogin) {
           setPasswordError(null);
           // Signup successful
+          console.log('[AUTH_PAGE] Signup successful, preparing vault creation animation');
           toast({
             title: "Account Created!",
-            description: "Now add a profile picture (optional)",
-            duration: 3000,
+            description: "Creating your secure vault...",
+            duration: 5000,
           });
 
-          // Show avatar upload instead of redirecting
-          setShowAvatarUpload(true);
-
-          // Note: User will proceed after avatar upload or skip
+          // Start vault creation animation
+          setRedirecting(true);
         } else {
           // Login successful
+          console.log('[AUTH_PAGE] Login successful, preparing vault animation');
           toast({
-            title: "Welcome back!",
-            description: "You've been signed in successfully.",
-            duration: 2000,
+            title: "Authentication Successful!",
+            description: "Opening your secure vault...",
+            duration: 3000,
           });
 
           setRedirecting(true);

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { apiClient } from '@/services/apiClient';
-import { getChatWebSocket } from '@/services/chatWebSocket';
+import { getChatWebSocket, ConnectionState } from '@/services/chatWebSocket';
 import type { Message, Conversation, ConversationDrafts, SelectedContextItem } from '@/components/chat/types/chat';
 import { StatusType } from '@/components/chat/StatusTile';
 import { getConversationDefaultTitle, buildConversationTranscript } from '@/components/chat/utils/chatUtils';
@@ -123,11 +123,10 @@ export function useChatState({
     if (!user || !accessToken) return;
 
     try {
-      const response = await apiClient.getMessages({
-        userId: user.id,
-        conversationId: conversationId,
-        accessToken: accessToken
-      });
+      const response = await apiClient.getConversationMessages(
+        conversationId,
+        { userId: user.id, accessToken: accessToken }
+      );
 
       const messagesData = (response as any).messages ?? (response as any).data ?? response ?? [];
       const messageArray = Array.isArray(messagesData) ? messagesData : [];
@@ -156,39 +155,39 @@ export function useChatState({
     if (!user || !accessToken) return;
 
     try {
-      const ws = getChatWebSocket();
-      if (!ws?.isConnected) {
-        toast({
-          title: "Connection Error",
-          description: "Please wait for the connection to be established.",
-          variant: "destructive",
-        });
-        return;
-      }
+      console.log('[CREATE_CONVERSATION] Creating new conversation via API');
 
-      setSelectedConversation(null);
+      // Create conversation via REST API
+      const response = await apiClient.createConversation(
+        { title: 'New Conversation' },
+        { userId: user.id, accessToken }
+      );
+
+      const newConversation = response.data || response;
+      console.log('[CREATE_CONVERSATION] Conversation created:', newConversation.id);
+
+      // Add to conversations list
+      setConversations(prev => [newConversation, ...prev]);
+
+      // Select the new conversation
+      setSelectedConversation(newConversation.id);
       setMessages([]);
       setInputMessage('');
       setSelectedContextItems([]);
 
-      const event = {
-        type: 'conversation.create',
-        data: {
-          user_id: user.id,
-          title: null
-        }
-      };
-
-      ws.sendEvent(event);
+      toast({
+        title: "New conversation created",
+        description: "Start chatting!",
+      });
     } catch (error) {
-      console.error('Error creating conversation:', error);
+      console.error('[CREATE_CONVERSATION] Error creating conversation:', error);
       toast({
         title: "Failed to create conversation",
         description: "Unable to create a new conversation. Please try again.",
         variant: "destructive",
       });
     }
-  }, [user, accessToken, toast]);
+  }, [user, accessToken, toast, setConversations, setSelectedConversation, setMessages, setInputMessage, setSelectedContextItems]);
 
   // Delete conversation
   const deleteConversation = useCallback(async (conversationId: string) => {
@@ -360,7 +359,7 @@ export function useChatState({
         timestamp: new Date().toISOString()
       }
     }));
-  }, [conversationId, inputMessage, selectedContextItems]);
+  }, [inputMessage, selectedContextItems]);
 
   // Restore draft
   const restoreDraft = useCallback((conversationId: string | null) => {

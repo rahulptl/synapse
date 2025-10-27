@@ -262,10 +262,10 @@ async def save_message_to_knowledge_base(
     auth_data: dict = Depends(validate_any_auth)
 ):
     """
-    Save a chat response to the knowledge base.
+    Save any chat message to the knowledge base.
 
-    Creates a new knowledge item from the message content.
-    Optionally includes the user query for better context.
+    Creates a new knowledge item from the message content (user or assistant).
+    Optionally includes the context message for better understanding.
     """
     user_id = UUID(auth_data["user_id"])
 
@@ -289,9 +289,6 @@ async def save_message_to_knowledge_base(
         if not message:
             raise HTTPException(status_code=404, detail="Message not found")
 
-        if message.role != 'assistant':
-            raise HTTPException(status_code=400, detail="Can only save assistant messages")
-
         # Get conversation for context
         conv_result = await db.execute(
             select(DBConversation).where(DBConversation.id == message.conversation_id)
@@ -302,29 +299,49 @@ async def save_message_to_knowledge_base(
         content_parts = []
 
         if add_context:
-            # Get the preceding user message for context
-            prev_result = await db.execute(
-                select(DBMessage)
-                .where(
-                    DBMessage.conversation_id == message.conversation_id,
-                    DBMessage.role == 'user',
-                    DBMessage.created_at < message.created_at
+            # Get the opposite message for context
+            if message.role == 'assistant':
+                # For assistant messages, get the preceding user message
+                prev_result = await db.execute(
+                    select(DBMessage)
+                    .where(
+                        DBMessage.conversation_id == message.conversation_id,
+                        DBMessage.role == 'user',
+                        DBMessage.created_at < message.created_at
+                    )
+                    .order_by(desc(DBMessage.created_at))
+                    .limit(1)
                 )
-                .order_by(desc(DBMessage.created_at))
-                .limit(1)
-            )
-            previous_message = prev_result.scalar_one_or_none()
+                previous_message = prev_result.scalar_one_or_none()
 
-            if previous_message:
-                content_parts.append(f"**Query:** {previous_message.content}\n")
+                if previous_message:
+                    content_parts.append(f"**Query:** {previous_message.content}\n")
+            else:
+                # For user messages, get the following assistant message if it exists
+                next_result = await db.execute(
+                    select(DBMessage)
+                    .where(
+                        DBMessage.conversation_id == message.conversation_id,
+                        DBMessage.role == 'assistant',
+                        DBMessage.created_at > message.created_at
+                    )
+                    .order_by(DBMessage.created_at)
+                    .limit(1)
+                )
+                next_message = next_result.scalar_one_or_none()
 
-        content_parts.append(f"**Response:**\n{message.content}")
+                if next_message:
+                    content_parts.append(f"**Response:** {next_message.content}\n")
+
+        # Add the main message content
+        role_label = "**User Query:**" if message.role == 'user' else "**Assistant Response:**"
+        content_parts.append(f"{role_label}\n{message.content}")
 
         # Generate title if not provided
         if not title:
             # Use first line or truncated content
             first_line = message.content.split('\n')[0][:100]
-            title = f"Chat Response: {first_line}"
+            title = f"Chat {message.role.title()}: {first_line}"
 
         # Create knowledge item
         item_data = KnowledgeItemCreate(
@@ -334,7 +351,8 @@ async def save_message_to_knowledge_base(
             content_type=ContentType.TEXT,
             source_url=None,
             metadata={
-                "source": "chat_response",
+                "source": "chat_message",
+                "message_role": message.role,
                 "conversation_id": str(message.conversation_id),
                 "message_id": str(message_id),
                 "conversation_title": conversation.title if conversation else None,

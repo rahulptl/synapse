@@ -5,11 +5,12 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./hooks/useAuth";
+import { ApiClientProvider } from "./components/ApiClientProvider";
 import { Header } from "./components/layout/Header";
 import LandingPage from "./pages/LandingPage";
 import { AuthPage } from "./components/auth/AuthPage";
 import ResponsiveKnowledgePage from "./pages/ResponsiveKnowledgePage";
-import ChatPage from "./pages/ChatPage";
+import ResponsiveChatPage from "./pages/ResponsiveChatPage";
 import SettingsPage from "./pages/SettingsPage";
 import DocsPage from "./pages/DocsPage";
 import PricingPage from "./pages/PricingPage";
@@ -78,7 +79,7 @@ function AppContent() {
             path="/chat"
             element={
               <ProtectedRoute>
-                <ChatPage />
+                <ResponsiveChatPage />
               </ProtectedRoute>
             }
           />
@@ -104,9 +105,11 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
-          <ErrorBoundary>
-            <AppContent />
-          </ErrorBoundary>
+          <ApiClientProvider>
+            <ErrorBoundary>
+              <AppContent />
+            </ErrorBoundary>
+          </ApiClientProvider>
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>

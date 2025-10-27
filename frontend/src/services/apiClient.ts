@@ -4,6 +4,7 @@
  */
 
 import { resolveBackendBaseUrl } from '@/utils/backendUrl';
+import { authenticatedFetch } from '@/utils/requestInterceptor';
 
 export interface ApiResponse<T = unknown> {
   success?: boolean;
@@ -21,6 +22,7 @@ class ApiClient {
   private baseUrl: string;
   private apiVersionPath: string;
   private defaultHeaders: Record<string, string>;
+  private getAuthData: () => { accessToken: string; userId: string } | null = () => null;
 
   constructor() {
     const rawBaseUrl = resolveBackendBaseUrl();
@@ -44,6 +46,15 @@ class ApiClient {
     };
   }
 
+  /**
+   * Set the auth data getter for automatic token management
+   * This should be called during app initialization
+   */
+  public setAuthDataGetter(getter: () => { accessToken: string; userId: string } | null) {
+    console.log('[API_CLIENT] Setting auth data getter');
+    this.getAuthData = getter;
+  }
+
   private getAuthHeaders(userId: string, accessToken: string): AuthHeaders {
     return {
       'Authorization': `Bearer ${accessToken}`,
@@ -62,22 +73,43 @@ class ApiClient {
       ...fetchOptions.headers,
     };
 
-    // Add authentication headers if provided
-    if (auth) {
-      Object.assign(headers, this.getAuthHeaders(auth.userId, auth.accessToken));
-    }
-
-    const response = await fetch(this.buildUrl(endpoint), {
+    const url = this.buildUrl(endpoint);
+    const finalOptions = {
       ...fetchOptions,
       headers,
-    });
+    };
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.detail || errorData.message || `HTTP ${response.status}: ${response.statusText}`);
+    // If auth is provided explicitly, use it (backward compatibility)
+    if (auth) {
+      console.log('[API_CLIENT] Using explicit auth for request:', { endpoint: url.substring(0, 50) });
+      Object.assign(headers, this.getAuthHeaders(auth.userId, auth.accessToken));
+
+      const response = await fetch(url, finalOptions);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || errorData.message || `HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      return response.json();
     }
 
-    return response.json();
+    // Otherwise, use automatic auth data from context
+    const authData = this.getAuthData();
+    if (authData) {
+      console.log('[API_CLIENT] Using automatic auth for request:', { endpoint: url.substring(0, 50) });
+      const response = await authenticatedFetch(url, finalOptions, this.getAuthData);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || errorData.message || `HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      return response.json();
+    }
+
+    console.error('[API_CLIENT] No auth data available for request:', { endpoint: url.substring(0, 50) });
+    throw new Error('Authentication required');
   }
 
   // Folder operations

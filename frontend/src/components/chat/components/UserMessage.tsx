@@ -21,6 +21,11 @@ export const UserMessage = ({ message, user, hashtagInfo, onSaveMessage }: UserM
   // Get cache-busted avatar URL
   const avatarUrl = getAvatarUrl(user?.avatar_url, user?.profile_updated_at);
 
+  console.log('[USER_MESSAGE_SAVE] Rendering user message with save button:', message.id, {
+    hasOnSaveMessage: !!onSaveMessage,
+    messageRole: message.role
+  });
+
   return (
     <div className="flex justify-end group">
       <div className="flex flex-row-reverse items-start gap-4 max-w-[80%]">
@@ -64,7 +69,10 @@ export const UserMessage = ({ message, user, hashtagInfo, onSaveMessage }: UserM
 
             <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/15">
               <button
-                onClick={() => onSaveMessage(message)}
+                onClick={() => {
+                  console.log('[USER_MESSAGE_SAVE] Save button clicked for message:', message.id);
+                  onSaveMessage(message);
+                }}
                 className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center space-x-1 text-xs text-white/70 hover:text-white bg-white/10 hover:bg-white/20 px-2 py-1 rounded"
                 title="Save to Memory"
               >

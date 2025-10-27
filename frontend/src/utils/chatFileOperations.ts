@@ -186,8 +186,8 @@ export async function downloadSourceFile(
       });
 
       // Determine content type from file metadata or response
-      let contentType = file.content_type || file.file_metadata?.content_type || 'application/octet-stream';
-      let filename = file.filename || file.file_metadata?.original_filename || 'source_file';
+      const contentType = file.content_type || file.file_metadata?.content_type || 'application/octet-stream';
+      const filename = file.filename || file.file_metadata?.original_filename || 'source_file';
 
       const blob = new Blob([response], { type: contentType });
       const url = window.URL.createObjectURL(blob);

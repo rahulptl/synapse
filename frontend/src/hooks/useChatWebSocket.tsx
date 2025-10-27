@@ -128,11 +128,51 @@ export function useChatWebSocket() {
     [isConnected]
   );
 
+  /**
+   * Reconnect the WebSocket connection
+   */
+  const reconnect = useCallback(() => {
+    if (!wsRef.current || !accessToken) {
+      console.warn('Cannot reconnect: WebSocket service or access token not available');
+      return;
+    }
+
+    console.log('Manual reconnect requested');
+    setIsConnecting(true);
+    setConnectionError(null);
+
+    wsRef.current.connect(accessToken)
+      .then(() => {
+        console.log('WebSocket reconnected successfully');
+        setIsConnected(true);
+        setIsConnecting(false);
+        setConnectionError(null);
+
+        // Start ping interval to keep connection alive
+        if (pingIntervalRef.current) {
+          clearInterval(pingIntervalRef.current);
+        }
+
+        pingIntervalRef.current = setInterval(() => {
+          if (wsRef.current) {
+            wsRef.current.ping();
+          }
+        }, 30000); // Ping every 30 seconds
+      })
+      .catch((error) => {
+        console.error('Failed to reconnect WebSocket:', error);
+        setIsConnecting(false);
+        setIsConnected(false);
+        setConnectionError(error.message || 'Reconnection failed');
+      });
+  }, [accessToken]);
+
   return {
     isConnected,
     isConnecting,
     connectionError,
     sendMessage,
-    addEventListener
+    addEventListener,
+    reconnect
   };
 }
